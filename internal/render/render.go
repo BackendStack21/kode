@@ -161,13 +161,20 @@ func (r *Renderer) ToolCall(name, args string) {
 	fmt.Fprintf(r.w, "%s %s\n", label, r.style(gray, r.truncate(args, 120)))
 }
 
-// ToolResult prints the output from a tool call.
-// Long output is truncated to MaxToolOutput characters.
+// ToolResult prints a one-line summary of the tool output in gray.
+// Long output is collapsed to the first line + ellipsis to keep the
+// terminal readable during multi-step tool chains.
 func (r *Renderer) ToolResult(output string) {
 	if r.disable() || output == "" {
 		return
 	}
-	r.label("result", green, output)
+	// Take first line only, truncate, add ellipsis if there's more.
+	line, _, _ := strings.Cut(output, "\n")
+	summary := r.truncate(line, 120)
+	if len(output) > len(line) || len(line) > 120 {
+		summary += " …"
+	}
+	fmt.Fprintf(r.w, "%s\n", r.style(gray, "   "+summary))
 }
 
 // FinalAnswer prints the model's concluding response.

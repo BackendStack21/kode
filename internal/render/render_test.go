@@ -101,8 +101,42 @@ func TestRenderer_ToolResult(t *testing.T) {
 	if !strings.Contains(out, "file1.txt") {
 		t.Errorf("ToolResult() missing output: %q", out)
 	}
-	if !strings.Contains(out, "result") {
-		t.Errorf("ToolResult() missing label: %q", out)
+	// Multi-line output should include ellipsis
+	if !strings.Contains(out, "…") {
+		t.Errorf("ToolResult() missing ellipsis for multi-line output: %q", out)
+	}
+	// Should NOT contain lines beyond the first
+	if strings.Contains(out, "file2.txt") {
+		t.Errorf("ToolResult() should only show first line, got: %q", out)
+	}
+}
+
+func TestRenderer_ToolResult_SingleLine(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, true)
+
+	r.ToolResult("short output")
+
+	out := buf.String()
+	if !strings.Contains(out, "short output") {
+		t.Errorf("ToolResult() missing output: %q", out)
+	}
+	// Single short line — no ellipsis
+	if strings.Contains(out, "…") {
+		t.Errorf("ToolResult() should not have ellipsis for short single line: %q", out)
+	}
+}
+
+func TestRenderer_ToolResult_GrayColor(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, true)
+
+	r.ToolResult("result text")
+
+	out := buf.String()
+	// Should use gray (dim), not green
+	if strings.Contains(out, green) {
+		t.Errorf("ToolResult() should use gray, not green: %q", out)
 	}
 }
 
@@ -110,15 +144,13 @@ func TestRenderer_ToolResult_Truncation(t *testing.T) {
 	var buf bytes.Buffer
 	r := New(&buf, true)
 
-	// A single line longer than MaxToolOutput should be truncated.
-	longLine := strings.Repeat("x", MaxToolOutput+100)
+	// A single line longer than 120 chars should be truncated.
+	longLine := strings.Repeat("x", 200)
 	r.ToolResult(longLine)
 
 	out := buf.String()
-	// The output should be shorter than the original (truncated) and
-	// end with the ellipsis character.
-	if strings.Count(out, "x") >= len(longLine) {
-		t.Errorf("ToolResult() should truncate long line, got %d x chars (input was %d)", strings.Count(out, "x"), len(longLine))
+	if strings.Count(out, "x") >= 200 {
+		t.Errorf("ToolResult() should truncate long line, got %d x chars (input was %d)", strings.Count(out, "x"), 200)
 	}
 	if !strings.Contains(out, "…") {
 		t.Errorf("ToolResult() missing truncation ellipsis: %q", out)
@@ -239,7 +271,7 @@ func TestRenderer_FullCycle(t *testing.T) {
 	out := buf.String()
 
 	// Verify each phase is present
-	phases := []string{"iter 1/90", "thinking", "shell", "result", "iter 2/90", "answer"}
+	phases := []string{"iter 1/90", "thinking", "shell", "package main", "iter 2/90", "answer"}
 	for _, phase := range phases {
 		if !strings.Contains(strings.ToLower(out), phase) {
 			t.Errorf("FullCycle missing phase %q in output:\n%s", phase, out)
