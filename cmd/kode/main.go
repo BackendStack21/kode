@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/BackendStack21/kode"
+	"github.com/BackendStack21/kode/internal/render"
 )
 
 // version is set at build time via ldflags: -ldflags "-X main.version=v0.2.1"
@@ -53,6 +54,7 @@ type runFlags struct {
 	Thinking string
 	MaxIter  int
 	Sandbox  bool
+	NoColor  bool
 	Task     string
 }
 
@@ -83,6 +85,9 @@ func parseRunFlags(args []string) (runFlags, error) {
 		case "--sandbox":
 			f.Sandbox = true
 			i++
+		case "--no-color":
+			f.NoColor = true
+			i++
 		default:
 			// Not a flag — treat remaining as the task
 			goto done
@@ -107,6 +112,7 @@ Flags:
   --max-iter <n>       Max think->act cycles (default: 90)
   --thinking <level>   Reasoning depth: enabled|disabled (Deepseek) or low|medium|high (OpenAI o-series)
   --sandbox            Run in isolated Docker container
+  --no-color           Disable colored terminal output
   --system <prompt>    System prompt override`)
 }
 
@@ -134,6 +140,14 @@ func run(args []string) error {
 		sandboxCleanup = cleanup
 	}
 
+	// Create terminal renderer for colored step-by-step output.
+	modelName := f.Model
+	if modelName == "" {
+		modelName = "deepseek-chat"
+	}
+	color := !f.NoColor && render.ColorEnabled()
+	rend := render.New(os.Stderr, color)
+
 	agent, err := kode.New(kode.Config{
 		Model:          f.Model,
 		BaseURL:        f.BaseURL,
@@ -142,17 +156,12 @@ func run(args []string) error {
 		Thinking:       f.Thinking,
 		Tools:          tools,
 		SandboxCleanup: sandboxCleanup,
+		Renderer:       rend.WithModel(modelName),
 	})
 	if err != nil {
 		return err
 	}
 	defer agent.Close()
-
-	modelName := f.Model
-	if modelName == "" {
-		modelName = "deepseek-chat"
-	}
-	fmt.Fprintf(os.Stderr, "kode: %s thinking...\n", modelName)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -177,14 +186,14 @@ func setupSandbox(tools []kode.Tool) (func() error, error) {
 	}
 
 	createCmd := exec.Command("docker", "run",
-		"--rm",                                  // destroy on exit
-		"--detach",                              // run in background
+		"--rm",     // destroy on exit
+		"--detach", // run in background
 		"--name", containerName,
-		"--cap-drop", "ALL",                     // no capabilities
-		"--security-opt", "no-new-privileges",   // no privilege escalation
-		"--network", "none",                     // no network
-		"--tmpfs", "/tmp:noexec",                // no executable temp files
-		"-v", wd+":/workspace",                  // working dir (read-write inside sandbox)
+		"--cap-drop", "ALL", // no capabilities
+		"--security-opt", "no-new-privileges", // no privilege escalation
+		"--network", "none", // no network
+		"--tmpfs", "/tmp:noexec", // no executable temp files
+		"-v", wd+":/workspace", // working dir (read-write inside sandbox)
 		"alpine:latest",
 		"sleep", "infinity",
 	)
@@ -208,11 +217,12 @@ func builtinTools() []kode.Tool {
 		&shellTool{},
 	}
 }
+
 // getVersion returns the version string. Resolution order:
-//   1. ldflags override (-X main.version=v0.2.1)
-//   2. VCS tag from debug.ReadBuildInfo (when built with go install)
-//   3. VCS revision (short commit hash)
-//   4. "dev" (local go build without VCS info)
+//  1. ldflags override (-X main.version=v0.2.1)
+//  2. VCS tag from debug.ReadBuildInfo (when built with go install)
+//  3. VCS revision (short commit hash)
+//  4. "dev" (local go build without VCS info)
 func getVersion() string {
 	if version != "" {
 		return version

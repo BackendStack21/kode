@@ -67,12 +67,12 @@ type FunctionDef struct {
 
 // CallParams is the request body for /chat/completions.
 type CallParams struct {
-	Model          string          `json:"model"`
-	Messages       []Message       `json:"messages"`
-	Tools          []ToolDef       `json:"tools,omitempty"`
-	Stream         bool            `json:"stream"`
-	Thinking       *ThinkingConfig `json:"thinking,omitempty"`
-	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	Model           string          `json:"model"`
+	Messages        []Message       `json:"messages"`
+	Tools           []ToolDef       `json:"tools,omitempty"`
+	Stream          bool            `json:"stream"`
+	Thinking        *ThinkingConfig `json:"thinking,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 }
 
 // ThinkingConfig controls Deepseek's extended thinking feature.

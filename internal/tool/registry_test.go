@@ -12,9 +12,9 @@ type mockTool struct {
 	callError   error
 }
 
-func (m *mockTool) Name() string              { return m.name }
-func (m *mockTool) Description() string       { return m.description }
-func (m *mockTool) Schema() any               { return m.schema }
+func (m *mockTool) Name() string                     { return m.name }
+func (m *mockTool) Description() string              { return m.description }
+func (m *mockTool) Schema() any                      { return m.schema }
 func (m *mockTool) Call(args string) (string, error) { return m.callResult, m.callError }
 
 func TestNewRegistry_Empty(t *testing.T) {

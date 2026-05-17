@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/tool"
 )
 
@@ -14,15 +15,17 @@ import (
 type Engine struct {
 	client   *llm.Client
 	registry *tool.Registry
+	renderer *render.Renderer // optional: colored terminal output
 	maxIter  int
 	system   string
 }
 
 // New creates a new loop Engine.
-func New(client *llm.Client, registry *tool.Registry, maxIterations int, systemMessage string) *Engine {
+func New(client *llm.Client, registry *tool.Registry, maxIterations int, systemMessage string, renderer *render.Renderer) *Engine {
 	return &Engine{
 		client:   client,
 		registry: registry,
+		renderer: renderer,
 		maxIter:  maxIterations,
 		system:   systemMessage,
 	}
@@ -46,6 +49,11 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 		default:
 		}
 
+		// Render iteration header (1-indexed for humans)
+		if e.renderer != nil {
+			e.renderer.Iteration(i+1, e.maxIter)
+		}
+
 		// THINK
 		result, err := e.client.Call(ctx, messages, tools)
 		if err != nil {
@@ -54,7 +62,15 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 
 		// No tool calls = final answer
 		if len(result.ToolCalls) == 0 {
+			if e.renderer != nil {
+				e.renderer.FinalAnswer(result.Content)
+			}
 			return result.Content, nil
+		}
+
+		// Render the model's thinking (reasoning before tool calls)
+		if e.renderer != nil && result.Content != "" {
+			e.renderer.Thinking(result.Content)
 		}
 
 		// Build assistant message with tool calls
@@ -67,6 +83,10 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 
 		// ACT: execute each tool call
 		for _, tc := range result.ToolCalls {
+			if e.renderer != nil {
+				e.renderer.ToolCall(tc.Function.Name, tc.Function.Arguments)
+			}
+
 			t := e.registry.Get(tc.Function.Name)
 			output := fmt.Sprintf("error: tool %q not found", tc.Function.Name)
 			if t != nil {
@@ -76,6 +96,10 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 				} else {
 					output = res
 				}
+			}
+
+			if e.renderer != nil {
+				e.renderer.ToolResult(output)
 			}
 
 			messages = append(messages, llm.Message{

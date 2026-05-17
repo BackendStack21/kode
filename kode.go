@@ -26,6 +26,7 @@ import (
 
 	"github.com/BackendStack21/kode/internal/llm"
 	"github.com/BackendStack21/kode/internal/loop"
+	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/tool"
 )
 
@@ -70,14 +71,18 @@ type Config struct {
 	// SandboxCleanup, if set, is called by Agent.Close() to destroy the
 	// Docker sandbox container. Set by the CLI when --sandbox is active.
 	SandboxCleanup func() error
+
+	// Renderer, if set, produces colored terminal output for each phase
+	// of the agent loop. When nil, the agent runs silently (programmatic API).
+	Renderer *render.Renderer
 }
 
 // Agent is the agent loop runtime.
 type Agent struct {
-	config          Config
-	engine          *loop.Engine
-	registry        *tool.Registry
-	sandboxCleanup  func() error // destroys the sandbox container on Close()
+	config         Config
+	engine         *loop.Engine
+	registry       *tool.Registry
+	sandboxCleanup func() error // destroys the sandbox container on Close()
 }
 
 // New creates a new Agent with the given configuration.
@@ -113,7 +118,7 @@ func New(cfg Config) (*Agent, error) {
 
 	registry := tool.NewRegistry(tools)
 	client := llm.New(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.Thinking)
-	engine := loop.New(client, registry, cfg.MaxIterations, cfg.SystemMessage)
+	engine := loop.New(client, registry, cfg.MaxIterations, cfg.SystemMessage, cfg.Renderer)
 
 	return &Agent{
 		config:         cfg,

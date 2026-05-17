@@ -19,8 +19,8 @@ type fakeTool struct {
 	output      string
 }
 
-func (f *fakeTool) Name() string              { return f.name }
-func (f *fakeTool) Description() string       { return f.description }
+func (f *fakeTool) Name() string        { return f.name }
+func (f *fakeTool) Description() string { return f.description }
 func (f *fakeTool) Schema() any {
 	return map[string]any{
 		"type":       "object",
@@ -38,7 +38,7 @@ func TestEngine_Run_SimpleAnswer(t *testing.T) {
 
 	client := llm.New(server.URL, "sk-test", "test-model", "")
 	registry := tool.NewRegistry(nil)
-	engine := New(client, registry, 10, "")
+	engine := New(client, registry, 10, "", nil)
 
 	result, err := engine.Run(context.Background(), "Say hello")
 	if err != nil {
@@ -80,7 +80,7 @@ func TestEngine_Run_ToolCallLoop(t *testing.T) {
 	echoTool := &fakeTool{name: "echo", description: "echoes input", output: "hello output"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
 	client := llm.New(server.URL, "sk-test", "test-model", "")
-	engine := New(client, registry, 10, "")
+	engine := New(client, registry, 10, "", nil)
 
 	result, err := engine.Run(context.Background(), "Echo hello")
 	if err != nil {
@@ -117,7 +117,7 @@ func TestEngine_Run_MaxIterations(t *testing.T) {
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
 	client := llm.New(server.URL, "sk-test", "test-model", "")
-	engine := New(client, registry, 3, "")
+	engine := New(client, registry, 3, "", nil)
 
 	_, err := engine.Run(context.Background(), "Loop forever")
 	if err == nil {
@@ -132,7 +132,7 @@ func TestEngine_Run_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	client := llm.New(server.URL, "sk-test", "test-model", "")
-	engine := New(client, tool.NewRegistry(nil), 10, "")
+	engine := New(client, tool.NewRegistry(nil), 10, "", nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
@@ -166,7 +166,7 @@ func TestEngine_Run_SystemMessage(t *testing.T) {
 	defer server.Close()
 
 	client := llm.New(server.URL, "sk-test", "test-model", "")
-	engine := New(client, tool.NewRegistry(nil), 10, "You are a test bot.")
+	engine := New(client, tool.NewRegistry(nil), 10, "You are a test bot.", nil)
 
 	result, err := engine.Run(context.Background(), "hi")
 	if err != nil {
@@ -198,7 +198,7 @@ func TestEngine_Run_ToolNotFound(t *testing.T) {
 
 	// No tools registered — the tool call will fail
 	client := llm.New(server.URL, "sk-test", "test-model", "")
-	engine := New(client, tool.NewRegistry(nil), 10, "")
+	engine := New(client, tool.NewRegistry(nil), 10, "", nil)
 
 	// The loop should handle the missing tool gracefully — the tool error
 	// is fed back to the model as a tool response message. The test server
@@ -214,7 +214,7 @@ func TestEngine_BuildToolDefs(t *testing.T) {
 	t2 := &fakeTool{name: "write", description: "write files"}
 	registry := tool.NewRegistry([]tool.Tool{t1, t2})
 
-	engine := New(nil, registry, 10, "")
+	engine := New(nil, registry, 10, "", nil)
 	defs := engine.buildToolDefs()
 
 	if len(defs) != 2 {
@@ -239,7 +239,7 @@ func TestEngine_BuildToolDefs_StringSchema(t *testing.T) {
 	st := &stringSchemaTool{name: "custom", description: "custom tool", schemaStr: `{"type":"object"}`}
 	registry := tool.NewRegistry([]tool.Tool{st})
 
-	engine := New(nil, registry, 10, "")
+	engine := New(nil, registry, 10, "", nil)
 	defs := engine.buildToolDefs()
 
 	if len(defs) != 1 {
@@ -254,7 +254,7 @@ func TestEngine_BuildToolDefs_EmptyStringSchema(t *testing.T) {
 	st := &stringSchemaTool{name: "empty", description: "empty", schemaStr: ""}
 	registry := tool.NewRegistry([]tool.Tool{st})
 
-	engine := New(nil, registry, 10, "")
+	engine := New(nil, registry, 10, "", nil)
 	defs := engine.buildToolDefs()
 
 	if len(defs) != 1 {
@@ -270,9 +270,9 @@ type stringSchemaTool struct {
 	schemaStr   string
 }
 
-func (s *stringSchemaTool) Name() string              { return s.name }
-func (s *stringSchemaTool) Description() string       { return s.description }
-func (s *stringSchemaTool) Schema() any               { return s.schemaStr }
+func (s *stringSchemaTool) Name() string                     { return s.name }
+func (s *stringSchemaTool) Description() string              { return s.description }
+func (s *stringSchemaTool) Schema() any                      { return s.schemaStr }
 func (s *stringSchemaTool) Call(args string) (string, error) { return "ok", nil }
 
 // Test context cancellation inside the iteration loop (not before start).
@@ -304,7 +304,7 @@ func TestEngine_Run_ContextCancelDuringLoop(t *testing.T) {
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
 	client := llm.New(server.URL, "sk-test", "test-model", "")
-	engine := New(client, registry, 10, "")
+	engine := New(client, registry, 10, "", nil)
 
 	_, err := engine.Run(ctx, "task")
 	if err == nil {
@@ -335,7 +335,7 @@ func TestEngine_Run_ToolCallError(t *testing.T) {
 	failingTool := &errorTool{name: "failing", description: "always fails"}
 	registry := tool.NewRegistry([]tool.Tool{failingTool})
 	client := llm.New(server.URL, "sk-test", "test-model", "")
-	engine := New(client, registry, 10, "")
+	engine := New(client, registry, 10, "", nil)
 
 	// Tool error is fed back as a tool response; server only returns one
 	// response, so we hit max iterations.

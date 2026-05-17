@@ -100,9 +100,9 @@ func TestCallParamsMarshaling_ReasoningEffort(t *testing.T) {
 
 	for _, level := range tests {
 		body := CallParams{
-			Model:          "o1",
-			Messages:       []Message{{Role: "user", Content: "hello"}},
-			Stream:         false,
+			Model:           "o1",
+			Messages:        []Message{{Role: "user", Content: "hello"}},
+			Stream:          false,
 			ReasoningEffort: level,
 		}
 

@@ -201,8 +201,8 @@ func TestConfigSystemMessage(t *testing.T) {
 func TestAgent_Run(t *testing.T) {
 	// Agent.Run delegates to engine.Run. Test that it doesn't panic.
 	agent, err := New(Config{
-		APIKey:   "sk-test",
-		Model:    "deepseek-chat",
+		APIKey: "sk-test",
+		Model:  "deepseek-chat",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -306,9 +306,9 @@ type fakeKodeTool struct {
 	callError   error
 }
 
-func (f *fakeKodeTool) Name() string                    { return f.name }
-func (f *fakeKodeTool) Description() string             { return f.description }
-func (f *fakeKodeTool) Schema() any                     { return f.schema }
+func (f *fakeKodeTool) Name() string                     { return f.name }
+func (f *fakeKodeTool) Description() string              { return f.description }
+func (f *fakeKodeTool) Schema() any                      { return f.schema }
 func (f *fakeKodeTool) Call(args string) (string, error) { return f.callResult, f.callError }
 
 // Test that New() works with tools, covering the tool adapter loop (lines 109-112 in kode.go).

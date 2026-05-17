@@ -415,8 +415,8 @@ func TestGetVersion_ReturnsNonEmpty(t *testing.T) {
 // Test parseRunFlags with edge cases.
 func TestParseRunFlags_EdgeCases(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
+		name  string
+		args  []string
 		check func(*testing.T, runFlags)
 	}{
 		{
