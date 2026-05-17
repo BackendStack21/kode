@@ -208,7 +208,6 @@ func builtinTools() []kode.Tool {
 		&shellTool{},
 	}
 }
-
 // getVersion returns the version string. Resolution order:
 //   1. ldflags override (-X main.version=v0.2.1)
 //   2. VCS tag from debug.ReadBuildInfo (when built with go install)

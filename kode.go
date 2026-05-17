@@ -33,7 +33,7 @@ import (
 type Tool interface {
 	Name() string
 	Description() string
-	Schema() any  // JSON Schema for the tool's parameters
+	Schema() any // JSON Schema for the tool's parameters
 	Call(args string) (string, error)
 }
 

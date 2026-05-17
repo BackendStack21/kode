@@ -34,18 +34,18 @@ func New(baseURL, apiKey, model, thinking string) *Client {
 
 // Message represents a chat message.
 type Message struct {
-	Role       string     `json:"role"`                         // "system", "user", "assistant", "tool"
-	Content    string     `json:"content"`                      // text content
-	Name       string     `json:"name,omitempty"`               // tool name (for tool role)
-	ToolCallID string     `json:"tool_call_id,omitempty"`       // required for tool role
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`         // required for assistant role with tool calls
+	Role       string     `json:"role"`                   // "system", "user", "assistant", "tool"
+	Content    string     `json:"content"`                // text content
+	Name       string     `json:"name,omitempty"`         // tool name (for tool role)
+	ToolCallID string     `json:"tool_call_id,omitempty"` // required for tool role
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // required for assistant role with tool calls
 }
 
 // ToolCall represents a single tool invocation requested by the model.
 // Matches the OpenAI API format exactly.
 type ToolCall struct {
-	ID   string `json:"id"`
-	Type string `json:"type"` // always "function"
+	ID       string `json:"id"`
+	Type     string `json:"type"` // always "function"
 	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
