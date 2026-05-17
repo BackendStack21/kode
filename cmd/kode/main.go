@@ -29,7 +29,7 @@ func main() {
 	case "run":
 		runCmd()
 	case "version":
-		fmt.Println("kode v0.1.0")
+		fmt.Println("kode v0.2.0")
 	default:
 		fmt.Fprintf(os.Stderr, "kode: unknown command %q\n", os.Args[1])
 		printUsage()
