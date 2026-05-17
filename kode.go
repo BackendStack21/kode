@@ -66,16 +66,25 @@ type Config struct {
 
 	// SystemMessage is the system prompt injected at the start of every run.
 	SystemMessage string
+
+	// SandboxCleanup, if set, is called by Agent.Close() to destroy the
+	// Docker sandbox container. Set by the CLI when --sandbox is active.
+	SandboxCleanup func() error
 }
 
 // Agent is the agent loop runtime.
 type Agent struct {
-	config   Config
-	engine   *loop.Engine
-	registry *tool.Registry
+	config          Config
+	engine          *loop.Engine
+	registry        *tool.Registry
+	sandboxCleanup  func() error // destroys the sandbox container on Close()
 }
 
 // New creates a new Agent with the given configuration.
+//
+// If Config.SandboxCleanup is set, the cleanup function is called when
+// Close() is invoked. The caller is responsible for creating the sandbox
+// container and wiring up tool executables to use it before calling New().
 func New(cfg Config) (*Agent, error) {
 	if cfg.MaxIterations <= 0 {
 		cfg.MaxIterations = 90
@@ -107,15 +116,25 @@ func New(cfg Config) (*Agent, error) {
 	engine := loop.New(client, registry, cfg.MaxIterations, cfg.SystemMessage)
 
 	return &Agent{
-		config:   cfg,
-		engine:   engine,
-		registry: registry,
+		config:         cfg,
+		engine:         engine,
+		registry:       registry,
+		sandboxCleanup: cfg.SandboxCleanup,
 	}, nil
 }
 
 // Run executes the agent loop for the given task and returns the final answer.
 func (a *Agent) Run(ctx context.Context, task string) (string, error) {
 	return a.engine.Run(ctx, task)
+}
+
+// Close cleans up resources. If a sandbox container was created, it is
+// destroyed. Always call Close() when done with the agent.
+func (a *Agent) Close() error {
+	if a.sandboxCleanup != nil {
+		return a.sandboxCleanup()
+	}
+	return nil
 }
 
 // toolAdapter bridges kode.Tool to internal/tool.Tool.

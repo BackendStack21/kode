@@ -1,3 +1,4 @@
 bin/
+/kode
 *.test
 coverage.out

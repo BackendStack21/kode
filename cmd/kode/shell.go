@@ -9,7 +9,11 @@ import (
 )
 
 // shellTool lets the agent run shell commands.
-type shellTool struct{}
+// When containerName is set, commands execute inside that Docker container
+// via "docker exec". Otherwise they run on the host.
+type shellTool struct {
+	containerName string // empty = host, non-empty = docker exec into this container
+}
 
 func (t *shellTool) Name() string        { return "shell" }
 func (t *shellTool) Description() string { return "Run a shell command and return its output. Use for: reading files, listing directories, running tests, building code, git operations. The command runs in the current working directory." }
@@ -37,7 +41,13 @@ func (t *shellTool) Call(args string) (string, error) {
 		return "", fmt.Errorf("shell: empty command")
 	}
 
-	cmd := exec.Command("sh", "-c", input.Command)
+	var cmd *exec.Cmd
+	if t.containerName != "" {
+		cmd = exec.Command("docker", "exec", t.containerName, "sh", "-c", input.Command)
+	} else {
+		cmd = exec.Command("sh", "-c", input.Command)
+	}
+
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf

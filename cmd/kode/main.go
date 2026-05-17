@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strings"
 
@@ -96,20 +97,61 @@ done:
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	// --- sandbox setup ---
+	var sandboxCleanup func() error
+	tools := builtinTools()
+
+	if sandbox {
+		containerName := fmt.Sprintf("kode-%d", os.Getpid())
+		fmt.Fprintf(os.Stderr, "kode: starting sandbox container %s...\n", containerName)
+
+		wd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "kode: sandbox: getwd: %v\n", err)
+			os.Exit(1)
+		}
+
+		createCmd := exec.Command("docker", "run",
+			"--rm",                                  // destroy on exit
+			"--detach",                              // run in background
+			"--name", containerName,
+			"--cap-drop", "ALL",                     // no capabilities
+			"--security-opt", "no-new-privileges",   // no privilege escalation
+			"--network", "none",                     // no network
+			"--tmpfs", "/tmp:noexec",                // no executable temp files
+			"-v", wd+":/workspace:ro",               // working dir read-only
+			"alpine:latest",
+			"sleep", "infinity",
+		)
+		createCmd.Stderr = os.Stderr
+		if err := createCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "kode: sandbox: failed to create container: %v\n", err)
+			os.Exit(1)
+		}
+
+		sandboxCleanup = func() error {
+			fmt.Fprintf(os.Stderr, "kode: destroying sandbox container %s...\n", containerName)
+			return exec.Command("docker", "rm", "-f", containerName).Run()
+		}
+
+		// Wire the shell tool to execute commands inside the sandbox.
+		tools[0].(*shellTool).containerName = containerName
+	}
+
 	agent, err := kode.New(kode.Config{
-		Model:         model,
-		BaseURL:       baseURL,
-		MaxIterations: maxIter,
-		SystemMessage: system,
-		Thinking:      thinking,
-		Tools:         builtinTools(),
+		Model:          model,
+		BaseURL:        baseURL,
+		MaxIterations:  maxIter,
+		SystemMessage:  system,
+		Thinking:       thinking,
+		Tools:          tools,
+		SandboxCleanup: sandboxCleanup,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "kode: %v\n", err)
 		os.Exit(1)
 	}
-
-	_ = sandbox // TODO
+	defer agent.Close()
 
 	modelName := model
 	if modelName == "" {
