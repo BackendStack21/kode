@@ -41,12 +41,7 @@ func (t *shellTool) Call(args string) (string, error) {
 		return "", fmt.Errorf("shell: empty command")
 	}
 
-	var cmd *exec.Cmd
-	if t.containerName != "" {
-		cmd = exec.Command("docker", "exec", "-w", "/workspace", t.containerName, "sh", "-c", input.Command)
-	} else {
-		cmd = exec.Command("sh", "-c", input.Command)
-	}
+	cmd := t.buildCmd(input.Command)
 
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -67,4 +62,14 @@ func (t *shellTool) Call(args string) (string, error) {
 		output = "(no output)"
 	}
 	return output, nil
+}
+
+// buildCmd returns the exec.Cmd for the given shell command.
+// Exposed for testing. When containerName is set, uses docker exec
+// with -w /workspace to set the working directory inside the container.
+func (t *shellTool) buildCmd(command string) *exec.Cmd {
+	if t.containerName != "" {
+		return exec.Command("docker", "exec", "-w", "/workspace", t.containerName, "sh", "-c", command)
+	}
+	return exec.Command("sh", "-c", command)
 }

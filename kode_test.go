@@ -1,6 +1,8 @@
 package kode
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"testing"
 )
@@ -193,5 +195,144 @@ func TestConfigSystemMessage(t *testing.T) {
 	}
 	if agent.config.SystemMessage != "You are a helpful assistant." {
 		t.Errorf("SystemMessage = %q, want %q", agent.config.SystemMessage, "You are a helpful assistant.")
+	}
+}
+
+func TestAgent_Run(t *testing.T) {
+	// Agent.Run delegates to engine.Run. Test that it doesn't panic.
+	agent, err := New(Config{
+		APIKey:   "sk-test",
+		Model:    "deepseek-chat",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Run with a cancelled context — should return error quickly
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = agent.Run(ctx, "test task")
+	if err == nil {
+		t.Fatal("expected error from cancelled context")
+	}
+}
+
+func TestAgent_Close_NoSandbox(t *testing.T) {
+	agent, err := New(Config{APIKey: "sk-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Close with no sandbox cleanup should return nil
+	if err := agent.Close(); err != nil {
+		t.Errorf("Close() with no sandbox should return nil, got: %v", err)
+	}
+}
+
+func TestAgent_Close_WithSandbox(t *testing.T) {
+	cleanupCalled := false
+	cleanup := func() error {
+		cleanupCalled = true
+		return nil
+	}
+
+	agent, err := New(Config{
+		APIKey:         "sk-test",
+		SandboxCleanup: cleanup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := agent.Close(); err != nil {
+		t.Errorf("Close() error: %v", err)
+	}
+	if !cleanupCalled {
+		t.Error("sandbox cleanup was not called")
+	}
+}
+
+func TestAgent_Close_WithSandboxError(t *testing.T) {
+	cleanup := func() error {
+		return fmt.Errorf("cleanup failed")
+	}
+
+	agent, err := New(Config{
+		APIKey:         "sk-test",
+		SandboxCleanup: cleanup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = agent.Close()
+	if err == nil {
+		t.Fatal("expected error from cleanup")
+	}
+}
+
+func TestToolAdapter(t *testing.T) {
+	// Create a fake tool
+	fake := &fakeKodeTool{
+		name:        "test",
+		description: "a test tool",
+		schema:      map[string]any{"type": "object"},
+		callResult:  "result",
+	}
+
+	adapter := &toolAdapter{t: fake}
+
+	if adapter.Name() != "test" {
+		t.Errorf("Name() = %q, want %q", adapter.Name(), "test")
+	}
+	if adapter.Description() != "a test tool" {
+		t.Errorf("Description() = %q, want %q", adapter.Description(), "a test tool")
+	}
+	if adapter.Schema() == nil {
+		t.Error("Schema() returned nil")
+	}
+
+	result, err := adapter.Call(`{"arg": "value"}`)
+	if err != nil {
+		t.Fatalf("Call() error: %v", err)
+	}
+	if result != "result" {
+		t.Errorf("Call() = %q, want %q", result, "result")
+	}
+}
+
+// fakeKodeTool implements kode.Tool for testing.
+type fakeKodeTool struct {
+	name        string
+	description string
+	schema      any
+	callResult  string
+	callError   error
+}
+
+func (f *fakeKodeTool) Name() string                    { return f.name }
+func (f *fakeKodeTool) Description() string             { return f.description }
+func (f *fakeKodeTool) Schema() any                     { return f.schema }
+func (f *fakeKodeTool) Call(args string) (string, error) { return f.callResult, f.callError }
+
+// Test that New() works with tools, covering the tool adapter loop (lines 109-112 in kode.go).
+func TestNew_WithTools(t *testing.T) {
+	fake := &fakeKodeTool{
+		name:        "test_tool",
+		description: "a test tool",
+		schema:      map[string]any{"type": "object"},
+		callResult:  "ok",
+	}
+	cfg := Config{
+		APIKey: "sk-test",
+		Tools:  []Tool{fake},
+	}
+	agent, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() with tools error: %v", err)
+	}
+	// Verify the tool was registered in the internal registry
+	tools := agent.registry.Tools()
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 tool in registry, got %d", len(tools))
+	}
+	if tools[0].Name() != "test_tool" {
+		t.Errorf("tool name = %q, want %q", tools[0].Name(), "test_tool")
 	}
 }

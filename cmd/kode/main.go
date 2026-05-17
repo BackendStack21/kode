@@ -6,10 +6,15 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 
 	"github.com/BackendStack21/kode"
 )
+
+// version is set at build time via ldflags: -ldflags "-X main.version=v0.2.1"
+// Falls back to VCS tag from debug.ReadBuildInfo, then to "dev".
+var version string
 
 const defaultSystem = `You are kode, an autonomous AI coding agent. You solve tasks by reasoning step by step, then executing tools.
 
@@ -27,14 +32,68 @@ func main() {
 
 	switch os.Args[1] {
 	case "run":
-		runCmd()
+		if err := run(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "kode: %v\n", err)
+			os.Exit(1)
+		}
 	case "version":
-		fmt.Println("kode v0.2.0")
+		fmt.Println("kode", getVersion())
 	default:
 		fmt.Fprintf(os.Stderr, "kode: unknown command %q\n", os.Args[1])
 		printUsage()
 		os.Exit(1)
 	}
+}
+
+// runFlags holds the parsed CLI flags for `kode run`.
+type runFlags struct {
+	Model    string
+	BaseURL  string
+	System   string
+	Thinking string
+	MaxIter  int
+	Sandbox  bool
+	Task     string
+}
+
+// parseRunFlags parses `kode run` arguments and returns the parsed flags.
+// Exported for testing.
+func parseRunFlags(args []string) (runFlags, error) {
+	var f runFlags
+	f.MaxIter = 90
+
+	i := 0
+	for i < len(args)-1 {
+		switch args[i] {
+		case "--model":
+			f.Model = args[i+1]
+			i += 2
+		case "--base-url":
+			f.BaseURL = args[i+1]
+			i += 2
+		case "--max-iter":
+			fmt.Sscanf(args[i+1], "%d", &f.MaxIter)
+			i += 2
+		case "--system":
+			f.System = args[i+1]
+			i += 2
+		case "--thinking":
+			f.Thinking = args[i+1]
+			i += 2
+		case "--sandbox":
+			f.Sandbox = true
+			i++
+		default:
+			// Not a flag — treat remaining as the task
+			goto done
+		}
+	}
+done:
+	f.Task = strings.Join(args[i:], " ")
+	if f.Task == "" {
+		return f, fmt.Errorf("no task provided")
+	}
+	return f, nil
 }
 
 func printUsage() {
@@ -51,124 +110,134 @@ Flags:
   --system <prompt>    System prompt override`)
 }
 
-func runCmd() {
-	args := os.Args[2:]
-	var model, baseURL, system, thinking string
-	maxIter := 90
-	sandbox := false
-
-	i := 0
-	for i < len(args)-1 {
-		switch args[i] {
-		case "--model":
-			model = args[i+1]
-			i += 2
-		case "--base-url":
-			baseURL = args[i+1]
-			i += 2
-		case "--max-iter":
-			fmt.Sscanf(args[i+1], "%d", &maxIter)
-			i += 2
-		case "--system":
-			system = args[i+1]
-			i += 2
-		case "--thinking":
-			thinking = args[i+1]
-			i += 2
-		case "--sandbox":
-			sandbox = true
-			i++
-		default:
-			// Not a flag — treat remaining as the task
-			goto done
-		}
-	}
-done:
-	task := strings.Join(args[i:], " ")
-	if task == "" {
-		fmt.Fprintln(os.Stderr, "kode: no task provided")
-		os.Exit(1)
+// run executes the `kode run` command and returns an error on failure.
+// The caller is responsible for printing the error and calling os.Exit.
+func run(args []string) error {
+	f, err := parseRunFlags(args)
+	if err != nil {
+		return err
 	}
 
-	if system == "" {
-		system = defaultSystem
+	if f.System == "" {
+		f.System = defaultSystem
 	}
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	// --- sandbox setup ---
+	// Sandbox setup
 	var sandboxCleanup func() error
 	tools := builtinTools()
 
-	if sandbox {
-		containerName := fmt.Sprintf("kode-%d", os.Getpid())
-		fmt.Fprintf(os.Stderr, "kode: starting sandbox container %s...\n", containerName)
-
-		wd, err := os.Getwd()
+	if f.Sandbox {
+		cleanup, err := setupSandbox(tools)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "kode: sandbox: getwd: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("sandbox: %w", err)
 		}
-
-		createCmd := exec.Command("docker", "run",
-			"--rm",                                  // destroy on exit
-			"--detach",                              // run in background
-			"--name", containerName,
-			"--cap-drop", "ALL",                     // no capabilities
-			"--security-opt", "no-new-privileges",   // no privilege escalation
-			"--network", "none",                     // no network
-			"--tmpfs", "/tmp:noexec",                // no executable temp files
-			"-v", wd+":/workspace",                    // working dir (read-write inside sandbox)
-			"alpine:latest",
-			"sleep", "infinity",
-		)
-		createCmd.Stderr = os.Stderr
-		if err := createCmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "kode: sandbox: failed to create container: %v\n", err)
-			os.Exit(1)
-		}
-
-		sandboxCleanup = func() error {
-			fmt.Fprintf(os.Stderr, "kode: destroying sandbox container %s...\n", containerName)
-			return exec.Command("docker", "rm", "-f", containerName).Run()
-		}
-
-		// Wire the shell tool to execute commands inside the sandbox.
-		tools[0].(*shellTool).containerName = containerName
+		sandboxCleanup = cleanup
 	}
 
 	agent, err := kode.New(kode.Config{
-		Model:          model,
-		BaseURL:        baseURL,
-		MaxIterations:  maxIter,
-		SystemMessage:  system,
-		Thinking:       thinking,
+		Model:          f.Model,
+		BaseURL:        f.BaseURL,
+		MaxIterations:  f.MaxIter,
+		SystemMessage:  f.System,
+		Thinking:       f.Thinking,
 		Tools:          tools,
 		SandboxCleanup: sandboxCleanup,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "kode: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	defer agent.Close()
 
-	modelName := model
+	modelName := f.Model
 	if modelName == "" {
 		modelName = "deepseek-chat"
 	}
 	fmt.Fprintf(os.Stderr, "kode: %s thinking...\n", modelName)
 
-	result, err := agent.Run(ctx, task)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	result, err := agent.Run(ctx, f.Task)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "kode: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	fmt.Println(result)
+	return nil
+}
+
+// setupSandbox creates a Docker container and wires the shell tool to use it.
+// Returns a cleanup function that destroys the container.
+func setupSandbox(tools []kode.Tool) (func() error, error) {
+	containerName := fmt.Sprintf("kode-%d", os.Getpid())
+	fmt.Fprintf(os.Stderr, "kode: starting sandbox container %s...\n", containerName)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("getwd: %w", err)
+	}
+
+	createCmd := exec.Command("docker", "run",
+		"--rm",                                  // destroy on exit
+		"--detach",                              // run in background
+		"--name", containerName,
+		"--cap-drop", "ALL",                     // no capabilities
+		"--security-opt", "no-new-privileges",   // no privilege escalation
+		"--network", "none",                     // no network
+		"--tmpfs", "/tmp:noexec",                // no executable temp files
+		"-v", wd+":/workspace",                  // working dir (read-write inside sandbox)
+		"alpine:latest",
+		"sleep", "infinity",
+	)
+	createCmd.Stderr = os.Stderr
+	if err := createCmd.Run(); err != nil {
+		return nil, fmt.Errorf("failed to create container: %w", err)
+	}
+
+	cleanup := func() error {
+		fmt.Fprintf(os.Stderr, "kode: destroying sandbox container %s...\n", containerName)
+		return exec.Command("docker", "rm", "-f", containerName).Run()
+	}
+
+	// Wire the shell tool to execute commands inside the sandbox.
+	tools[0].(*shellTool).containerName = containerName
+	return cleanup, nil
 }
 
 func builtinTools() []kode.Tool {
 	return []kode.Tool{
 		&shellTool{},
 	}
+}
+
+// getVersion returns the version string. Resolution order:
+//   1. ldflags override (-X main.version=v0.2.1)
+//   2. VCS tag from debug.ReadBuildInfo (when built with go install)
+//   3. VCS revision (short commit hash)
+//   4. "dev" (local go build without VCS info)
+func getVersion() string {
+	if version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+	var revision string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+			if len(revision) > 7 {
+				revision = revision[:7]
+			}
+		case "vcs.tag":
+			if s.Value != "" {
+				return s.Value
+			}
+		}
+	}
+	if revision != "" {
+		return revision
+	}
+	return "dev"
 }

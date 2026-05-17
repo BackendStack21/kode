@@ -1,7 +1,10 @@
 package llm
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -323,5 +326,183 @@ func TestClient_ThinkingSwitch(t *testing.T) {
 				t.Errorf("reasoning_effort present = %v, want %v", hasReasoning, tt.expectReason)
 			}
 		})
+	}
+}
+
+func TestClient_New(t *testing.T) {
+	c := New("https://api.example.com/v1", "sk-key", "gpt-4", "enabled")
+	if c.BaseURL != "https://api.example.com/v1" {
+		t.Errorf("BaseURL = %q", c.BaseURL)
+	}
+	if c.APIKey != "sk-key" {
+		t.Errorf("APIKey = %q", c.APIKey)
+	}
+	if c.Model != "gpt-4" {
+		t.Errorf("Model = %q", c.Model)
+	}
+	if c.Thinking != "enabled" {
+		t.Errorf("Thinking = %q", c.Thinking)
+	}
+}
+
+func TestClient_New_TrailingSlash(t *testing.T) {
+	c := New("https://api.example.com/v1/", "sk-key", "model", "")
+	if c.BaseURL != "https://api.example.com/v1" {
+		t.Errorf("BaseURL should trim trailing slash, got %q", c.BaseURL)
+	}
+}
+
+func TestClient_Call_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify request method and path
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("expected /chat/completions, got %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"hello"}}]}`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-test", "test-model", "")
+	result, err := c.Call(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("Call() error: %v", err)
+	}
+	if result.Content != "hello" {
+		t.Errorf("Content = %q, want %q", result.Content, "hello")
+	}
+}
+
+func TestClient_Call_HTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"error":"internal"}`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-test", "test-model", "")
+	_, err := c.Call(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err == nil {
+		t.Fatal("expected error for 500 response")
+	}
+}
+
+func TestClient_Call_WithThinking(t *testing.T) {
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"thinking response"}}]}`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-test", "deepseek-chat", "enabled")
+	result, err := c.Call(context.Background(), []Message{{Role: "user", Content: "think"}}, nil)
+	if err != nil {
+		t.Fatalf("Call() error: %v", err)
+	}
+	if result.Content != "thinking response" {
+		t.Errorf("Content = %q", result.Content)
+	}
+	// Verify thinking was sent in the request
+	thinking, ok := receivedBody["thinking"]
+	if !ok {
+		t.Error("thinking field not sent in request")
+	}
+	thinkingMap, ok := thinking.(map[string]any)
+	if !ok || thinkingMap["type"] != "enabled" {
+		t.Errorf("thinking = %v, want {type: enabled}", thinking)
+	}
+}
+
+func TestClient_Call_WithReasoningEffort(t *testing.T) {
+	var receivedBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&receivedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"reasoned"}}]}`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-test", "o1", "high")
+	result, err := c.Call(context.Background(), []Message{{Role: "user", Content: "reason"}}, nil)
+	if err != nil {
+		t.Fatalf("Call() error: %v", err)
+	}
+	if result.Content != "reasoned" {
+		t.Errorf("Content = %q", result.Content)
+	}
+	effort, ok := receivedBody["reasoning_effort"]
+	if !ok || effort != "high" {
+		t.Errorf("reasoning_effort = %v, want 'high'", effort)
+	}
+}
+
+func TestClient_Call_InvalidEndpoint(t *testing.T) {
+	c := New("http://127.0.0.1:1", "sk-test", "model", "")
+	_, err := c.Call(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err == nil {
+		t.Fatal("expected connection error")
+	}
+}
+
+// Test Call() with tools passed in the request body.
+func TestClient_Call_WithTools(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"used tool"}}]}`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-test", "test-model", "")
+	tools := []ToolDef{
+		{
+			Type: "function",
+			Function: FunctionDef{
+				Name:        "shell",
+				Description: "run a command",
+				Parameters:  map[string]any{"type": "object"},
+			},
+		},
+	}
+	result, err := c.Call(context.Background(), []Message{{Role: "user", Content: "hi"}}, tools)
+	if err != nil {
+		t.Fatalf("Call() with tools error: %v", err)
+	}
+	if result.Content != "used tool" {
+		t.Errorf("Content = %q, want %q", result.Content, "used tool")
+	}
+}
+
+// Test Call() with a 401 Unauthorized response.
+func TestClient_Call_Unauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"unauthorized"}`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-bad", "test-model", "")
+	_, err := c.Call(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+}
+
+// Test Call() with invalid JSON in the response body.
+func TestClient_Call_InvalidJSONResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`not json`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-test", "test-model", "")
+	_, err := c.Call(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON response")
 	}
 }

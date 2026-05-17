@@ -233,3 +233,125 @@ func TestEngine_BuildToolDefs(t *testing.T) {
 		t.Errorf("missing expected tool names: got %v", names)
 	}
 }
+
+func TestEngine_BuildToolDefs_StringSchema(t *testing.T) {
+	// Test the string schema path in buildToolDefs
+	st := &stringSchemaTool{name: "custom", description: "custom tool", schemaStr: `{"type":"object"}`}
+	registry := tool.NewRegistry([]tool.Tool{st})
+
+	engine := New(nil, registry, 10, "")
+	defs := engine.buildToolDefs()
+
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 tool def, got %d", len(defs))
+	}
+	if defs[0].Function.Name != "custom" {
+		t.Errorf("name = %q, want 'custom'", defs[0].Function.Name)
+	}
+}
+
+func TestEngine_BuildToolDefs_EmptyStringSchema(t *testing.T) {
+	st := &stringSchemaTool{name: "empty", description: "empty", schemaStr: ""}
+	registry := tool.NewRegistry([]tool.Tool{st})
+
+	engine := New(nil, registry, 10, "")
+	defs := engine.buildToolDefs()
+
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 tool def, got %d", len(defs))
+	}
+	// Empty string schema should produce empty properties object
+}
+
+// stringSchemaTool returns Schema() as a string instead of map[string]any
+type stringSchemaTool struct {
+	name        string
+	description string
+	schemaStr   string
+}
+
+func (s *stringSchemaTool) Name() string              { return s.name }
+func (s *stringSchemaTool) Description() string       { return s.description }
+func (s *stringSchemaTool) Schema() any               { return s.schemaStr }
+func (s *stringSchemaTool) Call(args string) (string, error) { return "ok", nil }
+
+// Test context cancellation inside the iteration loop (not before start).
+func TestEngine_Run_ContextCancelDuringLoop(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Cancel context during the first LLM call. The loop processes
+		// the tool call synchronously, then on the next iteration
+		// ctx.Done() fires.
+		cancel()
+		fmt.Fprint(w, `{
+			"choices":[{
+				"message":{
+					"content":"",
+					"tool_calls":[{
+						"id":"call_1",
+						"function":{
+							"name":"echo",
+							"arguments":"{}"
+						}
+					}]
+				}
+			}]
+		}`)
+	}))
+	defer server.Close()
+
+	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
+	registry := tool.NewRegistry([]tool.Tool{echoTool})
+	client := llm.New(server.URL, "sk-test", "test-model", "")
+	engine := New(client, registry, 10, "")
+
+	_, err := engine.Run(ctx, "task")
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+}
+
+// Test the path where tool.Call() returns an error (lines 74-75 in loop.go).
+func TestEngine_Run_ToolCallError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{
+			"choices":[{
+				"message":{
+					"content":"",
+					"tool_calls":[{
+						"id":"call_1",
+						"function":{
+							"name":"failing",
+							"arguments":"{}"
+						}
+					}]
+				}
+			}]
+		}`)
+	}))
+	defer server.Close()
+
+	failingTool := &errorTool{name: "failing", description: "always fails"}
+	registry := tool.NewRegistry([]tool.Tool{failingTool})
+	client := llm.New(server.URL, "sk-test", "test-model", "")
+	engine := New(client, registry, 10, "")
+
+	// Tool error is fed back as a tool response; server only returns one
+	// response, so we hit max iterations.
+	_, err := engine.Run(context.Background(), "use failing tool")
+	if err == nil {
+		t.Fatal("expected error (max iterations)")
+	}
+}
+
+// errorTool returns an error from Call().
+type errorTool struct {
+	name        string
+	description string
+}
+
+func (e *errorTool) Name() string                     { return e.name }
+func (e *errorTool) Description() string              { return e.description }
+func (e *errorTool) Schema() any                      { return map[string]any{"type": "object"} }
+func (e *errorTool) Call(args string) (string, error) { return "", fmt.Errorf("tool error") }
