@@ -22,10 +22,42 @@ kode run "Fix the OOM bug in default-hooks.js"
 | **Sandbox-ready** | `kode run --sandbox` → isolated Docker container, destroyed on exit |
 | **Single binary** | `go build` → one file. Drop it anywhere. |
 
+## Install
+
+### go install (recommended)
+
+```bash
+go install github.com/BackendStack21/kode/cmd/kode@latest
+```
+
+Zero dependencies — the binary compiles in seconds.
+
+### From source
+
+```bash
+git clone https://github.com/BackendStack21/kode.git
+cd kode
+go build -o kode ./cmd/kode
+```
+
+### Binary download
+
+```bash
+# Linux amd64
+curl -fsSL https://github.com/BackendStack21/kode/releases/latest/download/kode-linux-amd64 -o kode
+chmod +x kode
+sudo mv kode /usr/local/bin/
+
+# macOS arm64 (Apple Silicon)
+curl -fsSL https://github.com/BackendStack21/kode/releases/latest/download/kode-darwin-arm64 -o kode
+chmod +x kode
+sudo mv kode /usr/local/bin/
+```
+
 ## Quick Start
 
 ```bash
-# Set your API key
+# Set your API key (Deepseek, OpenAI, or any compatible provider)
 export DEEPSEEK_API_KEY=sk-...
 
 # Run a task
