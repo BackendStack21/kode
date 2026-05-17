@@ -1,0 +1,59 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          go build -ldflags "-s -w -X main.version=${TAG}" -o kode-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/kode
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kode-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: kode-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: kode-*
+          merge-multiple: true
+
+      - name: checksums
+        run: sha256sum kode-* > checksums.txt
+
+      - name: release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            kode-linux-amd64
+            kode-linux-arm64
+            kode-darwin-amd64
+            kode-darwin-arm64
+            checksums.txt
+          generate_release_notes: true
