@@ -1,4 +1,4 @@
-// Package render provides colored terminal rendering for the kode agent loop.
+// Package render provides emoji-driven terminal rendering for the kode agent loop.
 //
 // It produces structured output for each phase of the ReAct cycle:
 // thinking, tool calls, tool results, and the final answer. When a Renderer
@@ -8,8 +8,10 @@
 // # Design
 //
 //   - Zero dependencies. Uses ANSI escape codes directly.
+//   - Emoji icons as visual anchors (🧠 🔧 ✅ ❌).
 //   - Color detection: respects NO_COLOR env var and tty detection.
-//   - Truncation: tool output is truncated to prevent flooding the terminal.
+//   - Truncation: tool output is collapsed to one line to keep the
+//     terminal scannable during multi-step tool chains.
 //   - Maintainable: each rendering method is self-contained; adding a new
 //     event type requires one constant + one method.
 package render
@@ -63,8 +65,6 @@ func (e Event) String() string {
 
 // ── ANSI Styles ───────────────────────────────────────────────────────
 
-// Style constants. Use the method form (e.g., r.dim(...)) so we can
-// skip codes when color is disabled.
 const (
 	reset   = "\033[0m"
 	bold    = "\033[1m"
@@ -81,10 +81,6 @@ const (
 
 // ── Renderer ──────────────────────────────────────────────────────────
 
-// MaxToolOutput is the maximum number of characters to print from tool results.
-// Output longer than this is truncated with an ellipsis.
-const MaxToolOutput = 2000
-
 // Renderer writes formatted agent loop output to an io.Writer.
 // The zero value is usable but won't produce any output — call New()
 // to create a properly initialized Renderer.
@@ -92,8 +88,6 @@ type Renderer struct {
 	w     io.Writer
 	color bool
 	model string
-	iter  int // current iteration number, set by Iteration()
-	maxN  int // max iterations, set by Iteration()
 }
 
 // New creates a Renderer that writes to w. If color is false, ANSI escape
@@ -121,44 +115,55 @@ func (r *Renderer) disable() bool {
 
 // ── Rendering methods ─────────────────────────────────────────────────
 
-// Iteration prints the cycle header: "━━ iter 3/90 · deepseek-chat ━━".
+// Start prints the session header with task preview.
+func (r *Renderer) Start(task string) {
+	if r.disable() {
+		return
+	}
+	preview := r.truncate(strings.ReplaceAll(task, "\n", " "), 80)
+	prefix := "⚡ kode"
+	if r.model != "" {
+		prefix += " · " + r.model
+	}
+	fmt.Fprintln(r.w, r.style(bold+blue, prefix))
+	fmt.Fprintln(r.w, r.style(gray, "   "+preview))
+	fmt.Fprintln(r.w)
+}
+
+// Iteration prints the cycle header.
 func (r *Renderer) Iteration(n, maxN int) {
 	if r.disable() {
 		return
 	}
-	r.iter, r.maxN = n, maxN
-	// Build prefix: iter N/M · model
 	var prefix string
 	if r.model != "" {
-		prefix = fmt.Sprintf("iter %d/%d · %s", n, maxN, r.model)
+		prefix = fmt.Sprintf("Iter %d/%d · %s", n, maxN, r.model)
 	} else {
-		prefix = fmt.Sprintf("iter %d/%d", n, maxN)
+		prefix = fmt.Sprintf("Iter %d/%d", n, maxN)
 	}
-
-	// Horizontal rule framing
-	bar := strings.Repeat("━", 4)
-	line := fmt.Sprintf("%s %s %s", bar, prefix, bar)
+	// Double-line rule framing
+	rule := strings.Repeat("═", 3)
+	line := fmt.Sprintf("%s %s %s", rule, prefix, rule)
 	fmt.Fprintln(r.w)
 	fmt.Fprintln(r.w, r.style(bold+blue, line))
 }
 
-// Thinking prints the model's reasoning text in a dimmed, italic style.
-// This is the "thinking aloud" before the model decides on tool calls.
+// Thinking prints the model's reasoning text with a brain emoji.
 func (r *Renderer) Thinking(text string) {
 	if r.disable() || text == "" {
 		return
 	}
-	r.label("thinking", dim+italic, text)
+	fmt.Fprintln(r.w, r.style(dim+italic, "🧠 "+text))
 }
 
-// ToolCall prints a tool invocation with name and arguments.
-// Arguments are JSON — we pretty-print the name and show a compact arg summary.
+// ToolCall prints a tool invocation with wrench emoji, name, and compact args.
 func (r *Renderer) ToolCall(name, args string) {
 	if r.disable() {
 		return
 	}
-	label := r.style(cyan+bold, "⚙ "+name)
-	fmt.Fprintf(r.w, "%s %s\n", label, r.style(gray, r.truncate(args, 120)))
+	header := r.style(cyan+bold, "🔧 "+name)
+	argStr := r.style(gray, "─── "+r.truncate(args, 100))
+	fmt.Fprintf(r.w, "%s %s\n", header, argStr)
 }
 
 // ToolResult prints a one-line summary of the tool output in gray.
@@ -177,39 +182,25 @@ func (r *Renderer) ToolResult(output string) {
 	fmt.Fprintf(r.w, "%s\n", r.style(gray, "   "+summary))
 }
 
-// FinalAnswer prints the model's concluding response.
+// FinalAnswer prints the model's concluding response with a checkmark emoji.
 func (r *Renderer) FinalAnswer(text string) {
 	if r.disable() || text == "" {
 		return
 	}
 	fmt.Fprintln(r.w)
-	r.label("answer", bold, text)
+	fmt.Fprintln(r.w, r.style(bold+green, "✅ "+text))
 	fmt.Fprintln(r.w)
 }
 
-// Error prints a non-fatal loop error.
+// Error prints a non-fatal loop error with a cross emoji.
 func (r *Renderer) Error(err error) {
 	if r.disable() || err == nil {
 		return
 	}
-	msg := r.style(red, "error: "+err.Error())
-	fmt.Fprintln(r.w, msg)
+	fmt.Fprintln(r.w, r.style(red, "❌ "+err.Error()))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
-
-// label prints a labeled block: "─label──" followed by indented text.
-func (r *Renderer) label(name, style, text string) {
-	header := r.style(style, "── "+name+" ──")
-	fmt.Fprintln(r.w, header)
-	// Indent each line of text
-	for _, line := range strings.Split(text, "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		fmt.Fprintln(r.w, " "+r.truncate(line, MaxToolOutput))
-	}
-}
 
 // style wraps text in ANSI codes. Returns plain text when color is off.
 func (r *Renderer) style(code, text string) string {

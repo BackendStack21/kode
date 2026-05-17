@@ -166,6 +166,7 @@ func run(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	rend.Start(f.Task)
 	result, err := agent.Run(ctx, f.Task)
 	if err != nil {
 		return err
