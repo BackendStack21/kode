@@ -227,9 +227,15 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 				e.renderer.ToolResult(output)
 			}
 
+			// Wrap tool output in clear delimiters so the model treats
+			// it as DATA, not as instructions. Even if the output
+			// contains "ignore previous instructions", the delimiter
+			// makes it visually and semantically distinct.
+			delimited := fmt.Sprintf("─── TOOL RESULT (%s) ───\n%s\n─── END TOOL RESULT ───", tc.Function.Name, output)
+
 			messages = append(messages, llm.Message{
 				Role:       "tool",
-				Content:    output,
+				Content:    delimited,
 				Name:       tc.Function.Name,
 				ToolCallID: tc.ID,
 			})
