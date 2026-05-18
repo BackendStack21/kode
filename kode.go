@@ -80,6 +80,9 @@ type Config struct {
 
 	// SandboxCleanup, if set, is called by Agent.Close() to destroy the
 	// Docker sandbox container. Set by the CLI when --sandbox is active.
+	// Programmatic API users can set this to their own cleanup logic
+	// (e.g., remove a container, delete a VM, tear down a network).
+	// When nil, Close() is a no-op.
 	SandboxCleanup func() error
 
 	// Renderer, if set, produces colored terminal output for each phase

@@ -23,6 +23,13 @@ import (
 // CLIFlags holds values parsed from the CLI. Zero/nil values mean the
 // flag was not explicitly passed — the config loader will look at lower
 // priority layers for these fields.
+//
+// Fields prefixed with Sandbox are sandbox-specific overrides. They follow
+// the same merge chain: global file → project file → KODE_* env → CLI.
+// Fields typed as *bool distinguish "explicitly set to false" from "not set",
+// which matters when the config file says "sandbox_readonly: false" (user
+// explicitly wants writable) vs the field being absent (inherit from lower
+// layer or default).
 type CLIFlags struct {
 	Model    string
 	BaseURL  string
@@ -59,7 +66,12 @@ type FileConfig struct {
 
 	System string `json:"system,omitempty"`
 
-	// Sandbox-specific
+	// Sandbox-specific fields.
+	// These follow the standard priority chain and support ${VAR} substitution
+	// in all string values. sandbox_env and sandbox_volumes are file-only
+	// (too complex for flat env vars or CLI flags; use project config files).
+	//
+	// For field-level docs, see SANDBOXING.md or the ResolvedConfig equivalents.
 	SandboxImage    string            `json:"sandbox_image,omitempty"`
 	SandboxNetwork  string            `json:"sandbox_network,omitempty"`
 	SandboxReadonly *bool             `json:"sandbox_readonly,omitempty"`
@@ -83,15 +95,46 @@ type ResolvedConfig struct {
 	NoAgents     bool
 	System       string
 
-	// Sandbox-specific
-	SandboxImage    string
-	SandboxNetwork  string
+	// SandboxImage is the Docker image for the sandbox container.
+	// Default: "alpine:latest" (applied at call site, not here —
+	// set to "alpine:latest" only if Dockerfile.kode doesn't exist).
+	// Config: sandbox_image, KODE_SANDBOX_IMAGE, --sandbox-image.
+	SandboxImage string
+
+	// SandboxNetwork is the Docker network mode.
+	// Default: "bridge" (internet access by default).
+	// Config: sandbox_network, KODE_SANDBOX_NETWORK, --sandbox-network.
+	SandboxNetwork string
+
+	// SandboxReadonly, when true, mounts the working directory read-only
+	// in the container. The agent can read /workspace but cannot write to it.
+	// Config: sandbox_readonly, KODE_SANDBOX_READONLY, --sandbox-readonly.
 	SandboxReadonly bool
-	SandboxMemory   string
-	SandboxCPUs     string
-	SandboxUser     string
-	SandboxEnv      map[string]string
-	SandboxVolumes  []string
+
+	// SandboxMemory is the container memory limit (e.g. "512m", "2g").
+	// Empty string means no limit.
+	// Config: sandbox_memory, KODE_SANDBOX_MEMORY, --sandbox-memory.
+	SandboxMemory string
+
+	// SandboxCPUs is the container CPU limit (e.g. "0.5", "2", "4").
+	// Empty string means no limit.
+	// Config: sandbox_cpus, KODE_SANDBOX_CPUS, --sandbox-cpus.
+	SandboxCPUs string
+
+	// SandboxUser sets the container user (e.g. "1000:1000" or "node").
+	// Empty string means root (default Docker behavior).
+	// Config: sandbox_user, KODE_SANDBOX_USER, --sandbox-user.
+	SandboxUser string
+
+	// SandboxEnv holds extra environment variables injected into the
+	// container. File-only — no env var or CLI mapping.
+	// Config: sandbox_env.
+	SandboxEnv map[string]string
+
+	// SandboxVolumes holds extra volume mounts in "host:container" format.
+	// File-only — no env var or CLI mapping.
+	// Config: sandbox_volumes.
+	SandboxVolumes []string
 }
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -349,7 +392,9 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 	return resolved
 }
 
-// ifZero returns the default value if s is empty, otherwise s.
+// ifZero returns the default value if s is empty, otherwise returns s.
+// Used to apply a field-level default when the user hasn't provided any
+// value through any config layer.
 func ifZero(s, def string) string {
 	if s == "" {
 		return def
