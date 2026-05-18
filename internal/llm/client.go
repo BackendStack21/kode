@@ -87,8 +87,10 @@ type ThinkingConfig struct {
 
 // CallResult is the parsed response from /chat/completions.
 type CallResult struct {
-	Content   string     // assistant text
-	ToolCalls []ToolCall // tool calls requested by the model
+	Content      string     // assistant text
+	ToolCalls    []ToolCall // tool calls requested by the model
+	InputTokens  int        // prompt_tokens from API usage (0 = not reported)
+	OutputTokens int        // completion_tokens from API usage (0 = not reported)
 }
 
 // toolChoiceNone forces the model to not call tools.
@@ -155,6 +157,10 @@ func parseResponse(data []byte) (*CallResult, error) {
 				} `json:"tool_calls"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage *struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("llm: parse response: %w (body: %s)", err, string(data))
@@ -166,6 +172,10 @@ func parseResponse(data []byte) (*CallResult, error) {
 	msg := raw.Choices[0].Message
 	result := &CallResult{
 		Content: msg.Content,
+	}
+	if raw.Usage != nil {
+		result.InputTokens = raw.Usage.PromptTokens
+		result.OutputTokens = raw.Usage.CompletionTokens
 	}
 	for _, tc := range msg.ToolCalls {
 		result.ToolCalls = append(result.ToolCalls, ToolCall{

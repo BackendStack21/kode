@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/BackendStack21/kode/internal/llm"
 	"github.com/BackendStack21/kode/internal/render"
@@ -165,16 +166,23 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 
 		// Render iteration header (1-indexed for humans)
 		if e.renderer != nil {
-			e.renderer.Iteration(i+1, e.maxIter)
+			e.renderer.Iteration(i+1, e.maxIter, 0, 0, 0)
 		}
 
 		// Trim context to stay within model's context window
 		messages = e.trimContext(messages, tools)
 
-		// THINK
+		// THINK (timed)
+		start := time.Now()
 		result, err := e.client.Call(ctx, messages, tools)
+		latency := time.Since(start)
 		if err != nil {
 			return "", fmt.Errorf("iteration %d: %w", i, err)
+		}
+
+		// Render turn statistics (re-draw iteration header with stats)
+		if e.renderer != nil {
+			e.renderer.Iteration(i+1, e.maxIter, latency, result.InputTokens, result.OutputTokens)
 		}
 
 		// No tool calls = final answer

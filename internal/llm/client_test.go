@@ -521,3 +521,90 @@ func TestClient_Call_InvalidJSONResponse(t *testing.T) {
 		t.Fatal("expected error for invalid JSON response")
 	}
 }
+
+func TestParseResponse_WithUsage(t *testing.T) {
+	raw := `{
+		"choices": [{"message": {"content": "Hello"}}],
+		"usage": {"prompt_tokens": 452, "completion_tokens": 128, "total_tokens": 580}
+	}`
+
+	result, err := parseResponse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InputTokens != 452 {
+		t.Errorf("InputTokens = %d, want 452", result.InputTokens)
+	}
+	if result.OutputTokens != 128 {
+		t.Errorf("OutputTokens = %d, want 128", result.OutputTokens)
+	}
+	if result.Content != "Hello" {
+		t.Errorf("Content = %q, want %q", result.Content, "Hello")
+	}
+}
+
+func TestParseResponse_WithoutUsage(t *testing.T) {
+	raw := `{
+		"choices": [{"message": {"content": "No usage"}}]
+	}`
+
+	result, err := parseResponse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InputTokens != 0 {
+		t.Errorf("InputTokens = %d, want 0", result.InputTokens)
+	}
+	if result.OutputTokens != 0 {
+		t.Errorf("OutputTokens = %d, want 0", result.OutputTokens)
+	}
+}
+
+func TestParseResponse_UsageWithToolCalls(t *testing.T) {
+	raw := `{
+		"choices": [{
+			"message": {
+				"content": "Let me check.",
+				"tool_calls": [{
+					"id": "call_1",
+					"function": {"name": "shell", "arguments": "{\"cmd\":\"ls\"}"}
+				}]
+			}
+		}],
+		"usage": {"prompt_tokens": 1000, "completion_tokens": 50, "total_tokens": 1050}
+	}`
+
+	result, err := parseResponse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InputTokens != 1000 {
+		t.Errorf("InputTokens = %d, want 1000", result.InputTokens)
+	}
+	if result.OutputTokens != 50 {
+		t.Errorf("OutputTokens = %d, want 50", result.OutputTokens)
+	}
+	if len(result.ToolCalls) != 1 {
+		t.Errorf("expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+}
+
+func TestClient_Call_ReturnsUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60}}`))
+	}))
+	defer server.Close()
+
+	c := New(server.URL, "sk-test", "test-model", "", 0)
+	result, err := c.Call(context.Background(), []Message{{Role: "user", Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.InputTokens != 50 {
+		t.Errorf("InputTokens = %d, want 50", result.InputTokens)
+	}
+	if result.OutputTokens != 10 {
+		t.Errorf("OutputTokens = %d, want 10", result.OutputTokens)
+	}
+}

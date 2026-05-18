@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 // ── Events ────────────────────────────────────────────────────────────
@@ -129,8 +130,10 @@ func (r *Renderer) Start(task string) {
 	fmt.Fprintln(r.w)
 }
 
-// Iteration prints the cycle header.
-func (r *Renderer) Iteration(n, maxN int) {
+// Iteration prints the cycle header with optional turn statistics.
+// When latency > 0 or tokens are reported, a compact stats suffix
+// appears on the same line: [1,247 in · 342 out · 4.1s]
+func (r *Renderer) Iteration(n, maxN int, latency time.Duration, inTokens, outTokens int) {
 	if r.disable() {
 		return
 	}
@@ -140,9 +143,14 @@ func (r *Renderer) Iteration(n, maxN int) {
 	} else {
 		prefix = fmt.Sprintf("Iter %d/%d", n, maxN)
 	}
+	// Build stats suffix only when data is available
+	stats := ""
+	if inTokens > 0 || outTokens > 0 || latency > 0 {
+		stats = fmt.Sprintf("  [%d in · %d out · %.1fs]", inTokens, outTokens, latency.Seconds())
+	}
 	// Double-line rule framing
 	rule := strings.Repeat("═", 3)
-	line := fmt.Sprintf("%s %s %s", rule, prefix, rule)
+	line := fmt.Sprintf("%s %s %s%s", rule, prefix, rule, stats)
 	fmt.Fprintln(r.w)
 	fmt.Fprintln(r.w, r.style(blue, line))
 }
