@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/BackendStack21/kode"
 	"github.com/BackendStack21/kode/internal/config"
@@ -213,7 +214,7 @@ func printUsage() {
   kode run [flags] <task>
   kode run --session [flags] <task>
   kode continue [--id <id>] <task>
-  kode session <list|show [id]|trim <id> <n>|delete <id>>
+  kode session <list|show [id]|trim <id> <n>|delete <id>|cleanup <days>>
   kode init [--global | -g] [--force | -f]
   kode version
 
@@ -221,7 +222,7 @@ Commands:
   run                 Execute a task with the agent loop
   run --session       Execute and save conversation as a session
   continue            Continue the most recent session (or by --id)
-  session             Manage sessions: list, show, delete
+  session             Manage sessions: list, show, delete, trim, cleanup
   init                Create a config file (default: ./kode.json)
   version             Print version and exit
 
@@ -871,8 +872,10 @@ func sessionCmd(args []string) error {
 		return deleteSession(store, args[1:])
 	case "trim":
 		return trimSession(store, args[1:])
+	case "cleanup":
+		return cleanupSessions(store, args[1:])
 	default:
-		return fmt.Errorf("unknown session command %q (use list, show, trim, delete)", args[0])
+		return fmt.Errorf("unknown session command %q (use list, show, trim, delete, cleanup)", args[0])
 	}
 }
 
@@ -1009,6 +1012,30 @@ func trimSession(store *session.Store, args []string) error {
 
 	dropped := originalLen - len(sess.Messages)
 	fmt.Printf("Trimmed session %s: %d → %d messages (%d dropped)\n", id, originalLen, len(sess.Messages), dropped)
+	return nil
+}
+
+// cleanupSessions deletes all sessions older than the given number of days.
+// Usage: kode session cleanup <days>
+func cleanupSessions(store *session.Store, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: kode session cleanup <days>")
+	}
+	var days int
+	if _, err := fmt.Sscanf(args[0], "%d", &days); err != nil || days < 0 {
+		return fmt.Errorf("invalid days %q — must be a non-negative integer", args[0])
+	}
+
+	before := time.Now().UTC().AddDate(0, 0, -days)
+	count, err := store.Cleanup(before)
+	if err != nil {
+		return fmt.Errorf("cleanup sessions: %w", err)
+	}
+	if count == 0 {
+		fmt.Println("No sessions to clean up.")
+	} else {
+		fmt.Printf("Cleaned up %d session(s) older than %d days.\n", count, days)
+	}
 	return nil
 }
 

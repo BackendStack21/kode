@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BackendStack21/kode/internal/llm"
 )
@@ -152,6 +153,94 @@ func TestStore_Delete(t *testing.T) {
 	// Idempotent
 	if err := store.Delete("nonexistent"); err != nil {
 		t.Errorf("Delete nonexistent should not error, got: %v", err)
+	}
+}
+
+func TestStore_Cleanup(t *testing.T) {
+	store := newTestStore(t)
+
+	// Create a "current" session
+	msgs := []llm.Message{{Role: "user", Content: "current"}}
+	current, err := store.Create(msgs, "m", "current")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create an "old" session by rewriting its UpdatedAt
+	msgs2 := []llm.Message{{Role: "user", Content: "old"}}
+	oldSess, err := store.Create(msgs2, "m", "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldSess.UpdatedAt = oldSess.UpdatedAt.AddDate(0, 0, -30) // 30 days ago
+	if err := store.Save(oldSess); err != nil {
+		t.Fatal(err)
+	}
+
+	// Cleanup sessions older than 7 days
+	deleted, err := store.Cleanup(time.Now().UTC().AddDate(0, 0, -7))
+	if err != nil {
+		t.Fatalf("Cleanup() error: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("Cleanup() deleted %d, want 1", deleted)
+	}
+
+	// Current session should still exist
+	if _, err := store.Load(current.ID); err != nil {
+		t.Errorf("current session should survive cleanup: %v", err)
+	}
+
+	// Old session should be gone
+	if _, err := store.Load(oldSess.ID); err == nil {
+		t.Error("old session should have been deleted")
+	}
+}
+
+func TestStore_Cleanup_EmptyStore(t *testing.T) {
+	store := newTestStore(t)
+	deleted, err := store.Cleanup(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("Cleanup() on empty store: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("Cleanup() deleted %d, want 0", deleted)
+	}
+}
+
+func TestStore_Cleanup_ZeroDays(t *testing.T) {
+	store := newTestStore(t)
+
+	msgs := []llm.Message{{Role: "user", Content: "anything"}}
+	sess, err := store.Create(msgs, "m", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// cleanup with 0 days = delete everything (all sessions are older than "right now" since UpdatedAt is from Create)
+	deleted, err := store.Cleanup(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("Cleanup() error: %v", err)
+	}
+	if deleted != 1 {
+		t.Errorf("Cleanup() deleted %d, want 1", deleted)
+	}
+	if _, err := store.Load(sess.ID); err == nil {
+		t.Error("session should have been deleted")
+	}
+}
+
+func TestStore_Cleanup_Idempotent(t *testing.T) {
+	store := newTestStore(t)
+
+	// Cleanup empty store twice — should not error
+	_, err := store.Cleanup(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("first Cleanup: %v", err)
+	}
+	_, err = store.Cleanup(time.Now().UTC())
+	if err != nil {
+		t.Fatalf("second Cleanup (idempotent): %v", err)
 	}
 }
 

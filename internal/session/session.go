@@ -228,6 +228,34 @@ func (s *Store) Delete(id string) error {
 	return err
 }
 
+// Cleanup deletes all sessions whose UpdatedAt is before the given time.
+// Returns the count of deleted sessions. Idempotent — nonexistent files
+// are skipped silently (os.Remove already handles this via Delete).
+func (s *Store) Cleanup(before time.Time) (int, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return 0, fmt.Errorf("session: list: %w", err)
+	}
+
+	var deleted int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		sess, err := s.Load(idFromPath(e.Name()))
+		if err != nil {
+			continue // skip unreadable files
+		}
+		if sess.UpdatedAt.Before(before) {
+			if err := s.Delete(sess.ID); err != nil {
+				return deleted, fmt.Errorf("session: delete %q: %w", sess.ID, err)
+			}
+			deleted++
+		}
+	}
+	return deleted, nil
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────
 
 // countUserTurns returns the number of user messages in a slice.

@@ -226,6 +226,7 @@ func TestPrintUsage(t *testing.T) {
 		"kode continue",
 		"kode session",
 		"trim",
+		"cleanup",
 		"kode init",
 		"kode version",
 		"Commands:",
