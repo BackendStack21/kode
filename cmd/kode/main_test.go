@@ -47,11 +47,11 @@ func TestParseRunFlags_Defaults(t *testing.T) {
 	if f.Task != "hello world" {
 		t.Errorf("Task = %q, want %q", f.Task, "hello world")
 	}
-	if f.MaxIter != 90 {
-		t.Errorf("MaxIter = %d, want 90", f.MaxIter)
+	if f.MaxIter != 0 {
+		t.Errorf("MaxIter = %d, want 0 (default handled by config layer)", f.MaxIter)
 	}
-	if f.Sandbox {
-		t.Error("Sandbox should default to false")
+	if f.Sandbox != nil {
+		t.Error("Sandbox should default to nil (not set)")
 	}
 }
 
@@ -83,7 +83,7 @@ func TestParseRunFlags_AllFlags(t *testing.T) {
 	if f.Thinking != "enabled" {
 		t.Errorf("Thinking = %q", f.Thinking)
 	}
-	if !f.Sandbox {
+	if f.Sandbox == nil || !*f.Sandbox {
 		t.Error("Sandbox should be true")
 	}
 	if f.Task != "do the thing" {
@@ -103,7 +103,7 @@ func TestParseRunFlags_SandboxFlagOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseRunFlags error: %v", err)
 	}
-	if !f.Sandbox {
+	if f.Sandbox == nil || !*f.Sandbox {
 		t.Error("Sandbox should be true")
 	}
 	if f.Task != "list files" {
@@ -146,11 +146,17 @@ func TestRun_NoAPIKey(t *testing.T) {
 	// Save env
 	origDS := os.Getenv("DEEPSEEK_API_KEY")
 	origOAI := os.Getenv("OPENAI_API_KEY")
+	origKODE := os.Getenv("KODE_API_KEY")
+	origHome := os.Getenv("HOME")
 	os.Unsetenv("DEEPSEEK_API_KEY")
 	os.Unsetenv("OPENAI_API_KEY")
+	os.Unsetenv("KODE_API_KEY")
+	os.Setenv("HOME", t.TempDir()) // isolate from any ~/kode/config.json
 	defer func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
+		os.Setenv("KODE_API_KEY", origKODE)
+		os.Setenv("HOME", origHome)
 	}()
 
 	err := run([]string{"test task"})
@@ -203,6 +209,10 @@ func TestPrintUsage(t *testing.T) {
 		"--no-color",
 		"--no-agents",
 		"--system",
+		"~/kode/config.json",
+		"KODE_MODEL",
+		"KODE_API_KEY",
+		"KODE_SANDBOX",
 	}
 	for _, req := range required {
 		if !strings.Contains(output, req) {
@@ -337,9 +347,9 @@ func TestParseRunFlags_MaxIterNonNumeric(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseRunFlags error: %v", err)
 	}
-	// fmt.Sscanf with non-numeric keeps the default (90)
-	if f.MaxIter != 90 {
-		t.Errorf("MaxIter = %d, want 90 (non-numeric should leave default)", f.MaxIter)
+	// fmt.Sscanf with non-numeric leaves the zero value (not set)
+	if f.MaxIter != 0 {
+		t.Errorf("MaxIter = %d, want 0 (non-numeric should leave zero)", f.MaxIter)
 	}
 	if f.Task != "task" {
 		t.Errorf("Task = %q, want %q", f.Task, "task")
@@ -347,17 +357,20 @@ func TestParseRunFlags_MaxIterNonNumeric(t *testing.T) {
 }
 
 // Test run() with --sandbox when Docker is not available — tests the
-// sandbox error path (main.go lines 129-135).
+// sandbox error path.
 func TestRun_SandboxNoDocker(t *testing.T) {
 	if dockerAvailable() {
 		t.Skip("docker is available, cannot test sandbox error path")
 	}
 	origDS := os.Getenv("DEEPSEEK_API_KEY")
 	origOAI := os.Getenv("OPENAI_API_KEY")
+	origHome := os.Getenv("HOME")
 	os.Setenv("DEEPSEEK_API_KEY", "sk-test")
+	os.Setenv("HOME", t.TempDir())
 	defer func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
+		os.Setenv("HOME", origHome)
 	}()
 
 	err := run([]string{"--sandbox", "test task"})
@@ -376,11 +389,14 @@ func TestRun_WithMockModel(t *testing.T) {
 
 	origDS := os.Getenv("DEEPSEEK_API_KEY")
 	origOAI := os.Getenv("OPENAI_API_KEY")
+	origHome := os.Getenv("HOME")
 	os.Setenv("DEEPSEEK_API_KEY", "sk-mock")
 	os.Unsetenv("OPENAI_API_KEY")
+	os.Setenv("HOME", t.TempDir())
 	defer func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
+		os.Setenv("HOME", origHome)
 	}()
 
 	// Use the mock server as the API endpoint
@@ -429,7 +445,7 @@ func TestParseRunFlags_EdgeCases(t *testing.T) {
 			name: "only sandbox flag",
 			args: []string{"--sandbox", "do work"},
 			check: func(t *testing.T, f runFlags) {
-				if !f.Sandbox {
+				if f.Sandbox == nil || !*f.Sandbox {
 					t.Error("Sandbox should be true")
 				}
 			},
@@ -470,7 +486,7 @@ func TestParseRunFlags_EdgeCases(t *testing.T) {
 				if f.System != "be helpful" {
 					t.Errorf("System = %q", f.System)
 				}
-				if !f.Sandbox {
+				if f.Sandbox == nil || !*f.Sandbox {
 					t.Error("Sandbox should be true")
 				}
 				if f.Task != "explain code" {
@@ -488,6 +504,115 @@ func TestParseRunFlags_EdgeCases(t *testing.T) {
 			}
 			tt.check(t, f)
 		})
+	}
+}
+
+// Test that KODE_* env vars flow through run() to kode.New().
+func TestRun_WithKODEEnvVars(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"mocked"}}]}`))
+	}))
+	defer server.Close()
+
+	origDS := os.Getenv("DEEPSEEK_API_KEY")
+	origOAI := os.Getenv("OPENAI_API_KEY")
+	origHome := os.Getenv("HOME")
+	os.Unsetenv("DEEPSEEK_API_KEY")
+	os.Unsetenv("OPENAI_API_KEY")
+	os.Setenv("HOME", t.TempDir())
+	// Also isolate KODE_API_KEY (should not be set)
+	origKODE := os.Getenv("KODE_API_KEY")
+	os.Unsetenv("KODE_API_KEY")
+	defer func() {
+		os.Setenv("DEEPSEEK_API_KEY", origDS)
+		os.Setenv("OPENAI_API_KEY", origOAI)
+		os.Setenv("HOME", origHome)
+		os.Setenv("KODE_API_KEY", origKODE)
+	}()
+
+	// Set KODE_API_KEY so run() can find it (no env is set otherwise)
+	os.Setenv("KODE_API_KEY", "sk-kode-env")
+
+	err := run([]string{"--base-url", server.URL, "test task"})
+	if err != nil {
+		t.Fatalf("run() with KODE_API_KEY should succeed, got: %v", err)
+	}
+}
+
+// Test that ~/kode/config.json flows through run().
+func TestRun_WithGlobalConfig(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"mocked"}}]}`))
+	}))
+	defer server.Close()
+
+	origDS := os.Getenv("DEEPSEEK_API_KEY")
+	origOAI := os.Getenv("OPENAI_API_KEY")
+	origHome := os.Getenv("HOME")
+	os.Unsetenv("DEEPSEEK_API_KEY")
+	os.Unsetenv("OPENAI_API_KEY")
+	os.Unsetenv("KODE_API_KEY")
+	defer func() {
+		os.Setenv("DEEPSEEK_API_KEY", origDS)
+		os.Setenv("OPENAI_API_KEY", origOAI)
+		os.Setenv("HOME", origHome)
+	}()
+
+	// Create a global config with an API key
+	homeDir := t.TempDir()
+	os.Setenv("HOME", homeDir)
+	os.MkdirAll(homeDir+"/kode", 0755)
+	if err := os.WriteFile(homeDir+"/kode/config.json", []byte(`{
+		"api_key": "sk-global-config"
+	}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run([]string{"--base-url", server.URL, "test task"})
+	if err != nil {
+		t.Fatalf("run() with global config should succeed, got: %v", err)
+	}
+}
+
+// Test that ./kode.json flows through run().
+func TestRun_WithProjectConfig(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"choices":[{"message":{"content":"mocked"}}]}`))
+	}))
+	defer server.Close()
+
+	origDS := os.Getenv("DEEPSEEK_API_KEY")
+	origOAI := os.Getenv("OPENAI_API_KEY")
+	origHome := os.Getenv("HOME")
+	origCwd, _ := os.Getwd()
+	os.Unsetenv("DEEPSEEK_API_KEY")
+	os.Unsetenv("OPENAI_API_KEY")
+	os.Unsetenv("KODE_API_KEY")
+	defer func() {
+		os.Setenv("DEEPSEEK_API_KEY", origDS)
+		os.Setenv("OPENAI_API_KEY", origOAI)
+		os.Setenv("HOME", origHome)
+		os.Chdir(origCwd)
+	}()
+
+	// Isolate from any global config
+	os.Setenv("HOME", t.TempDir())
+
+	// Create project-level config in a temp directory
+	projectDir := t.TempDir()
+	os.Chdir(projectDir)
+	if err := os.WriteFile(projectDir+"/kode.json", []byte(`{
+		"api_key": "sk-project-config"
+	}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := run([]string{"--base-url", server.URL, "test task"})
+	if err != nil {
+		t.Fatalf("run() with project config should succeed, got: %v", err)
 	}
 }
 

@@ -127,7 +127,7 @@ export DEEPSEEK_API_KEY=sk-...
 kode run --model deepseek-chat "task"
 ```
 
-API key fallback order: `DEEPSEEK_API_KEY` → `OPENAI_API_KEY`.
+API key fallback order: `KODE_API_KEY` → `DEEPSEEK_API_KEY` → `OPENAI_API_KEY`.
 
 ### OpenAI
 
@@ -461,24 +461,77 @@ func main() {
 
 ## Configuration
 
+kode has a layered configuration system using **convention over configuration**: opt-in files and environment variables, no mandatory setup.
+
+### Priority chain
+
+Each layer overrides the one below it. Unset fields inherit from the layer below:
+
+```
+1.  ~/kode/config.json    ← Global defaults (lowest priority)
+2.  ./kode.json           ← Project-specific overrides
+3.  KODE_* env vars       ← Runtime/environment overrides
+4.  CLI flags             ← Explicit invocation (highest priority)
+```
+
+### Config files
+
+**`~/kode/config.json`** — global defaults shared across all projects:
+
+```json
+{
+  "model": "deepseek-v4-flash",
+  "base_url": "https://api.deepseek.com/v1",
+  "api_key": "${DEEPSEEK_API_KEY}",
+  "thinking": "",
+  "max_iterations": 90,
+  "sandbox": false,
+  "no_color": false,
+  "no_agents": false,
+  "system": ""
+}
+```
+
+**`./kode.json`** — per-project overrides (same schema). Only the fields you set override the global file.
+
+Both are optional. Missing files are silently ignored. String values support `${VAR}` environment variable substitution — useful for API keys without putting them in plaintext files.
+
 ### Environment variables
 
-| Variable | Purpose |
-|----------|---------|
-| `DEEPSEEK_API_KEY` | Primary API key (checked first) |
-| `OPENAI_API_KEY` | Fallback API key |
+Every config knob has a `KODE_*` counterpart:
 
-The API key can also be set programmatically via `Config.APIKey` — explicit config always wins over environment variables.
+| Variable | Maps to | Type |
+|----------|---------|------|
+| `KODE_MODEL` | `--model` | string |
+| `KODE_BASE_URL` | `--base-url` | string |
+| `KODE_API_KEY` | n/a (config files only) | string |
+| `KODE_THINKING` | `--thinking` | string |
+| `KODE_MAX_ITER` | `--max-iter` | int |
+| `KODE_SANDBOX` | `--sandbox` | bool (`"true"`/`"false"`) |
+| `KODE_NO_COLOR` | `--no-color` | bool |
+| `KODE_NO_AGENTS` | `--no-agents` | bool |
+| `KODE_SYSTEM` | `--system` | string |
 
-### Defaults
+API key fallback order: `KODE_API_KEY` → `DEEPSEEK_API_KEY` → `OPENAI_API_KEY`.
 
-| Setting | Default |
-|---------|---------|
-| Model | `deepseek-chat` |
-| Base URL | `https://api.deepseek.com/v1` |
-| Max iterations | `90` |
-| Thinking | Profile default (if known model), else provider default) |
-| HTTP timeout | Profile default (120s for unknown models) |
+### Quick examples
+
+```bash
+# Global config file (~/kode/config.json)
+echo '{"api_key": "${DEEPSEEK_API_KEY}", "model": "deepseek-v4-flash"}' > ~/kode/config.json
+# Now just:
+kode run "list files"
+
+# Per-project override
+echo '{"max_iterations": 30}' > ./kode.json
+kode run "quick status"
+
+# Env var override for one-off
+KODE_SANDBOX=true kode run "run untrusted script"
+
+# CLI flag always wins
+kode run --model gpt-4o --base-url https://api.openai.com/v1 "task"
+```
 
 ---
 
@@ -589,6 +642,8 @@ kode run "task"
 kode.go               Public API (Config, New, Run, Close)
 kode_test.go          Config and API tests
 internal/
+  config/
+    loader.go         Config file loading, env vars, priority merge
   llm/
     client.go         OpenAI-compatible HTTP client
     client_test.go    JSON marshaling + response parsing tests
@@ -645,6 +700,7 @@ Requires Go 1.24+. Zero external test dependencies — tests use `httptest`, `te
 | Package | Tests | Focus |
 |---------|-------|-------|
 | `kode` | 31 | Config defaults, API key fallback, thinking passthrough, system message, model profiles, lookup, label, timeout, project file (AGENTS.md) |
+| `internal/config` | 17 | Config file loading, env vars, merge chain, var expansion, priority enforcement |
 | `internal/llm` | 18 | JSON marshaling, thinking/reasoning_effort fields, response parsing, custom timeout, usage/statistics parsing |
 | `internal/loop` | 7 | ReAct engine with httptest mock (simple answer, tool calls, max iter, cancellation) |
 | `internal/tool` | 7 | Registry CRUD, Get (found/not found), duplicate detection |
