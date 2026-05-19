@@ -288,6 +288,17 @@ func subagentCmd(args []string) error {
 	tools := builtinTools(resolved.Dangerous, sm, nil)
 	var sandboxCleanup func() error
 
+	// MCP server tools
+	var mcpCleanup func()
+	if len(resolved.MCPServers) > 0 {
+		cl, err := loadMCPTools(resolved.MCPServers, &tools)
+		if err != nil {
+			return fmt.Errorf("mcp: %w", err)
+		}
+		mcpCleanup = cl
+		defer mcpCleanup()
+	}
+
 	if resolved.Sandbox {
 		sbCfg := sandboxConfig{
 			Image:    resolved.SandboxImage,

@@ -98,7 +98,7 @@ Flags:
 
 // ── Agent Builder ──────────────────────────────────────────────────────
 
-func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v any) error) (*kode.Agent, func() error, *wsApprover, error) {
+func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v any) error) (*kode.Agent, func() error, func(), *wsApprover, error) {
 	var sm *skills.SkillManager
 	if resolved.Skills.Learn {
 		sm = skills.NewSkillManager(
@@ -114,6 +114,16 @@ func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v 
 	tools := builtinTools(resolved.Dangerous, sm, approver)
 	var sandboxCleanup func() error
 
+	// MCP server tools
+	var mcpCleanup func()
+	if len(resolved.MCPServers) > 0 {
+		cl, err := loadMCPTools(resolved.MCPServers, &tools)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("mcp: %w", err)
+		}
+		mcpCleanup = cl
+	}
+
 	if resolved.Sandbox {
 		cfg := sandboxConfig{
 			Image:    resolved.SandboxImage,
@@ -127,7 +137,7 @@ func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v 
 		}
 		cleanup, err := setupSandbox(tools, cfg)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("sandbox: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("sandbox: %w", err)
 		}
 		sandboxCleanup = cleanup
 	}
@@ -148,10 +158,10 @@ func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v 
 		MemoryConfig:   resolved.Memory,
 	})
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return agent, sandboxCleanup, approver, nil
+	return agent, sandboxCleanup, mcpCleanup, approver, nil
 }
 
 // ── WebSocket Types ────────────────────────────────────────────────────
@@ -175,7 +185,7 @@ func handleWebSocket(store *session.Store, resources *resource.Registry, resolve
 
 		// Create ONE agent per WebSocket connection — provides buffer
 		// continuity across turns within the same session.
-		agent, sandboxCleanup, approver, err := newServeAgent(resolved, system, func(v any) error {
+		agent, sandboxCleanup, mcpCleanup, approver, err := newServeAgent(resolved, system, func(v any) error {
 			writeWSJSON(conn, v)
 			return nil
 		})
@@ -186,6 +196,9 @@ func handleWebSocket(store *session.Store, resources *resource.Registry, resolve
 		defer agent.Close()
 		if sandboxCleanup != nil {
 			defer sandboxCleanup()
+		}
+		if mcpCleanup != nil {
+			defer mcpCleanup()
 		}
 
 		ctx, cancel := signal.NotifyContext(r.Context(), os.Interrupt)

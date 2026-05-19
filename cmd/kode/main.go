@@ -18,6 +18,7 @@ import (
 	"github.com/BackendStack21/kode/internal/config"
 	"github.com/BackendStack21/kode/internal/danger"
 	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/kode/internal/mcpclient"
 	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/session"
 	"github.com/BackendStack21/kode/internal/skills"
@@ -717,6 +718,17 @@ func run(args []string) error {
 	var sandboxCleanup func() error
 	tools := builtinTools(resolved.Dangerous, sm, nil)
 
+	// MCP server tools
+	var mcpCleanup func()
+	if len(resolved.MCPServers) > 0 {
+		cl, err := loadMCPTools(resolved.MCPServers, &tools)
+		if err != nil {
+			return fmt.Errorf("mcp: %w", err)
+		}
+		mcpCleanup = cl
+		defer mcpCleanup()
+	}
+
 	if resolved.Sandbox {
 		cleanup, err := setupSandbox(tools, sbCfg)
 		if err != nil {
@@ -1008,6 +1020,53 @@ func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver d
 	}
 
 	return tools
+}
+
+// loadMCPTools connects to configured MCP servers and appends their tools
+// to the tool slice. Returns a cleanup function that closes all connections.
+// The passed-in tool slice pointer is extended with ToolAdapters.
+func loadMCPTools(servers map[string]mcpclient.ServerConfig, tools *[]kode.Tool) (func(), error) {
+	var cleaners []func()
+	for name, cfg := range servers {
+		client, err := mcpclient.New(name, cfg)
+		if err != nil {
+			// Clean up any servers we already started
+			for _, c := range cleaners {
+				c()
+			}
+			return nil, fmt.Errorf("mcp server %q: %w", name, err)
+		}
+
+		defs, err := client.Discover(context.Background())
+		if err != nil {
+			client.Close()
+			for _, c := range cleaners {
+				c()
+			}
+			return nil, fmt.Errorf("mcp server %q: discover: %w", name, err)
+		}
+
+		for _, def := range defs {
+			*tools = append(*tools, &mcpclient.ToolAdapter{
+				Client:      client,
+				ToolName:    def.Name,
+				Desc:        def.Description,
+				ParamSchema: def.InputSchema,
+			})
+		}
+
+		cleaners = append(cleaners, func() {
+			if err := client.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "kode: warning: mcp client %q close: %v\n", name, err)
+			}
+		})
+	}
+
+	return func() {
+		for _, c := range cleaners {
+			c()
+		}
+	}, nil
 }
 
 // getVersion returns the version string. Resolution order:
@@ -1340,6 +1399,17 @@ func continueCmd(args []string) error {
 	}
 	tools := builtinTools(resolved.Dangerous, sm, nil)
 	var sandboxCleanup func() error
+
+	// MCP server tools
+	var mcpCleanup func()
+	if len(resolved.MCPServers) > 0 {
+		cl, err := loadMCPTools(resolved.MCPServers, &tools)
+		if err != nil {
+			return fmt.Errorf("mcp: %w", err)
+		}
+		mcpCleanup = cl
+		defer mcpCleanup()
+	}
 
 	systemMessage := resolved.System
 	if systemMessage == "" {

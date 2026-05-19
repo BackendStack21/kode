@@ -1,0 +1,456 @@
+// Package mcpclient implements an MCP client that connects to external
+// MCP servers over stdio. This allows kode to use tools from any MCP
+// server (e.g., Claude Code's MCP servers for web scraping, databases,
+// APIs, etc.) alongside its built-in tools.
+//
+// Protocol: JSON-RPC 2.0 over stdin/stdout
+//   - initialize     — protocol handshake
+//   - tools/list     — discover available tools
+//   - tools/call     — invoke a tool
+//   - ping           — health check
+//
+// Usage:
+//
+//	client, err := mcpclient.New("some-server", "node", []string{"server.js"})
+//	tools, err := client.Discover(ctx)
+//	result, err := client.CallTool(ctx, "tool_name", `{"arg":"val"}`)
+//	client.Close()
+//
+// Config in kode.json:
+//
+//	{
+//	  "mcp_servers": {
+//	    "my-server": {
+//	      "command": "node",
+//	      "args": ["/path/to/server.js"]
+//	    }
+//	  }
+//	}
+package mcpclient
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"time"
+)
+
+// ── Protocol Constants ──────────────────────────────────────────────────
+
+const (
+	ProtocolVersion = "2025-03-26"
+	DefaultTimeout  = 30 * time.Second
+)
+
+// ── JSON-RPC Types ─────────────────────────────────────────────────────
+
+// request is a JSON-RPC 2.0 request sent to the MCP server.
+type request struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      int             `json:"id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params,omitempty"`
+}
+
+// response is a JSON-RPC 2.0 response received from the MCP server.
+type response struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      int             `json:"id"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *rpcError       `json:"error,omitempty"`
+}
+
+// rpcError represents a JSON-RPC error object.
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *rpcError) Error() string {
+	return fmt.Sprintf("MCP error %d: %s", e.Code, e.Message)
+}
+
+// ── MCP Initialize Types ───────────────────────────────────────────────
+
+// initializeResult is the response to the initialize handshake.
+type initializeResult struct {
+	ProtocolVersion string `json:"protocolVersion"`
+	ServerInfo      struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	} `json:"serverInfo"`
+	Capabilities map[string]any `json:"capabilities"`
+}
+
+// ── MCP Tool Types ─────────────────────────────────────────────────────
+
+// ToolDef is the definition of a tool from tools/list.
+type ToolDef struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	InputSchema any    `json:"inputSchema"`
+}
+
+// listToolsResult is the response to tools/list.
+type listToolsResult struct {
+	Tools []ToolDef `json:"tools"`
+}
+
+// callToolParams is the params sent to tools/call.
+type callToolParams struct {
+	Name      string `json:"name"`
+	Arguments any    `json:"arguments"`
+}
+
+// callToolResult is the response to tools/call.
+type callToolResult struct {
+	Content []contentItem `json:"content"`
+	IsError bool          `json:"isError,omitempty"`
+}
+
+// contentItem is a single piece of content in a tool result.
+type contentItem struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// ── Server Config ──────────────────────────────────────────────────────
+
+// ServerConfig defines an external MCP server to connect to.
+// Matches the Claude Code MCP server config format.
+type ServerConfig struct {
+	// Command is the executable to run (e.g., "node", "python3", "uvx").
+	Command string `json:"command"`
+	// Args are the command-line arguments.
+	Args []string `json:"args,omitempty"`
+	// Env overrides environment variables for the subprocess.
+	// Empty strings remove the variable from the environment.
+	Env map[string]string `json:"env,omitempty"`
+}
+
+// ── Client ─────────────────────────────────────────────────────────────
+
+// Client manages a connection to an external MCP server over stdio.
+type Client struct {
+	name   string
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout *bufio.Reader
+	done   chan struct{} // closed when process exits
+	mu     sync.Mutex
+	nextID int
+}
+
+// New spawns an MCP server process and returns a client connected to it.
+// The server process is started immediately and cleaned up on Close().
+func New(name string, cfg ServerConfig) (*Client, error) {
+	cmd := exec.Command(cfg.Command, cfg.Args...)
+
+	// Apply env overrides
+	if len(cfg.Env) > 0 {
+		cmd.Env = buildEnv(cfg.Env)
+	}
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("mcpclient %s: stdin pipe: %w", name, err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		stdin.Close()
+		return nil, fmt.Errorf("mcpclient %s: stdout pipe: %w", name, err)
+	}
+
+	// Stderr is inherited from the parent so errors are visible
+	cmd.Stderr = nil // nil = inherit os.Stderr by default in exec.Cmd
+
+	if err := cmd.Start(); err != nil {
+		stdin.Close()
+		return nil, fmt.Errorf("mcpclient %s: start: %w", name, err)
+	}
+
+	c := &Client{
+		name:   name,
+		cmd:    cmd,
+		stdin:  stdin,
+		stdout: bufio.NewReader(stdout),
+		done:   make(chan struct{}),
+	}
+
+	// Monitor process exit in background
+	go func() {
+		cmd.Wait()
+		close(c.done)
+	}()
+
+	return c, nil
+}
+
+// buildEnv constructs the environment for the subprocess.
+// Overrides KODE_ prefixed env vars cannot be removed.
+func buildEnv(overrides map[string]string) []string {
+	// Start with current env
+	env := osEnviron()
+	if env == nil {
+		env = environ() // fallback for testing
+	}
+
+	// Build a map for efficient update
+	envMap := make(map[string]string, len(env))
+	for _, e := range env {
+		if k, v, ok := strings.Cut(e, "="); ok {
+			envMap[k] = v
+		}
+	}
+
+	// Apply overrides
+	for k, v := range overrides {
+		if v == "" {
+			delete(envMap, k)
+		} else {
+			envMap[k] = v
+		}
+	}
+
+	result := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		result = append(result, k+"="+v)
+	}
+	return result
+}
+
+// Close terminates the MCP server process and cleans up resources.
+// Safe to call multiple times.
+func (c *Client) Close() error {
+	// Close stdin to signal EOF to the server
+	if c.stdin != nil {
+		c.stdin.Close()
+	}
+
+	// Wait for process with timeout
+	select {
+	case <-c.done:
+		// Process already exited
+	case <-time.After(5 * time.Second):
+		// Force kill
+		c.cmd.Process.Kill()
+		<-c.done
+	}
+
+	return nil
+}
+
+// Name returns the server name for this client.
+func (c *Client) Name() string { return c.name }
+
+// Discover performs the MCP handshake and returns all available tools.
+func (c *Client) Discover(ctx context.Context) ([]ToolDef, error) {
+	// Step 1: Initialize
+	if _, err := c.call(ctx, "initialize", json.RawMessage(`{"protocolVersion":"`+ProtocolVersion+`","capabilities":{},"clientInfo":{"name":"kode","version":"dev"}}`)); err != nil {
+		return nil, fmt.Errorf("mcpclient %s: initialize: %w", c.name, err)
+	}
+
+	// Step 2: List tools
+	raw, err := c.call(ctx, "tools/list", nil)
+	if err != nil {
+		return nil, fmt.Errorf("mcpclient %s: tools/list: %w", c.name, err)
+	}
+
+	var result listToolsResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("mcpclient %s: parse tools/list: %w", c.name, err)
+	}
+
+	return result.Tools, nil
+}
+
+// CallTool invokes a tool on the MCP server with the given JSON arguments
+// and returns the text content of the result.
+func (c *Client) CallTool(ctx context.Context, name string, argsJSON string) (string, error) {
+	// Parse args as raw JSON
+	var args any
+	if argsJSON != "" {
+		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+			args = argsJSON // fallback: send as string
+		}
+	}
+
+	params := callToolParams{Name: name, Arguments: args}
+	paramsRaw, err := json.Marshal(params)
+	if err != nil {
+		return "", fmt.Errorf("mcpclient %s: marshal call params: %w", c.name, err)
+	}
+
+	raw, err := c.call(ctx, "tools/call", paramsRaw)
+	if err != nil {
+		return "", fmt.Errorf("mcpclient %s: tools/call: %w", c.name, err)
+	}
+
+	var result callToolResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return "", fmt.Errorf("mcpclient %s: parse result: %w", c.name, err)
+	}
+
+	if result.IsError {
+		msg := "unknown error"
+		if len(result.Content) > 0 {
+			msg = result.Content[0].Text
+		}
+		return "", fmt.Errorf("mcpclient %s: tool %s returned error: %s", c.name, name, msg)
+	}
+
+	// Concatenate all text content items
+	var parts []string
+	for _, item := range result.Content {
+		if item.Type == "text" {
+			parts = append(parts, item.Text)
+		}
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+// call sends a JSON-RPC request and waits for the matching response.
+func (c *Client) call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Assign unique ID
+	c.mu.Lock()
+	id := c.nextID
+	c.nextID++
+	c.mu.Unlock()
+
+	// Build request
+	req := request{
+		JSONRPC: "2.0",
+		ID:      id,
+		Method:  method,
+		Params:  params,
+	}
+
+	reqRaw, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	// Send
+	c.mu.Lock()
+	_, err = fmt.Fprintln(c.stdin, string(reqRaw))
+	c.mu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("write: %w", err)
+	}
+
+	// Read responses until we find our ID
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		// Set a read deadline via context
+		line, err := c.readLine(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("read: %w", err)
+		}
+
+		var resp response
+		if err := json.Unmarshal([]byte(line), &resp); err != nil {
+			continue // skip malformed lines
+		}
+
+		// Skip responses that aren't for our request
+		if resp.ID != id {
+			continue
+		}
+
+		if resp.Error != nil {
+			return nil, resp.Error
+		}
+
+		return resp.Result, nil
+	}
+}
+
+// readLine reads a single line with context-based timeout.
+func (c *Client) readLine(ctx context.Context) (string, error) {
+	type lineResult struct {
+		line string
+		err  error
+	}
+
+	ch := make(chan lineResult, 1)
+	go func() {
+		l, err := c.stdout.ReadString('\n')
+		ch <- lineResult{strings.TrimSpace(l), err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case r := <-ch:
+		return r.line, r.err
+	}
+}
+
+// ── Platform helpers (replaces os.Environ for testing) ──────────────────
+
+// osEnviron is os.Environ, swapped in tests.
+var osEnviron = osEnvironDefault
+
+func osEnvironDefault() []string { return os.Environ() }
+
+// environ is a fallback for tests where os.Environ isn't available.
+var environ = environDefault
+
+func environDefault() []string { return os.Environ() }
+
+// ── ToolAdapter ────────────────────────────────────────────────────────
+
+// ToolAdapter wraps an MCP client tool as a kode.Tool-compatible value.
+// It implements the Name(), Description(), Schema(), and Call() methods
+// that kode's agent loop expects, forwarding calls to the MCP server.
+type ToolAdapter struct {
+	// Client is the MCP client connection.
+	Client *Client
+
+	// ToolName is the name of the tool on the MCP server.
+	ToolName string
+
+	// Desc is the tool description.
+	Desc string
+
+	// ParamSchema is the JSON schema for the tool's parameters.
+	ParamSchema any
+}
+
+// Name returns the tool's name, prefixed with the server name to avoid
+// collisions when multiple MCP servers expose tools with the same name.
+func (a *ToolAdapter) Name() string {
+	return a.Client.Name() + "__" + a.ToolName
+}
+
+// Description returns the tool's description.
+func (a *ToolAdapter) Description() string { return a.Desc }
+
+// Schema returns the tool's input JSON schema.
+func (a *ToolAdapter) Schema() any {
+	if a.ParamSchema != nil {
+		return a.ParamSchema
+	}
+	return map[string]any{"type": "object"}
+}
+
+// Call invokes the tool on the MCP server with the given JSON arguments.
+func (a *ToolAdapter) Call(args string) (string, error) {
+	return a.Client.CallTool(context.Background(), a.ToolName, args)
+}

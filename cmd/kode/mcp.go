@@ -81,6 +81,17 @@ Flags:
 	// Build tools
 	toolSet := builtinTools(resolved.Dangerous, sm, nil)
 
+	// MCP server tools — connect and discover before sandbox
+	var mcpCleanup func()
+	if len(resolved.MCPServers) > 0 {
+		cl, err := loadMCPTools(resolved.MCPServers, &toolSet)
+		if err != nil {
+			return fmt.Errorf("mcp: %w", err)
+		}
+		mcpCleanup = cl
+		defer mcpCleanup()
+	}
+
 	// Sandbox setup (must happen after tools are created)
 	var sandboxCleanup func() error
 	if resolved.Sandbox {

@@ -19,6 +19,7 @@ import (
 	"strconv"
 
 	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/kode/internal/mcpclient"
 	"github.com/BackendStack21/kode/internal/memory"
 	"github.com/BackendStack21/kode/internal/skills"
 )
@@ -100,6 +101,19 @@ type FileConfig struct {
 
 	// Memory section controls the persistent memory system.
 	Memory *memory.MemoryConfig `json:"memory,omitempty"`
+
+	// MCPServers maps server names to MCP server configurations.
+	// Each server is an external MCP server (e.g., Playwright, database,
+	// web scraping) whose tools are exposed to the agent.
+	// Format matches Claude Code's mcpServers config:
+	//
+	//	"mcp_servers": {
+	//	  "playwright": {
+	//	    "command": "npx",
+	//	    "args": ["@playwright/mcp"]
+	//	  }
+	//	}
+	MCPServers map[string]mcpclient.ServerConfig `json:"mcp_servers,omitempty"`
 }
 
 // ResolvedConfig is the fully merged result. Every field has a concrete
@@ -165,6 +179,10 @@ type ResolvedConfig struct {
 
 	// Memory is the resolved memory config with default values.
 	Memory memory.MemoryConfig
+
+	// MCPServers maps server names to external MCP server configurations.
+	// Populated from the mcp_servers section of kode.json.
+	MCPServers map[string]mcpclient.ServerConfig
 }
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -414,6 +432,7 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		Skills:         resolveSkills(cfg.Skills),
 		Dangerous:      resolveDangerous(cfg.Dangerous),
 		Memory:         resolveMemory(cfg.Memory),
+		MCPServers:     cfg.MCPServers,
 	}
 
 	// Booleans: default to false if not set
