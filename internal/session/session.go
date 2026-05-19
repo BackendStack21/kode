@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BackendStack21/kode/internal/llm"
@@ -49,6 +50,7 @@ type Session struct {
 // Operations are simple file reads/writes — no locking, no caching.
 type Store struct {
 	dir string // e.g. /home/user/.kode/sessions/
+	mu  sync.Mutex
 }
 
 // NewStore creates a session store rooted at ~/.kode/sessions/.
@@ -111,6 +113,14 @@ func (s *Store) path(id string) string {
 	return filepath.Join(s.dir, id+".json")
 }
 
+// Path returns the absolute filesystem path for a session file.
+// Exported for testing and debugging.
+func (s *Store) Path(id string) string { return s.path(id) }
+
+// Dir returns the session store directory path.
+// Exported for testing and debugging.
+func (s *Store) Dir() string { return s.dir }
+
 // idFromPath extracts the session ID from a filename like "20260518-abc123.json".
 func idFromPath(name string) string {
 	return strings.TrimSuffix(name, ".json")
@@ -137,8 +147,13 @@ func (s *Store) Create(messages []llm.Message, model, task string) (*Session, er
 }
 
 // Append adds new messages to an existing session, updates timestamps
-// and turn counts, and saves the result.
+// and turn counts, and saves the result atomically.
+// The full read-modify-write is serialized by s.mu to prevent both
+// concurrent-write data loss and symlink-swap TOCTOU attacks.
 func (s *Store) Append(id string, newMsgs []llm.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	sess, err := s.Load(id)
 	if err != nil {
 		return err
@@ -146,19 +161,40 @@ func (s *Store) Append(id string, newMsgs []llm.Message) error {
 	sess.Messages = append(sess.Messages, newMsgs...)
 	sess.UpdatedAt = time.Now().UTC()
 	sess.Turns = countUserTurns(sess.Messages)
-	return s.Save(sess)
+	return s.saveLocked(sess)
 }
 
-// Save writes a session to disk, overwriting any existing file with
-// the same ID. This is the single write path — all mutations (append,
-// edit, truncate, rename) go through Save().
+// Save writes a session to disk atomically using a temp-file + rename
+// strategy. This prevents:
+//   - Partial writes from crashes (rename is atomic on POSIX)
+//   - Symlink-following TOCTOU attacks (os.Rename replaces the
+//     directory entry itself — it does NOT follow symlinks)
 func (s *Store) Save(sess *Session) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveLocked(sess)
+}
+
+// saveLocked is the internal write path — caller must hold s.mu.
+// Writes to a temp file in the same directory, then atomically
+// renames over the target. os.Rename replaces the directory entry
+// without following symlinks, so a symlink swapped in between
+// read and write gets replaced with a regular file.
+func (s *Store) saveLocked(sess *Session) error {
 	data, err := json.MarshalIndent(sess, "", "  ")
 	if err != nil {
 		return fmt.Errorf("session: marshal: %w", err)
 	}
-	if err := os.WriteFile(s.path(sess.ID), data, 0600); err != nil {
-		return fmt.Errorf("session: write: %w", err)
+
+	target := s.path(sess.ID)
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("session: write tmp: %w", err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("session: rename: %w", err)
 	}
 	return nil
 }

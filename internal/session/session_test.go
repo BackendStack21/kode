@@ -3,6 +3,7 @@ package session
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -274,6 +275,143 @@ func TestSession_GetMessages_Empty(t *testing.T) {
 	s := &Session{}
 	if msgs := s.GetMessages(); msgs == nil {
 		t.Error("GetMessages on empty session should return empty, not nil")
+	}
+}
+
+// ── Security: TOCTOU Race (Findings #5) ────────────────────────────────
+//
+// Append() reads a session file, modifies it, then writes it back.
+// An attacker who swaps the file for a symlink between read and write
+// could redirect the write to an arbitrary path. We fix this with:
+//   - Atomic temp-file + os.Rename (Rename does NOT follow symlinks)
+//   - sync.Mutex to serialize concurrent read-modify-write in Append
+//
+// These tests verify the fix and guard against regression.
+
+func TestAppend_ConcurrentSafety(t *testing.T) {
+	// Two concurrent Appends to the same session should both be reflected
+	// in the final file — no lost writes.
+	store := newTestStore(t)
+	sess, err := store.Create(
+		[]llm.Message{{Role: "user", Content: "start"}},
+		"test", "start",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 2)
+	appendMsg := func(content string) {
+		done <- store.Append(sess.ID, []llm.Message{{Role: "user", Content: content}})
+	}
+
+	go appendMsg("thread-a")
+	go appendMsg("thread-b")
+
+	for i := 0; i < 2; i++ {
+		if err := <-done; err != nil {
+			t.Errorf("concurrent Append error: %v", err)
+		}
+	}
+
+	loaded, err := store.Load(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Messages) != 3 {
+		t.Errorf("expected 3 messages (start + 2 appends), got %d", len(loaded.Messages))
+	}
+}
+
+func TestSave_AtomicWriteNoPartialFile(t *testing.T) {
+	// Verify that Save produces a valid JSON file (not a temp file,
+	// not a truncated file) by checking the file path directly.
+	store := newTestStore(t)
+	sess, err := store.Create(
+		[]llm.Message{{Role: "user", Content: "data"}},
+		"test", "data",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read the file directly — should be valid JSON
+	path := store.Path(sess.ID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading session file: %v", err)
+	}
+	if !strings.Contains(string(data), `"id":`) {
+		t.Error("saved file doesn't look like valid JSON")
+	}
+
+	// No .tmp files should remain in the session directory
+	entries, _ := os.ReadDir(store.Dir())
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("stale temp file found: %s", e.Name())
+		}
+	}
+}
+
+func TestSave_SymlinkNotFollowed(t *testing.T) {
+	// If the target path is a symlink, Save should replace the symlink
+	// (not follow it) — this is the TOCTOU defense.
+	store := newTestStore(t)
+	sess, err := store.Create(
+		[]llm.Message{{Role: "user", Content: "original"}},
+		"test", "original",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a decoy file
+	decoyPath := filepath.Join(store.Dir(), "decoy.txt")
+	if err := os.WriteFile(decoyPath, []byte("decoy"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Replace session file with symlink to decoy
+	realPath := store.Path(sess.ID)
+	if err := os.Remove(realPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("decoy.txt", realPath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Save should NOT follow the symlink — it should replace it
+	sess.Messages = append(sess.Messages, llm.Message{Role: "assistant", Content: "response"})
+	if err := store.Save(sess); err != nil {
+		t.Fatal(err)
+	}
+
+	// After Save, the real path should be a regular file, not a symlink
+	fi, err := os.Lstat(realPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("Save left a symlink in place — should have been replaced with a regular file")
+	}
+
+	// Decoy file should still have its original content (intact)
+	decoyData, err := os.ReadFile(decoyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(decoyData) != "decoy" {
+		t.Errorf("decoy file was overwritten! content: %q", string(decoyData))
+	}
+
+	// The session file should contain valid session JSON
+	loaded, err := store.Load(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Messages) != 2 {
+		t.Errorf("expected 2 messages, got %d", len(loaded.Messages))
 	}
 }
 
