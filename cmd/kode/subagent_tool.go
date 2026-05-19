@@ -26,21 +26,6 @@ type delegateTasksTool struct {
 	timeout        time.Duration
 }
 
-func newDelegateTasksTool(maxConcurrency int) *delegateTasksTool {
-	path := os.Args[0] // same binary as parent
-	if path == "" {
-		path = "kode"
-	}
-	if maxConcurrency <= 0 {
-		maxConcurrency = 3
-	}
-	return &delegateTasksTool{
-		maxConcurrency: maxConcurrency,
-		kodePath:       path,
-		timeout:        120 * time.Second,
-	}
-}
-
 func (t *delegateTasksTool) Name() string { return "delegate_tasks" }
 
 func (t *delegateTasksTool) Description() string {

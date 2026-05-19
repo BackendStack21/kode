@@ -123,9 +123,11 @@ kode repl
 | `--base-url <url>` | API endpoint URL |
 | `--sandbox` | Run in Docker sandbox |
 | `--thinking <level>` | Reasoning depth (enabled/disabled/low/medium/high) |
-| `--no-learn` | Disable skill learning mode (on by default) |
+| `--learn` | Enable skill learning mode — on by default |
+| `--no-learn` | Disable skill learning mode |
 | `--system <prompt>` | Override system prompt |
 | `--max-iter <n>` | Max think→act cycles (default 90) |
+| `--no-color` | Disable colored output |
 | `--no-agents` | Skip AGENTS.md project file |
 
 ---
