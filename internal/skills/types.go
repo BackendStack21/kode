@@ -95,7 +95,7 @@ func DefaultSkillsConfig() SkillsConfig {
 	return SkillsConfig{
 		MaxAutoLoad:  3,
 		MaxLazySlots: 5,
-		Learn:        false,
+		Learn:        true,
 		Dirs:         nil, // computed at runtime
 		Import: ImportConfig{
 			MaxSizeBytes: 1_048_576, // 1MB

@@ -206,6 +206,9 @@ func parseRunFlags(args []string) (runFlags, error) {
 		case "--learn":
 			f.Learn = boolPtr(true)
 			i++
+		case "--no-learn":
+			f.Learn = boolPtr(false)
+			i++
 		case "--no-color":
 			f.NoColor = boolPtr(true)
 			i++

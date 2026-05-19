@@ -47,8 +47,8 @@ func TestDefaultSkillsConfig(t *testing.T) {
 	if cfg.MaxLazySlots != 5 {
 		t.Errorf("MaxLazySlots = %d", cfg.MaxLazySlots)
 	}
-	if cfg.Learn {
-		t.Error("Learn should default to false")
+	if !cfg.Learn {
+		t.Error("Learn should default to true")
 	}
 	if cfg.Import.MaxSizeBytes != 1048576 {
 		t.Errorf("Import.MaxSizeBytes = %d", cfg.Import.MaxSizeBytes)
