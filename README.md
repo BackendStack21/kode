@@ -56,6 +56,9 @@ Any OpenAI-compatible endpoint: Deepseek, OpenAI, Anthropic, Ollama, vLLM, Groq,
 ### 🌐 Web UI
 `kode serve` — browser-based agent with `@` resource completion (`@file.go`, `@sess:abc123`), WebSocket streaming, and a full IDE-style console. [docs/WEBUI.md](docs/WEBUI.md)
 
+### 🔌 MCP (Two-Way)
+**Server** (`kode mcp`) — expose kode's native tools (shell, read/write/search files, patch, browser) to Claude Code, Cursor, and any MCP client. **Client** (`mcp_servers` config) — kode connects to external MCP servers (Playwright, Fetch, GitHub, SQLite, etc.) and makes their tools available to the agent as `<server>__<tool>`. Both directions in one binary. [docs/MCP.md](docs/MCP.md)
+
 ### 🔍 Native Tools
 Built-in `read_file`, `write_file`, `search_files`, `patch`, `shell`, and `browser` tools. All gated by a unified security layer (`dangerous` config) — classify operations as `allow` / `deny` / `prompt` per risk class. No third-party dependencies. [docs/SECURITY.md](docs/SECURITY.md)
 
