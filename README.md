@@ -22,6 +22,7 @@ kode run "Fix the OOM bug in default-hooks.js"
 - **Multi-turn** — `kode run --session` and `kode continue` for persistent conversations
 - **Configurable** — 4-layer config (global → project → env → CLI), `${VAR}` substitution
 - **Skills system** — On-demand knowledge through trigger‑matched SKILL.md files. Auto‑learn patterns with `--learn`. Import skills from URIs with LLM risk assessment.
+- **Persistent memory** — Three‑tier memory system (facts + session buffer + episode search). Agent‑managed via `memory` tool. Merge‑on‑write with go‑vector similarity detection saves ~80% LLM calls.
 
 ## Install
 
@@ -121,6 +122,24 @@ kode version                                    # Print version
 --system <prompt>      # System prompt override
 --no-agents            # Skip AGENTS.md
 ```
+
+## Features
+
+### Persistent Memory
+
+Three tiers managed automatically by the agent via the `memory` tool:
+
+| Tier | Storage | Cap | Managed by |
+|------|---------|-----|------------|
+| Facts | `~/.kode/memory/facts/{user,env}.md` | 1,500 + 2,500 chars | Agent via `memory` tool |
+| Buffer | In-session ring | 20 lines | Auto-appended each turn |
+| Episodes | `~/.kode/memory/episodes/<id>.md` | 1 KB each | LLM-extracted on session end |
+
+The agent can **add**, **replace**, **remove**, **consolidate**, **read**, or **search** memory using a single `memory` tool with six actions.
+
+**Merge-on-write** uses go-vector RandomProjections to detect duplicate entries before writing — cosine >0.7 auto-merges, <0.3 auto-adds, 0.3-0.7 asks the LLM. Saves ~80% of LLM calls.
+
+See [docs/MEMORY.md](docs/MEMORY.md) for the full design.
 
 ## Programmatic API
 

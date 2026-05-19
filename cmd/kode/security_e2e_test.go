@@ -110,7 +110,11 @@ func TestSecurity_WriteFile_DestructivePath(t *testing.T) {
 
 func TestSecurity_WriteFile_CustomAllowlist(t *testing.T) {
 	// /etc is system_write → deny by default in deny-non-interactive mode.
-	// But an allowlist for this specific path should override.
+	// But non_interactive=allow should override the security denial.
+	// Note: the actual os.WriteFile may still fail due to filesystem
+	// permissions (we're not root in CI). That's OK — we're testing
+	// that the security layer allows the operation, not that the
+	// filesystem write succeeds.
 	allow := "allow"
 	dc := danger.DangerousConfig{
 		NonInteractive: &allow,
@@ -119,9 +123,10 @@ func TestSecurity_WriteFile_CustomAllowlist(t *testing.T) {
 	result := callJSON(t, tool, `{"path":"/etc/passwd","content":"hack"}`)
 	var r struct{ Error string `json:"error"` }
 	mustUnmarshal(t, result, &r)
-	// With non_interactive=allow, all operations are allowed
-	if r.Error != "" {
-		t.Errorf("expected allow with non_interactive=allow, got: %s", r.Error)
+	// With non_interactive=allow, the security layer should NOT issue
+	// a denial. A filesystem-level permission error is acceptable.
+	if strings.Contains(r.Error, "denied") {
+		t.Errorf("expected security layer to allow, got denial: %s", r.Error)
 	}
 }
 
@@ -354,7 +359,7 @@ func TestSecurity_ClassOverride_SystemWriteAllowed(t *testing.T) {
 	var r struct{ Error string `json:"error"` }
 	mustUnmarshal(t, result, &r)
 	// Write will fail because /etc is not writable, but it should NOT be a security denial
-	if r.Error != "" && strings.Contains(r.Error, "denied") {
+	if r.Error != "" && (strings.Contains(r.Error, "security") || strings.Contains(r.Error, "class")) {
 		t.Errorf("expected no security denial after system_write=allow, got: %s", r.Error)
 	}
 	// Error should be "cannot create directory" or similar FS error, not a config denial

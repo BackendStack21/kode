@@ -16,8 +16,11 @@ jobs:
         with:
           go-version: "1.24"
 
+      - name: build
+        run: go build -o /tmp/kode-test github.com/BackendStack21/kode/cmd/kode && chmod +x /tmp/kode-test
+
       - name: test
-        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
+        run: KODE_BINARY=/tmp/kode-test go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
 
       - name: coverage
         run: go tool cover -func=coverage.out

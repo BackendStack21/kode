@@ -110,6 +110,34 @@ The `skills` section controls the skill system:
 | `curation.staleness_days` | — | 90 | Days without use before flagging as stale |
 | `curation.auto_prune` | — | false | Auto-delete stale skills on curate (no prompt) |
 
+## Memory configuration
+
+The `memory` section controls the persistent memory system (see [docs/MEMORY.md](docs/MEMORY.md)):
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "facts_limit_user": 1500,
+    "facts_limit_env": 2500,
+    "buffer_lines": 20,
+    "buffer_enabled": true,
+    "merge_on_write": true,
+    "extract_on_end": true
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | true | Enable memory system entirely |
+| `facts_limit_user` | 1500 | Max chars for `user.md` fact file |
+| `facts_limit_env` | 2500 | Max chars for `env.md` fact file |
+| `buffer_lines` | 20 | Max turn summaries in session buffer |
+| `buffer_enabled` | true | Enable the turn-level buffer |
+| `merge_on_write` | true | Use go-vector RP similarity to auto-merge related entries |
+| `extract_on_end` | true | Extract durable facts via LLM at session end (≥3 turns) |
+
 ## Sub-agent configuration
 
 The `subagent` section controls task decomposition and parallel sub-agent execution (see [docs/SUBAGENTS.md](docs/SUBAGENTS.md)):
