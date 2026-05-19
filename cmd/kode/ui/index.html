@@ -690,6 +690,38 @@ body {
   border-radius: 4px; padding: 2px 8px; color: var(--text-secondary);
 }
 
+/* ── Confirm Dialog ── */
+#confirm-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 1001;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+}
+#confirm-overlay.active { display: flex; animation: fadeIn 0.15s ease-out; }
+#confirm-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 16px 64px rgba(0,0,0,0.5);
+  animation: dialogEnter 0.2s ease-out;
+}
+#confirm-dialog h3 { font-size: 16px; margin-bottom: 8px; color: var(--text-primary); }
+#confirm-dialog p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; }
+#confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+#confirm-actions button {
+  padding: 8px 16px; border-radius: 8px; border: none;
+  font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+#confirm-actions .cancel { background: var(--bg-primary); color: var(--text-secondary); border: 1px solid var(--border-subtle); }
+#confirm-actions .cancel:hover { background: var(--accent-subtle); color: var(--text-primary); }
+#confirm-actions .delete-confirm { background: #ef4444; color: white; }
+#confirm-actions .delete-confirm:hover { opacity: 0.9; }
+
 /* ── Toast ── */
 .toast {
   position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
@@ -800,6 +832,18 @@ body {
     <div class="shortcut-row"><span class="sc-label">History down</span><span class="sc-key">↓</span></div>
     <div class="shortcut-row"><span class="sc-label">File/session reference</span><span class="sc-key">@</span></div>
     <div class="shortcut-row"><span class="sc-label">Toggle shortcuts</span><span class="sc-key">?</span></div>
+  </div>
+</div>
+
+<!-- Confirm Dialog -->
+<div id="confirm-overlay">
+  <div id="confirm-dialog">
+    <h3>Delete session?</h3>
+    <p id="confirm-msg">This action cannot be undone.</p>
+    <div id="confirm-actions">
+      <button class="cancel" onclick="hideConfirmDialog()">Cancel</button>
+      <button class="delete-confirm" id="confirm-delete-btn" onclick="executeDeleteSession()">Delete</button>
+    </div>
   </div>
 </div>
 
@@ -1353,6 +1397,22 @@ window.sendApproval = function(action) {
   approvalId = null;
 };
 
+// ── Confirm Dialog ──
+window.hideConfirmDialog = function() {
+  document.getElementById('confirm-overlay').classList.remove('active');
+  pendingDeleteId = null;
+};
+
+window.executeDeleteSession = function() {
+  if (!pendingDeleteId) return;
+  const sid = pendingDeleteId;
+  pendingDeleteId = null;
+  document.getElementById('confirm-overlay').classList.remove('active');
+  fetch('/api/sessions/' + encodeURIComponent(sid), { method: 'DELETE' })
+    .then(() => loadSessions())
+    .catch(() => showToast('Failed to delete session'));
+};
+
 // ── Shortcuts ──
 window.toggleShortcuts = function() {
   document.getElementById('shortcuts-overlay').classList.toggle('active');
@@ -1655,6 +1715,7 @@ function replaceCompletion(id) {
 
 // ── Sessions ──
 let allSessions = [];
+let pendingDeleteId = null;
 
 sessionListEl.addEventListener('click', (e) => {
   // Delete button
@@ -1664,11 +1725,9 @@ sessionListEl.addEventListener('click', (e) => {
     const sid = item.dataset.id;
     if (!sid) return;
     e.stopPropagation();
-    if (confirm('Delete session ' + sid.slice(0, 8) + '?')) {
-      fetch('/api/sessions/' + encodeURIComponent(sid), { method: 'DELETE' })
-        .then(() => loadSessions())
-        .catch(() => showToast('Failed to delete session'));
-    }
+    pendingDeleteId = sid;
+    document.getElementById('confirm-msg').textContent = 'Delete session ' + sid.slice(0, 8) + '...?';
+    document.getElementById('confirm-overlay').classList.add('active');
     return;
   }
 
@@ -1731,6 +1790,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.getElementById('shortcuts-overlay').classList.remove('active');
     document.getElementById('approval-overlay').classList.remove('active');
+    document.getElementById('confirm-overlay').classList.remove('active');
+    pendingDeleteId = null;
   }
   // Ctrl+R refreshes sessions
   if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {

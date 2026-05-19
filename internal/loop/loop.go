@@ -239,6 +239,12 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 			if e.renderer != nil {
 				e.renderer.FinalAnswer(result.Content)
 			}
+			// Append final assistant message so callers (e.g. WebUI) get
+			// the final text in the messages slice and can stream it.
+			messages = append(messages, llm.Message{
+				Role:    "assistant",
+				Content: result.Content,
+			})
 			return result.Content, messages, nil
 		}
 
