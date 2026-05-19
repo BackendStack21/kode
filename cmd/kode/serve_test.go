@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/BackendStack21/kode/internal/session"
-	"github.com/BackendStack21/kode/internal/ws"
+	golangws "golang.org/x/net/websocket"
 )
 
 // ── Test Server ────────────────────────────────────────────────────────
@@ -51,7 +51,10 @@ func startTestServer(t *testing.T) *testServer {
 	mux.HandleFunc("/", s.handleStatic())
 	mux.HandleFunc("/api/sessions", s.handleSessionList())
 	mux.HandleFunc("/api/resources", s.handleResourceSearch())
-	mux.HandleFunc("/ws", s.handleWebSocket())
+	mux.Handle("/ws", &golangws.Server{
+		Handshake: func(*golangws.Config, *http.Request) error { return nil },
+		Handler:   s.handleWebSocket,
+	})
 
 	go http.Serve(ln, mux)
 	return s
@@ -103,76 +106,76 @@ func (s *testServer) handleResourceSearch() http.HandlerFunc {
 	}
 }
 
-func (s *testServer) handleWebSocket() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := ws.Upgrade(w, r)
-		if err != nil {
+func (s *testServer) handleWebSocket(conn *golangws.Conn) {
+	defer conn.Close()
+
+	for {
+		var data []byte
+		if err := golangws.Message.Receive(conn, &data); err != nil {
 			return
 		}
-		defer conn.Close()
 
-		for {
-			opcode, data, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			if opcode != ws.OpText {
-				continue
-			}
+		var msg map[string]any
+		if err := json.Unmarshal(data, &msg); err != nil {
+			continue
+		}
 
-			var msg map[string]any
-			if err := json.Unmarshal(data, &msg); err != nil {
-				continue
-			}
+		// Handle prompt — echo back structured events for testing
+		if msg["type"] == "prompt" {
+			// Send session event
+			writeJSON(conn, map[string]any{
+				"type":       "session",
+				"session_id": "test-session-001",
+				"model":      "test-model",
+			})
 
-			// Handle prompt — echo back structured events for testing
-			if msg["type"] == "prompt" {
-				// Send session event
-				writeJSON(conn, map[string]any{
-					"type":       "session",
-					"session_id": "test-session-001",
-					"model":      "test-model",
-				})
+			// Send thinking
+			writeJSON(conn, map[string]any{
+				"type":    "thinking",
+				"content": "Analyzing the request",
+			})
 
-				// Send thinking
-				writeJSON(conn, map[string]any{
-					"type":    "thinking",
-					"content": "Analyzing the request",
-				})
+			// Send tool call
+			writeJSON(conn, map[string]any{
+				"type":    "tool_call",
+				"name":    "shell",
+				"command": "echo test",
+			})
 
-				// Send tool call
-				writeJSON(conn, map[string]any{
-					"type":    "tool_call",
-					"name":    "shell",
-					"command": "echo test",
-				})
+			// Send tool result
+			writeJSON(conn, map[string]any{
+				"type":   "tool_result",
+				"name":   "shell",
+				"output": "test output",
+			})
 
-				// Send tool result
-				writeJSON(conn, map[string]any{
-					"type":   "tool_result",
-					"name":   "shell",
-					"output": "test output",
-				})
+			// Send final token
+			writeJSON(conn, map[string]any{
+				"type":    "token",
+				"content": "Done with your request.",
+			})
 
-				// Send final token
-				writeJSON(conn, map[string]any{
-					"type":    "token",
-					"content": "Done with your request.",
-				})
-
-				// Send done
-				writeJSON(conn, map[string]any{
-					"type":    "done",
-					"latency": 0.5,
-				})
-			}
+			// Send done
+			writeJSON(conn, map[string]any{
+				"type":    "done",
+				"latency": 0.5,
+			})
 		}
 	}
 }
 
-func writeJSON(conn *ws.Conn, data any) {
+func writeJSON(conn *golangws.Conn, data any) {
 	payload, _ := json.Marshal(data)
-	conn.WriteMessage(ws.OpText, payload)
+	golangws.Message.Send(conn, string(payload))
+}
+
+// readJSON reads a complete WebSocket message and unmarshals it into dst.
+func readJSON(conn *golangws.Conn, dst any) error {
+	var data []byte
+	if err := golangws.Message.Receive(conn, &data); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, dst)
 }
 
 // sessionDir returns the ~/.kode/sessions directory for testing.
@@ -281,7 +284,7 @@ func TestServe_WebSocketUpgrade(t *testing.T) {
 	s := startTestServer(t)
 	defer s.Close()
 
-	conn, _, err := ws.Dial(s.wsURL + "/ws")
+	conn, err := golangws.Dial(s.wsURL+"/ws", "", "http://localhost")
 	if err != nil {
 		t.Fatalf("Dial(): %v", err)
 	}
@@ -290,24 +293,22 @@ func TestServe_WebSocketUpgrade(t *testing.T) {
 	// Send a prompt to trigger the handler
 	prompt := map[string]string{"type": "prompt", "content": "hello"}
 	payload, _ := json.Marshal(prompt)
-	if err := conn.WriteMessage(ws.OpText, payload); err != nil {
-		t.Fatalf("WriteMessage(): %v", err)
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send(): %v", err)
 	}
 
-	// Should get session event back
-	opcode, data, err := conn.ReadMessage()
-	if err != nil {
-		t.Fatalf("ReadMessage(): %v", err)
+	// Should get a JSON response back
+	var data []byte
+	if err := golangws.Message.Receive(conn, &data); err != nil {
+		t.Fatalf("Receive(): %v", err)
 	}
-	if opcode != ws.OpText {
-		t.Errorf("opcode = %d, want text", opcode)
-	}
-	var event map[string]any
-	if err := json.Unmarshal(data, &event); err != nil {
+	var response map[string]any
+	if err := json.Unmarshal(data, &response); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if event["type"] != "session" {
-		t.Errorf("event type = %v, want 'session'", event["type"])
+
+	if response["type"] != "session" {
+		t.Errorf("event type = %v, want 'session'", response["type"])
 	}
 }
 
@@ -315,7 +316,7 @@ func TestServe_WebSocketPromptFlow(t *testing.T) {
 	s := startTestServer(t)
 	defer s.Close()
 
-	conn, _, err := ws.Dial(s.wsURL + "/ws")
+	conn, err := golangws.Dial(s.wsURL+"/ws", "", "http://localhost")
 	if err != nil {
 		t.Fatalf("Dial(): %v", err)
 	}
@@ -327,8 +328,8 @@ func TestServe_WebSocketPromptFlow(t *testing.T) {
 		"content": "hello world",
 	}
 	payload, _ := json.Marshal(prompt)
-	if err := conn.WriteMessage(ws.OpText, payload); err != nil {
-		t.Fatalf("WriteMessage(): %v", err)
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send(): %v", err)
 	}
 
 	// Collect events
@@ -341,14 +342,9 @@ func TestServe_WebSocketPromptFlow(t *testing.T) {
 		case <-timeout:
 			t.Fatal("timeout waiting for events")
 		default:
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				t.Fatalf("ReadMessage(): %v", err)
-			}
-
 			var event map[string]any
-			if err := json.Unmarshal(data, &event); err != nil {
-				t.Fatalf("unmarshal: %v", err)
+			if err := readJSON(conn, &event); err != nil {
+				t.Fatalf("Receive(): %v", err)
 			}
 			events = append(events, event)
 
@@ -388,15 +384,15 @@ func TestServe_WebSocketInvalidJSON(t *testing.T) {
 	s := startTestServer(t)
 	defer s.Close()
 
-	conn, _, err := ws.Dial(s.wsURL + "/ws")
+	conn, err := golangws.Dial(s.wsURL+"/ws", "", "http://localhost")
 	if err != nil {
 		t.Fatalf("Dial(): %v", err)
 	}
 	defer conn.Close()
 
 	// Send invalid JSON
-	if err := conn.WriteMessage(ws.OpText, []byte("not json")); err != nil {
-		t.Fatalf("WriteMessage(): %v", err)
+	if err := golangws.Message.Send(conn, "not json"); err != nil {
+		t.Fatalf("Send(): %v", err)
 	}
 }
 
@@ -404,7 +400,7 @@ func TestServe_WebSocketInvalidMessageType(t *testing.T) {
 	s := startTestServer(t)
 	defer s.Close()
 
-	conn, _, err := ws.Dial(s.wsURL + "/ws")
+	conn, err := golangws.Dial(s.wsURL+"/ws", "", "http://localhost")
 	if err != nil {
 		t.Fatalf("Dial(): %v", err)
 	}
@@ -413,15 +409,15 @@ func TestServe_WebSocketInvalidMessageType(t *testing.T) {
 	// Send a message with wrong type
 	msg := map[string]string{"type": "invalid", "content": "test"}
 	payload, _ := json.Marshal(msg)
-	if err := conn.WriteMessage(ws.OpText, payload); err != nil {
-		t.Fatalf("WriteMessage(): %v", err)
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send(): %v", err)
 	}
 
 	// Server should ignore it — send a valid prompt to check
 	msg2 := map[string]string{"type": "prompt", "content": "valid"}
 	payload2, _ := json.Marshal(msg2)
-	if err := conn.WriteMessage(ws.OpText, payload2); err != nil {
-		t.Fatalf("WriteMessage(): %v", err)
+	if err := golangws.Message.Send(conn, string(payload2)); err != nil {
+		t.Fatalf("Send(): %v", err)
 	}
 
 	// Should get a response despite the invalid message before
@@ -432,12 +428,10 @@ func TestServe_WebSocketInvalidMessageType(t *testing.T) {
 		case <-timeout:
 			t.Fatal("timeout waiting for response after invalid message")
 		default:
-			_, data, err := conn.ReadMessage()
-			if err != nil {
-				t.Fatalf("ReadMessage(): %v", err)
-			}
 			var event map[string]any
-			json.Unmarshal(data, &event)
+			if err := readJSON(conn, &event); err != nil {
+				t.Fatalf("Receive(): %v", err)
+			}
 			if event["type"] == "done" || event["type"] == "session" {
 				gotResponse = true
 			}
@@ -449,7 +443,7 @@ func TestServe_MultiplePrompts(t *testing.T) {
 	s := startTestServer(t)
 	defer s.Close()
 
-	conn, _, err := ws.Dial(s.wsURL + "/ws")
+	conn, err := golangws.Dial(s.wsURL+"/ws", "", "http://localhost")
 	if err != nil {
 		t.Fatalf("Dial(): %v", err)
 	}
@@ -461,8 +455,8 @@ func TestServe_MultiplePrompts(t *testing.T) {
 			"content": fmt.Sprintf("prompt %d", i),
 		}
 		payload, _ := json.Marshal(prompt)
-		if err := conn.WriteMessage(ws.OpText, payload); err != nil {
-			t.Fatalf("prompt %d: WriteMessage(): %v", i, err)
+		if err := golangws.Message.Send(conn, string(payload)); err != nil {
+			t.Fatalf("prompt %d: Send(): %v", i, err)
 		}
 
 		// Read until done
@@ -473,12 +467,10 @@ func TestServe_MultiplePrompts(t *testing.T) {
 			case <-timeout:
 				t.Fatalf("timeout waiting for prompt %d", i)
 			default:
-				_, data, err := conn.ReadMessage()
-				if err != nil {
-					t.Fatalf("prompt %d: ReadMessage(): %v", i, err)
-				}
 				var event map[string]any
-				json.Unmarshal(data, &event)
+				if err := readJSON(conn, &event); err != nil {
+					t.Fatalf("prompt %d: Receive(): %v", i, err)
+				}
 				if event["type"] == "done" {
 					promptDone = true
 				}

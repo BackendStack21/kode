@@ -20,7 +20,7 @@ import (
 	"github.com/BackendStack21/kode/internal/resource"
 	"github.com/BackendStack21/kode/internal/session"
 	"github.com/BackendStack21/kode/internal/skills"
-	"github.com/BackendStack21/kode/internal/ws"
+	golangws "golang.org/x/net/websocket"
 )
 
 //go:embed ui/index.html
@@ -76,7 +76,12 @@ Flags:
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleStatic())
-	mux.HandleFunc("/ws", handleWebSocket(store, resourceReg, resolved, systemMessage))
+	mux.Handle("/ws", &golangws.Server{
+		Handshake: func(*golangws.Config, *http.Request) error { return nil },
+		Handler: func(conn *golangws.Conn) {
+			handleWS(store, resourceReg, resolved, systemMessage, conn)
+		},
+	})
 	mux.HandleFunc("/api/resources", handleResourceSearch(resourceReg))
 	mux.HandleFunc("/api/sessions", handleSessionList(store))
 
@@ -174,102 +179,92 @@ type wsClientMsg struct {
 
 // ── WebSocket Handler ──────────────────────────────────────────────────
 
-func handleWebSocket(store *session.Store, resources *resource.Registry, resolved config.ResolvedConfig, system string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := ws.Upgrade(w, r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+func handleWS(store *session.Store, resources *resource.Registry, resolved config.ResolvedConfig, system string, conn *golangws.Conn) {
+	defer conn.Close()
+
+	// Create ONE agent per WebSocket connection — provides buffer
+	// continuity across turns within the same session.
+	agent, sandboxCleanup, mcpCleanup, approver, err := newServeAgent(resolved, system, func(v any) error {
+		writeWSJSON(conn, v)
+		return nil
+	})
+	if err != nil {
+		writeWSError(conn, fmt.Sprintf("agent: %v", err))
+		return
+	}
+	defer agent.Close()
+	if sandboxCleanup != nil {
+		defer sandboxCleanup()
+	}
+	if mcpCleanup != nil {
+		defer mcpCleanup()
+	}
+
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	// Track the current session across WebSocket messages
+	var currentSession *session.Session
+
+	for {
+		var data []byte
+		if err := golangws.Message.Receive(conn, &data); err != nil {
+			break
 		}
-		defer conn.Close()
 
-		// Create ONE agent per WebSocket connection — provides buffer
-		// continuity across turns within the same session.
-		agent, sandboxCleanup, mcpCleanup, approver, err := newServeAgent(resolved, system, func(v any) error {
-			writeWSJSON(conn, v)
-			return nil
-		})
-		if err != nil {
-			writeWSError(conn, fmt.Sprintf("agent: %v", err))
-			return
+		// Peek at the message type without full unmarshal
+		var msgType struct {
+			Type string `json:"type"`
 		}
-		defer agent.Close()
-		if sandboxCleanup != nil {
-			defer sandboxCleanup()
-		}
-		if mcpCleanup != nil {
-			defer mcpCleanup()
+		if err := json.Unmarshal(data, &msgType); err != nil {
+			continue
 		}
 
-		ctx, cancel := signal.NotifyContext(r.Context(), os.Interrupt)
-		defer cancel()
-
-		// Track the current session across WebSocket messages
-		var currentSession *session.Session
-
-		for {
-			opcode, data, err := conn.ReadMessage()
-			if err != nil {
-				break
+		// Handle approval responses separately (non-blocking, from the browser)
+		if msgType.Type == "approval_response" {
+			var resp approvalResponse
+			if err := json.Unmarshal(data, &resp); err == nil {
+				approver.HandleResponse(resp.ID, resp.Action)
 			}
-			if opcode != ws.OpText {
-				continue
-			}
+			continue
+		}
 
-			// Peek at the message type without full unmarshal
-			var msgType struct {
-				Type string `json:"type"`
-			}
-			if err := json.Unmarshal(data, &msgType); err != nil {
-				continue
-			}
+		// Only process prompt messages
+		if msgType.Type != "prompt" {
+			continue
+		}
 
-			// Handle approval responses separately (non-blocking, from the browser)
-			if msgType.Type == "approval_response" {
-				var resp approvalResponse
-				if err := json.Unmarshal(data, &resp); err == nil {
-					approver.HandleResponse(resp.ID, resp.Action)
-				}
-				continue
-			}
+		var msg wsClientMsg
+		if err := json.Unmarshal(data, &msg); err != nil {
+			writeWSError(conn, "invalid JSON")
+			continue
+		}
 
-			// Only process prompt messages
-			if msgType.Type != "prompt" {
-				continue
-			}
+		if msg.Content == "" {
+			continue
+		}
 
-			var msg wsClientMsg
-			if err := json.Unmarshal(data, &msg); err != nil {
-				writeWSError(conn, "invalid JSON")
-				continue
-			}
-
-			if msg.Content == "" {
-				continue
-			}
-
-			// Handle session switch mid-connection (new conversation)
-			if msg.SessionID != "" && (currentSession == nil || currentSession.ID != msg.SessionID) {
-				sess, err := store.Load(msg.SessionID)
-				if err == nil {
-					currentSession = sess
-					// Restore buffer from the resumed session
-					if mm := agent.Memory(); mm != nil && len(sess.Buffer) > 0 {
-						mm.RestoreBuffer(sess.Buffer)
-					}
+		// Handle session switch mid-connection (new conversation)
+		if msg.SessionID != "" && (currentSession == nil || currentSession.ID != msg.SessionID) {
+			sess, err := store.Load(msg.SessionID)
+			if err == nil {
+				currentSession = sess
+				// Restore buffer from the resumed session
+				if mm := agent.Memory(); mm != nil && len(sess.Buffer) > 0 {
+					mm.RestoreBuffer(sess.Buffer)
 				}
 			}
-
-			// Run prompt — passes the persistent agent for buffer continuity
-			currentSession = handlePrompt(ctx, conn, store, resources, resolved, agent, currentSession, msg.Content, msg.SessionID)
 		}
 
-		// WebSocket disconnected — extract episode if enough turns
-		if currentSession != nil {
-			if mm := agent.Memory(); mm != nil {
-				msgStrs := makeSessionMessageStrings(currentSession)
-				mm.OnSessionEnd(currentSession.ID, currentSession.Turns, msgStrs)
-			}
+		// Run prompt — passes the persistent agent for buffer continuity
+		currentSession = handlePrompt(ctx, conn, store, resources, resolved, agent, currentSession, msg.Content, msg.SessionID)
+	}
+
+	// WebSocket disconnected — extract episode if enough turns
+	if currentSession != nil {
+		if mm := agent.Memory(); mm != nil {
+			msgStrs := makeSessionMessageStrings(currentSession)
+			mm.OnSessionEnd(currentSession.ID, currentSession.Turns, msgStrs)
 		}
 	}
 }
@@ -281,7 +276,7 @@ func handleWebSocket(store *session.Store, resources *resource.Registry, resolve
 // Returns the updated session (may be a new session for first prompts).
 func handlePrompt(
 	ctx context.Context,
-	conn *ws.Conn,
+	conn *golangws.Conn,
 	store *session.Store,
 	resources *resource.Registry,
 	resolved config.ResolvedConfig,
@@ -434,7 +429,7 @@ func handlePrompt(
 // ── WebSocket Stream Writer ─────────────────────────────────────────────
 
 type wsStreamWriter struct {
-	conn *ws.Conn
+	conn *golangws.Conn
 }
 
 func (w *wsStreamWriter) Write(p []byte) (int, error) {
@@ -448,15 +443,15 @@ func (w *wsStreamWriter) Write(p []byte) (int, error) {
 
 // ── WS Helpers ─────────────────────────────────────────────────────────
 
-func writeWSJSON(conn *ws.Conn, data any) {
+func writeWSJSON(conn *golangws.Conn, data any) {
 	payload, err := json.Marshal(data)
 	if err != nil {
 		return
 	}
-	conn.WriteMessage(ws.OpText, payload)
+	golangws.Message.Send(conn, string(payload))
 }
 
-func writeWSError(conn *ws.Conn, msg string) {
+func writeWSError(conn *golangws.Conn, msg string) {
 	writeWSJSON(conn, map[string]string{"type": "error", "message": msg})
 }
 
@@ -488,8 +483,7 @@ func handleSessionList(store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		sessions, err := store.List(50)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			sessions = []session.Session{}
 		}
 		if sessions == nil {
 			sessions = []session.Session{}
