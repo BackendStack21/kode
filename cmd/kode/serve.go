@@ -17,7 +17,6 @@ import (
 	"github.com/BackendStack21/kode"
 	"github.com/BackendStack21/kode/internal/config"
 	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/resource"
 	"github.com/BackendStack21/kode/internal/session"
 	"github.com/BackendStack21/kode/internal/skills"
@@ -151,7 +150,7 @@ func newServeAgent(resolved config.ResolvedConfig, system string) (*kode.Agent, 
 	return agent, sandboxCleanup, nil
 }
 
-// ── WebSocket Handler ───────────────────────────────────────────────────
+// ── WebSocket Types ────────────────────────────────────────────────────
 
 type wsClientMsg struct {
 	Type      string `json:"type"`
@@ -159,8 +158,9 @@ type wsClientMsg struct {
 	SessionID string `json:"session_id"`
 }
 
+// ── WebSocket Handler ──────────────────────────────────────────────────
+
 func handleWebSocket(store *session.Store, resources *resource.Registry, resolved config.ResolvedConfig, system string) http.HandlerFunc {
-	// Resolve config once at startup — reconnects use the same config
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := ws.Upgrade(w, r)
 		if err != nil {
@@ -169,13 +169,28 @@ func handleWebSocket(store *session.Store, resources *resource.Registry, resolve
 		}
 		defer conn.Close()
 
+		// Create ONE agent per WebSocket connection — provides buffer
+		// continuity across turns within the same session.
+		agent, sandboxCleanup, err := newServeAgent(resolved, system)
+		if err != nil {
+			writeWSError(conn, fmt.Sprintf("agent: %v", err))
+			return
+		}
+		defer agent.Close()
+		if sandboxCleanup != nil {
+			defer sandboxCleanup()
+		}
+
 		ctx, cancel := signal.NotifyContext(r.Context(), os.Interrupt)
 		defer cancel()
+
+		// Track the current session across WebSocket messages
+		var currentSession *session.Session
 
 		for {
 			opcode, data, err := conn.ReadMessage()
 			if err != nil {
-				return
+				break
 			}
 			if opcode != ws.OpText {
 				continue
@@ -191,13 +206,48 @@ func handleWebSocket(store *session.Store, resources *resource.Registry, resolve
 				continue
 			}
 
-			// Run prompt (blocking per WS loop — one prompt at a time)
-			handlePrompt(ctx, conn, store, resources, resolved, system, msg.Content, msg.SessionID)
+			// Handle session switch mid-connection (new conversation)
+			if msg.SessionID != "" && (currentSession == nil || currentSession.ID != msg.SessionID) {
+				sess, err := store.Load(msg.SessionID)
+				if err == nil {
+					currentSession = sess
+					// Restore buffer from the resumed session
+					if mm := agent.Memory(); mm != nil && len(sess.Buffer) > 0 {
+						mm.RestoreBuffer(sess.Buffer)
+					}
+				}
+			}
+
+			// Run prompt — passes the persistent agent for buffer continuity
+			currentSession = handlePrompt(ctx, conn, store, resources, resolved, agent, currentSession, msg.Content, msg.SessionID)
+		}
+
+		// WebSocket disconnected — extract episode if enough turns
+		if currentSession != nil {
+			if mm := agent.Memory(); mm != nil {
+				msgStrs := makeSessionMessageStrings(currentSession)
+				mm.OnSessionEnd(currentSession.ID, currentSession.Turns, msgStrs)
+			}
 		}
 	}
 }
 
-func handlePrompt(ctx context.Context, conn *ws.Conn, store *session.Store, resources *resource.Registry, resolved config.ResolvedConfig, system string, prompt string, sessionID string) {
+// ── Prompt Handler ─────────────────────────────────────────────────────
+
+// handlePrompt processes a single user prompt within a WebSocket connection.
+// Uses the persistent agent (for buffer continuity) and manages session state.
+// Returns the updated session (may be a new session for first prompts).
+func handlePrompt(
+	ctx context.Context,
+	conn *ws.Conn,
+	store *session.Store,
+	resources *resource.Registry,
+	resolved config.ResolvedConfig,
+	agent *kode.Agent,
+	currSess *session.Session,
+	prompt string,
+	sessionID string,
+) *session.Session {
 	// Resolve @ references
 	refs := resource.ParseRefs(prompt)
 	resolvedRefs := make(map[string]string)
@@ -213,6 +263,7 @@ func handlePrompt(ctx context.Context, conn *ws.Conn, store *session.Store, reso
 	// Load or create session
 	var sess *session.Session
 	var err error
+
 	if sessionID != "" {
 		sess, err = store.Load(sessionID)
 		if err != nil {
@@ -220,36 +271,23 @@ func handlePrompt(ctx context.Context, conn *ws.Conn, store *session.Store, reso
 		}
 	}
 
-	// Build agent for this prompt
-	agent, sandboxCleanup, err := newServeAgent(resolved, system)
-	if err != nil {
-		writeWSError(conn, fmt.Sprintf("agent: %v", err))
-		return
-	}
-	defer agent.Close()
-	if sandboxCleanup != nil {
-		defer sandboxCleanup()
-	}
-
 	// Build message history
 	var messages []llm.Message
+	isNewSession := false
+
 	if sess != nil {
 		messages = sess.GetMessages()
 		messages = append(messages, llm.Message{Role: "user", Content: enrichedPrompt})
 	} else {
-		modelLabel := kode.ProfileLabel(resolved.Model)
-		if modelLabel == "" {
-			modelLabel = "kode"
-		}
-
+		isNewSession = true
 		messages = []llm.Message{
-			{Role: "system", Content: system},
+			{Role: "system", Content: ""},
 			{Role: "user", Content: enrichedPrompt},
 		}
 
 		// Persist new session
 		newSess, err := store.Create(
-			[]llm.Message{{Role: "system", Content: system}},
+			[]llm.Message{{Role: "system", Content: ""}},
 			resolved.Model,
 			shorten(prompt, 60),
 		)
@@ -267,24 +305,21 @@ func handlePrompt(ctx context.Context, conn *ws.Conn, store *session.Store, reso
 	}
 	writeWSJSON(conn, map[string]any{"type": "session", "session_id": sid, "model": resolved.Model})
 
-	// Run agent with WebSocket streaming writer
-	rend := render.New(&wsStreamWriter{conn: conn}, false)
-	_ = rend // agent doesn't expose renderer injection post-creation
+	// Append user input to buffer
+	if mm := agent.Memory(); mm != nil {
+		userSummary := shorten(prompt, 100)
+		mm.AppendBuffer("user", userSummary)
+	}
 
-	// The agent loop runs silently (no renderer). We stream the final
-	// answer via the wsStreamWriter as we get it.
+	// Run agent
 	origLen := len(messages) - 1 // exclude the user message we just appended
-
-	// Since the agent uses RunWithMessages (not streaming per-token),
-	// we send the final result as a single "token" event.
-	// TODO: add streaming callback support to the agent loop
 	start := time.Now()
 	_, allMessages, err := agent.RunWithMessages(ctx, messages)
 	latency := time.Since(start)
 
 	if err != nil {
 		writeWSError(conn, err.Error())
-		return
+		return currSess // return unchanged session on error
 	}
 
 	// Get new messages from this turn
@@ -321,15 +356,37 @@ func handlePrompt(ctx context.Context, conn *ws.Conn, store *session.Store, reso
 		}
 	}
 
+	// Find the assistant response for buffer
+	if mm := agent.Memory(); mm != nil {
+		for _, msg := range newMsgs {
+			if msg.Role == "assistant" && msg.Content != "" {
+				agentSummary := shorten(msg.Content, 100)
+				mm.AppendBuffer("agent", agentSummary)
+				break
+			}
+		}
+	}
+
 	writeWSJSON(conn, map[string]any{
 		"type":    "done",
 		"latency": latency.Seconds(),
 	})
 
-	// Save session — append new messages
+	// Save session — persist messages AND buffer
 	if sess != nil {
+		// Persist buffer to session before saving
+		if mm := agent.Memory(); mm != nil {
+			sess.Buffer = mm.GetBuffer()
+		}
 		store.Append(sess.ID, newMsgs)
 	}
+
+	// If we started a new session, return it so the WebSocket loop
+	// tracks it for future turns and OnSessionEnd.
+	if isNewSession && sess != nil {
+		return sess
+	}
+	return currSess
 }
 
 // ── WebSocket Stream Writer ─────────────────────────────────────────────
@@ -420,6 +477,15 @@ func handleStatic() http.HandlerFunc {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
+
+func makeSessionMessageStrings(sess *session.Session) []string {
+	msgs := sess.GetMessages()
+	out := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, m.Role+": "+m.Content)
+	}
+	return out
+}
 
 func openInBrowser(url string) {
 	cmds := []string{"xdg-open", "open", "gnome-open"}

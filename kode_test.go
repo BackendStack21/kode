@@ -337,11 +337,16 @@ func TestNew_WithTools(t *testing.T) {
 	if len(tools) != 2 {
 		t.Fatalf("expected 2 tools (test_tool + memory) in registry, got %d", len(tools))
 	}
-	if tools[0].Name() != "test_tool" {
-		t.Errorf("tool[0] name = %q, want %q", tools[0].Name(), "test_tool")
+	// Map iteration is non-deterministic, so check by name
+	names := make(map[string]bool)
+	for _, t := range tools {
+		names[t.Name()] = true
 	}
-	if tools[1].Name() != "memory" {
-		t.Errorf("tool[1] name = %q, want %q", tools[1].Name(), "memory")
+	if !names["test_tool"] {
+		t.Errorf("expected test_tool in registry, got %v", names)
+	}
+	if !names["memory"] {
+		t.Errorf("expected memory tool in registry, got %v", names)
 	}
 }
 
