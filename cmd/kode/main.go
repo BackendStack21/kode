@@ -940,6 +940,10 @@ func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager) []kode.Too
 			kodePath:       os.Args[0],
 			timeout:        120 * time.Second,
 		},
+		&readFileTool{},
+		&writeFileTool{},
+		&searchFilesTool{},
+		&patchTool{},
 	}
 
 	if sm != nil {
