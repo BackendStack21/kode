@@ -84,6 +84,8 @@ kode run --learn "Set up a Go project with CI"
 | **Multi-Turn Sessions** | [docs/SESSIONS.md](docs/SESSIONS.md) — save, continue, list, trim, cleanup |
 | **Sandboxing** | [docs/SANDBOXING.md](docs/SANDBOXING.md) — Docker isolation, security, config |
 | **Security** | [docs/SECURITY.md](docs/SECURITY.md) — prompt injection, sandbox model |
+| **Web UI** | [docs/WEBUI.md](docs/WEBUI.md) — `kode serve`, WebSocket protocol, `@` resource completion |
+| **Sub-Agents** | [docs/SUBAGENTS.md](docs/SUBAGENTS.md) — task decomposition, parallel OS-process sub-agents |
 | **Skills** | [docs/CLI.md#skills](docs/CLI.md#skills) — learn, list, save, import, curate |
 | **Development** | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — building, testing, contributing |
 
@@ -105,6 +107,8 @@ kode skill view <name>                          # View a skill
 kode skill delete <name>                        # Delete a skill
 kode skill import <uri> [--basic --yes]         # Import skill from URI
 kode skill curate                               # Quality/overlap audit
+kode serve [--addr :8080] [--open]              # Web UI server
+kode subagent --goal <string> [flags]           # Run a focused sub-task (JSON stdout)
 kode init [--global] [--force]                  # Create config file
 kode version                                    # Print version
 

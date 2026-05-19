@@ -11,17 +11,88 @@
 go build -o kode ./cmd/kode
 ```
 
+## Source layout
+
+```
+kode.go                       Public API (Config, New, Run, Close)
+kode_test.go                  Config and model profile tests
+internal/
+  config/
+    loader.go                 Config file loading, env vars, priority merge
+    loader_test.go            Config loading tests
+  llm/
+    client.go                 OpenAI-compatible HTTP client
+    client_test.go            JSON marshaling + response parsing tests
+  loop/
+    loop.go                   ReAct engine (observe → think → act → repeat)
+    loop_test.go              Engine tests with mock server
+  session/
+    session.go                Session store (CRUD, trim, cleanup)
+    session_test.go           Session tests
+  render/
+    render.go                 Terminal output with model label and color
+  resource/
+    resource.go               @-reference resolver (files, sessions)
+    resource_test.go          Parse, resolve, search tests
+  ws/
+    ws.go                     RFC 6455 WebSocket framing (~200 LOC)
+    ws_test.go                Handshake, framing, ping/pong tests
+  tool/
+    registry.go               Thread-safe tool registry
+    registry_test.go          Registry tests
+cmd/kode/
+  main.go                     CLI entry point, flag parsing, commands, sandbox
+  main_test.go                CLI tests (flag parsing, version, init)
+  shell.go                    Built-in shell tool (local or docker exec)
+  shell_test.go               Shell + sandbox tests
+  serve.go                    Web UI server (HTTP + WebSocket)
+  subagent.go                 Sub-agent command (--goal, --context, --task, JSON stdout)
+  subagent_tool.go            delegate_tasks built-in tool
+  subagent_test.go            Contract tests (30 — flags, JSON, exit codes, tool schema)
+  subagent_contract_test.go   Contract tests (flag parsing, stdout protocol, exit codes)
+  subagent_e2e_test.go        E2E tests (13 — KODE_E2E=true, real subprocess spawning)
+  ui/
+    index.html                Single-page web UI (~770 LOC, vanilla JS + CSS)
+docs/                         Documentation
+  CLI.md                      CLI reference
+  CONFIG.md                   Configuration system
+  PROVIDERS.md                Models, profiles, thinking, context
+  SESSIONS.md                 Multi-turn sessions
+  WEBUI.md                    Web UI server + WebSocket protocol + @ completion
+  SUBAGENTS.md                Task decomposition + sub-agents + delegate_tasks tool
+  SECURITY.md                 Prompt injection, security model
+  SANDBOXING.md               Sandbox configuration
+  DEVELOPMENT.md              This file
+```
+
 ## Testing
 
 ```bash
-# All tests
-go test ./... -v -count=1
+# All tests (excluding E2E — those need KODE_E2E=true)
+go test ./... -count=1
 
 # Specific package
 go test ./internal/session/ -v
+
+# With race detector
+go test -race ./... -count=1
+
+# E2E tests (builds kode binary, tests real subprocess spawning)
+KODE_E2E=true go test -v -count=1 ./cmd/kode/ -run "TestE2E_"
+
+# Contract tests (sub-agent interface contract — binary must already be built)
+go test -v -count=1 ./cmd/kode/ -run "TestSubagent|TestDelegateTasks"
 ```
 
 Zero external test dependencies — tests use `httptest`, `testing`, and the standard library only.
+
+### Test layers
+
+| Layer | Runner | Tests | What's tested |
+|-------|--------|-------|---------------|
+| **Unit** | `go test ./...` | 190+ | Config, LLM client, sessions, renderer, tools, WS, resources |
+| **Contract** | `go test ./cmd/kode/` | 30 | Sub-agent flag parsing, JSON stdout, exit codes, tool schema, config |
+| **E2E** | `KODE_E2E=true go test -run "TestE2E_"` | 13 | Real subprocess spawning, tool→binary pipeline, concurrency, timeouts |
 
 ### Test coverage
 
@@ -33,45 +104,26 @@ Zero external test dependencies — tests use `httptest`, `testing`, and the sta
 | `internal/loop` | 7 | ReAct engine with httptest mock server |
 | `internal/session` | 19 | CRUD, trim, cleanup, list, latest, edge cases |
 | `internal/tool` | 7 | Registry CRUD, lookup, duplicate detection |
-| `cmd/kode` | 20+ | Flag parsing, init, version, sandbox setup, integration |
+| `internal/ws` | 8 | WebSocket upgrade, framing, ping/pong |
+| `internal/resource` | 12 | @-reference parsing, file resolution, session resolution, security |
+| `cmd/kode` | 60+ | Flag parsing, init, version, sandbox setup, subagent, serve, E2E |
 
-## Source layout
+## Key packages
 
-```
-kode.go               Public API (Config, New, Run, Close)
-kode_test.go          Config and model profile tests
-internal/
-  config/
-    loader.go         Config file loading, env vars, priority merge
-    loader_test.go    Config loading tests
-  llm/
-    client.go         OpenAI-compatible HTTP client
-    client_test.go    JSON marshaling + response parsing tests
-  loop/
-    loop.go           ReAct engine (observe → think → act → repeat)
-    loop_test.go      Engine tests with mock server
-  session/
-    session.go        Session store (CRUD, trim, cleanup)
-    session_test.go   Session tests
-  render/
-    render.go         Terminal output with model label and color
-  tool/
-    registry.go       Thread-safe tool registry
-    registry_test.go  Registry tests
-cmd/kode/
-  main.go             CLI entry point, flag parsing, commands, sandbox
-  main_test.go        CLI tests
-  shell.go            Built-in shell tool (local or docker exec)
-  shell_test.go       Shell + sandbox tests
-docs/                 Documentation
-  CLI.md              CLI reference
-  CONFIG.md           Configuration system
-  PROVIDERS.md        Models, profiles, thinking, context
-  SESSIONS.md         Multi-turn sessions
-  SECURITY.md         Prompt injection, security model
-  SANDBOXING.md       Sandbox configuration
-  DEVELOPMENT.md      This file
-```
+### Web UI (`cmd/kode/serve.go` + `internal/ws/ws.go` + `cmd/kode/ui/index.html`)
+
+- **serve.go**: HTTP server with embedded WebSocket handler, `@` resource API, session list API
+- **ws/ws.go**: Zero-dependency RFC 6455 WebSocket (~200 LOC). Handles upgrade, text frames, close, ping/pong
+- **ui/index.html**: Single-file SPA, ~770 LOC vanilla JS + CSS. Streaming, collapsible tool blocks, `@` autocomplete, session sidebar
+
+See [docs/WEBUI.md](docs/WEBUI.md) for the WebSocket protocol and full documentation.
+
+### Sub-agents (`cmd/kode/subagent.go` + `cmd/kode/subagent_tool.go`)
+
+- **subagent.go**: CLI handler for `kode subagent --goal <string>`. Parses flags, creates agent, runs with minimal system prompt, outputs JSON to stdout
+- **subagent_tool.go**: `delegate_tasks` built-in tool. Spawns real OS processes via `exec.Command` with temp files for task data
+
+See [docs/SUBAGENTS.md](docs/SUBAGENTS.md) for full documentation.
 
 ## Contributing
 

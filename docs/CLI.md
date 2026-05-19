@@ -19,6 +19,8 @@
 | `kode skill delete <name>` | Delete a skill |
 | `kode skill import <uri> [flags]` | Import a skill from file:// or https:// |
 | `kode skill curate` | Analyze skills for quality, staleness, trigger overlap |
+| `kode serve [--addr :8080] [--open]` | Web UI server with WebSocket streaming, `@` resource completion, session history |
+| `kode subagent --goal <string> [flags]` | Run a focused sub-task; outputs JSON on stdout. Spawned by `delegate_tasks` tool |
 | `kode init [--global] [--force]` | Create a config file template |
 | `kode version` | Print version and exit |
 

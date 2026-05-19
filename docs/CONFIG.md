@@ -110,6 +110,28 @@ The `skills` section controls the skill system:
 | `curation.staleness_days` | — | 90 | Days without use before flagging as stale |
 | `curation.auto_prune` | — | false | Auto-delete stale skills on curate (no prompt) |
 
+## Sub-agent configuration
+
+The `subagent` section controls task decomposition and parallel sub-agent execution (see [docs/SUBAGENTS.md](docs/SUBAGENTS.md)):
+
+```json
+{
+  "subagent": {
+    "max_concurrency": 3,
+    "timeout_seconds": 120,
+    "max_iterations": 15
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `max_concurrency` | 3 | Max sub-agents running in parallel (max 8) |
+| `timeout_seconds` | 120 | Default timeout per sub-agent (overridden by `--timeout`) |
+| `max_iterations` | 15 | Default max think→act cycles per sub-agent (overridden by `--max-iter`) |
+
+This section is optional. Omitted fields inherit sensible defaults.
+
 ## kode init
 
 Create a config file template:
@@ -141,6 +163,9 @@ KODE_SANDBOX=true kode run "run untrusted script"
 
 # Enable skill learning via env var
 KODE_SKILLS_LEARN=true kode run "set up CI"
+
+# Sub-agent config (project-level)
+echo '{"subagent": {"max_concurrency": 5, "timeout_seconds": 300}}' > ./kode.json
 
 # CLI flag always wins
 kode run --model gpt-4o --base-url https://api.openai.com/v1 "task"
