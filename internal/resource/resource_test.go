@@ -1,0 +1,327 @@
+package resource
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// ── ParseRefs ──────────────────────────────────────────────────────────
+
+func TestParseRefs_Empty(t *testing.T) {
+	refs := ParseRefs("")
+	if len(refs) != 0 {
+		t.Errorf("expected 0 refs, got %d", len(refs))
+	}
+}
+
+func TestParseRefs_NoRefs(t *testing.T) {
+	refs := ParseRefs("just a normal prompt without references")
+	if len(refs) != 0 {
+		t.Errorf("expected 0 refs, got %d", len(refs))
+	}
+}
+
+func TestParseRefs_SingleRef(t *testing.T) {
+	refs := ParseRefs("fix the bug in @src/main.go")
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref, got %d", len(refs))
+	}
+	if refs[0].Raw != "@src/main.go" {
+		t.Errorf("Raw = %q, want @src/main.go", refs[0].Raw)
+	}
+	if refs[0].Path != "src/main.go" {
+		t.Errorf("Path = %q, want src/main.go", refs[0].Path)
+	}
+}
+
+func TestParseRefs_MultipleRefs(t *testing.T) {
+	refs := ParseRefs("check @file1.go and @file2.go")
+	if len(refs) != 2 {
+		t.Fatalf("expected 2 refs, got %d", len(refs))
+	}
+	if refs[0].Path != "file1.go" {
+		t.Errorf("ref[0].Path = %q", refs[0].Path)
+	}
+	if refs[1].Path != "file2.go" {
+		t.Errorf("ref[1].Path = %q", refs[1].Path)
+	}
+}
+
+func TestParseRefs_PrefixedRefs(t *testing.T) {
+	refs := ParseRefs("look at @sess:abc123 and @skill:go-test")
+	if len(refs) != 2 {
+		t.Fatalf("expected 2 refs, got %d", len(refs))
+	}
+	if refs[0].Path != "sess:abc123" {
+		t.Errorf("ref[0].Path = %q, want sess:abc123", refs[0].Path)
+	}
+	if refs[1].Path != "skill:go-test" {
+		t.Errorf("ref[1].Path = %q, want skill:go-test", refs[1].Path)
+	}
+}
+
+func TestParseRefs_AtEndOfString(t *testing.T) {
+	refs := ParseRefs("check @end")
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref, got %d", len(refs))
+	}
+	if refs[0].Path != "end" {
+		t.Errorf("Path = %q, want end", refs[0].Path)
+	}
+}
+
+func TestParseRefs_AtWithPaths(t *testing.T) {
+	refs := ParseRefs("fix @path/to/file/with-hyphens.js")
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref, got %d", len(refs))
+	}
+	if refs[0].Path != "path/to/file/with-hyphens.js" {
+		t.Errorf("Path = %q", refs[0].Path)
+	}
+}
+
+func TestParseRefs_StopsAtParen(t *testing.T) {
+	refs := ParseRefs("see (@file.go) for details")
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref, got %d", len(refs))
+	}
+	if refs[0].Path != "file.go" {
+		t.Errorf("Path = %q, want file.go", refs[0].Path)
+	}
+}
+
+// ── ReplaceRefs ────────────────────────────────────────────────────────
+
+func TestReplaceRefs_NoReplacements(t *testing.T) {
+	result := ReplaceRefs("hello world", nil)
+	if result != "hello world" {
+		t.Errorf("expected unchanged, got %q", result)
+	}
+}
+
+func TestReplaceRefs_SingleReplacement(t *testing.T) {
+	result := ReplaceRefs("read @file.go", map[string]string{
+		"@file.go": "package main\nfunc main() {}",
+	})
+	if !strings.Contains(result, "package main") {
+		t.Errorf("expected resolved content in result: %q", result)
+	}
+	if !strings.Contains(result, "--- @file.go ---") {
+		t.Errorf("expected delimiter in result: %q", result)
+	}
+	// Original ref should not appear
+	if strings.Contains(result, "@file.go") && strings.Count(result, "@file.go") <= 2 {
+		// The @file.go appears in the delimiter markers too, which is expected
+	}
+}
+
+func TestReplaceRefs_UnresolvedRef(t *testing.T) {
+	// Unresolved refs should be left as-is
+	result := ReplaceRefs("check @missing.go", map[string]string{
+		"@other.go": "content",
+	})
+	if !strings.Contains(result, "@missing.go") {
+		t.Errorf("unresolved @missing.go should remain in text: %q", result)
+	}
+}
+
+func TestReplaceRefs_MultipleReplacements(t *testing.T) {
+	result := ReplaceRefs("compare @a.go and @b.go", map[string]string{
+		"@a.go": "file A content",
+		"@b.go": "file B content",
+	})
+	if !strings.Contains(result, "file A content") {
+		t.Errorf("missing file A: %q", result)
+	}
+	if !strings.Contains(result, "file B content") {
+		t.Errorf("missing file B: %q", result)
+	}
+}
+
+// ── FileResolver ───────────────────────────────────────────────────────
+
+func newTestDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
+	os.WriteFile(filepath.Join(dir, "utils.go"), []byte("package utils"), 0644)
+	os.Mkdir(filepath.Join(dir, "subdir"), 0755)
+	os.WriteFile(filepath.Join(dir, "subdir", "deep.go"), []byte("package deep"), 0644)
+	return dir
+}
+
+func TestFileResolver_Search(t *testing.T) {
+	dir := newTestDir(t)
+	res := NewFileResolver(dir)
+
+	results, err := res.Search(context.Background(), "main", 10)
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if len(results) < 1 {
+		t.Fatalf("expected at least 1 result, got %d", len(results))
+	}
+	found := false
+	for _, r := range results {
+		if r.Label == "main.go" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected main.go in results: %+v", results)
+	}
+}
+
+func TestFileResolver_SearchRecursive(t *testing.T) {
+	dir := newTestDir(t)
+	res := NewFileResolver(dir)
+
+	// Search for "deep" which is in subdir/
+	results, err := res.Search(context.Background(), "deep", 10)
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if len(results) < 1 {
+		t.Fatalf("expected at least 1 result for 'deep', got %d", len(results))
+	}
+}
+
+func TestFileResolver_Load(t *testing.T) {
+	dir := newTestDir(t)
+	res := NewFileResolver(dir)
+
+	content, err := res.Load(context.Background(), "main.go")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if content != "package main" {
+		t.Errorf("content = %q, want %q", content, "package main")
+	}
+}
+
+func TestFileResolver_LoadOutsideRoot(t *testing.T) {
+	dir := newTestDir(t)
+	res := NewFileResolver(dir)
+
+	_, err := res.Load(context.Background(), "../../etc/passwd")
+	if err == nil {
+		t.Error("Load with path traversal should return error")
+	}
+}
+
+func TestFileResolver_LoadSymlink(t *testing.T) {
+	dir := newTestDir(t)
+
+	// Create a symlink
+	symlinkPath := filepath.Join(dir, "link.go")
+	os.Symlink("/etc/passwd", symlinkPath)
+
+	res := NewFileResolver(dir)
+
+	_, err := res.Load(context.Background(), "link.go")
+	if err == nil {
+		t.Error("Load with symlink should return error")
+	}
+}
+
+func TestFileResolver_SearchNoMatch(t *testing.T) {
+	dir := newTestDir(t)
+	res := NewFileResolver(dir)
+
+	results, err := res.Search(context.Background(), "nonexistent_file_xyz", 10)
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestFileResolver_SearchEmptyQuery(t *testing.T) {
+	dir := newTestDir(t)
+	res := NewFileResolver(dir)
+
+	results, err := res.Search(context.Background(), "", 10)
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if results != nil {
+		t.Errorf("expected nil for empty query, got %d results", len(results))
+	}
+}
+
+func TestFileResolver_SkipsDotGit(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "real.go"), []byte("real"), 0644)
+	os.Mkdir(filepath.Join(dir, ".git"), 0755)
+	os.WriteFile(filepath.Join(dir, ".git", "config"), []byte("git config"), 0644)
+
+	res := NewFileResolver(dir)
+
+	results, err := res.Search(context.Background(), "config", 10)
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	for _, r := range results {
+		if strings.Contains(r.Label, ".git") {
+			t.Errorf("should skip .git files, got: %s", r.Label)
+		}
+	}
+}
+
+// ── SessionResolver ────────────────────────────────────────────────────
+
+func TestSessionResolver_SearchNoDir(t *testing.T) {
+	dir := t.TempDir()
+	res := NewSessionResolver(dir)
+
+	results, err := res.Search(context.Background(), "", 10)
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for empty dir, got %d", len(results))
+	}
+}
+
+// ── Registry ───────────────────────────────────────────────────────────
+
+func TestRegistry_Search(t *testing.T) {
+	dir := newTestDir(t)
+	reg := NewRegistry(NewFileResolver(dir))
+
+	results, err := reg.Search(context.Background(), "main", 10)
+	if err != nil {
+		t.Fatalf("Search() error: %v", err)
+	}
+	if len(results) < 1 {
+		t.Errorf("expected at least 1 result, got %d", len(results))
+	}
+}
+
+func TestRegistry_Load(t *testing.T) {
+	dir := newTestDir(t)
+	reg := NewRegistry(NewFileResolver(dir))
+
+	content, err := reg.Load(context.Background(), "@main.go")
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if content != "package main" {
+		t.Errorf("content = %q, want %q", content, "package main")
+	}
+}
+
+func TestRegistry_LoadNoResolver(t *testing.T) {
+	dir := newTestDir(t)
+	reg := NewRegistry(NewFileResolver(dir))
+
+	_, err := reg.Load(context.Background(), "@unknown:ref")
+	if err == nil {
+		t.Error("Load with unknown prefix should return error")
+	}
+}

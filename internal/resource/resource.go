@@ -209,10 +209,9 @@ func (f *FileResolver) Search(ctx context.Context, query string, limit int) ([]R
 		return nil, nil
 	}
 
-	// If no match, try recursive (skipping .git, node_modules, etc.)
+	// If no match, try recursive by walking the directory tree
 	if len(matches) == 0 {
-		pattern = filepath.Join(f.root, "**", query+"*")
-		matches = f.globRecursive(pattern)
+		matches = f.walkAndMatch(query)
 	}
 
 	var resources []Resource
@@ -280,17 +279,8 @@ func (f *FileResolver) Load(ctx context.Context, id string) (string, error) {
 	return content, nil
 }
 
-func (f *FileResolver) globRecursive(pattern string) []string {
-	// Simple recursive glob using filepath.Walk
+func (f *FileResolver) walkAndMatch(searchTerm string) []string {
 	base := f.root
-	query := strings.TrimPrefix(pattern, base)
-	query = strings.TrimPrefix(query, string(filepath.Separator))
-	// Extract search term (everything before the first *)
-	starIdx := strings.Index(query, "*")
-	if starIdx < 0 {
-		return nil
-	}
-	searchTerm := query[:starIdx]
 
 	var results []string
 	filepath.Walk(base, func(path string, info os.FileInfo, err error) error {

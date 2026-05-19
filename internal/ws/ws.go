@@ -17,6 +17,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -221,12 +222,20 @@ func generateKey() (string, error) {
 }
 
 // Dial connects to a WebSocket server. Used for testing.
-func Dial(url string) (*Conn, *http.Response, error) {
+func Dial(rawurl string) (*Conn, *http.Response, error) {
 	// Parse URL
-	if len(url) < 6 || url[:5] != "ws://" {
+	if len(rawurl) < 6 || rawurl[:5] != "ws://" {
 		return nil, nil, errors.New("ws: only ws:// URLs supported")
 	}
-	host := url[5:]
+	rest := rawurl[5:]
+
+	// Split host and path
+	host := rest
+	path := "/"
+	if slashIdx := strings.IndexByte(rest, '/'); slashIdx >= 0 {
+		host = rest[:slashIdx]
+		path = rest[slashIdx:]
+	}
 
 	conn, err := net.Dial("tcp", host)
 	if err != nil {
@@ -239,8 +248,8 @@ func Dial(url string) (*Conn, *http.Response, error) {
 		return nil, nil, err
 	}
 
-	req := fmt.Sprintf("GET / HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
-		host, key)
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+		path, host, key)
 
 	if _, err := conn.Write([]byte(req)); err != nil {
 		conn.Close()
