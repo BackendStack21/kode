@@ -335,6 +335,7 @@ func subagentCmd(args []string) error {
 		Renderer:       rend,
 		Skills:         &resolved.Skills,
 		SkillManager:   sm,
+		MemoryConfig:   resolved.Memory,
 	})
 	if err != nil {
 		return fmt.Errorf("create agent: %w", err)

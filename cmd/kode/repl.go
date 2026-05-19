@@ -123,11 +123,19 @@ func replCmd(args []string) error {
 		Renderer:       rend,
 		Skills:         skillsCfg,
 		SkillManager:   sm,
+		MemoryConfig:   resolved.Memory,
 	})
 	if err != nil {
 		return err
 	}
 	defer agent.Close()
+
+	// Restore buffer from session if resuming
+	if sess != nil && len(sess.Buffer) > 0 {
+		if mm := agent.Memory(); mm != nil {
+			mm.RestoreBuffer(sess.Buffer)
+		}
+	}
 
 	// Create session if not resuming one
 	if sess == nil {
@@ -176,6 +184,15 @@ func replCmd(args []string) error {
 		origLen := len(messages)
 		messages = append(messages, llm.Message{Role: "user", Content: input})
 
+		// Append user input to buffer
+		if mm := agent.Memory(); mm != nil {
+			userSummary := input
+			if len(userSummary) > 100 {
+				userSummary = userSummary[:97] + "..."
+			}
+			mm.AppendBuffer("user", userSummary)
+		}
+
 		// Run agent with full history
 		rend.Start(input)
 		_, allMessages, err := agent.RunWithMessages(ctx, messages)
@@ -184,18 +201,46 @@ func replCmd(args []string) error {
 			continue
 		}
 
+		// Append agent response to buffer
+		if mm := agent.Memory(); mm != nil && len(allMessages) > 0 {
+			if last := allMessages[len(allMessages)-1]; last.Role == "assistant" {
+				summary := last.Content
+				if len(summary) > 100 {
+					summary = summary[:97] + "..."
+				}
+				mm.AppendBuffer("agent", summary)
+			}
+		}
+
 		// Save new messages to session
 		newMsgs := allMessages[origLen:]
 		if err := store.Append(sess.ID, newMsgs); err != nil {
 			fmt.Fprintf(os.Stderr, "kode: save error: %v\n", err)
 		}
 
-		// Reload session to get updated turn count
+		// Reload session to get updated turn count + persist buffer
 		sess, _ = store.Load(sess.ID)
+		if sess != nil {
+			if mm := agent.Memory(); mm != nil {
+				sess.Buffer = mm.GetBuffer()
+				store.Save(sess)
+			}
+		}
 		turn++
 
 		fmt.Fprintln(os.Stderr)
 	}
+
+	// Session end — extract episode if enough turns
+	if mm := agent.Memory(); mm != nil {
+		messages := sess.GetMessages()
+		msgStrs := make([]string, 0, len(messages))
+		for _, m := range messages {
+			msgStrs = append(msgStrs, m.Role+": "+m.Content)
+		}
+		mm.OnSessionEnd(sess.ID, sess.Turns, msgStrs)
+	}
+
 	return nil
 }
 

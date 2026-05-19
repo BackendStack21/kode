@@ -142,6 +142,7 @@ func newServeAgent(resolved config.ResolvedConfig, system string) (*kode.Agent, 
 		Renderer:       nil, // silent — we stream via WebSocket
 		Skills:         &resolved.Skills,
 		SkillManager:   sm,
+		MemoryConfig:   resolved.Memory,
 	})
 	if err != nil {
 		return nil, nil, err

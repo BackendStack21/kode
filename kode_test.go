@@ -334,11 +334,14 @@ func TestNew_WithTools(t *testing.T) {
 	}
 	// Verify the tool was registered in the internal registry
 	tools := agent.registry.Tools()
-	if len(tools) != 1 {
-		t.Fatalf("expected 1 tool in registry, got %d", len(tools))
+	if len(tools) != 2 {
+		t.Fatalf("expected 2 tools (test_tool + memory) in registry, got %d", len(tools))
 	}
 	if tools[0].Name() != "test_tool" {
-		t.Errorf("tool name = %q, want %q", tools[0].Name(), "test_tool")
+		t.Errorf("tool[0] name = %q, want %q", tools[0].Name(), "test_tool")
+	}
+	if tools[1].Name() != "memory" {
+		t.Errorf("tool[1] name = %q, want %q", tools[1].Name(), "memory")
 	}
 }
 

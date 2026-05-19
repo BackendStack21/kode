@@ -42,6 +42,7 @@ type Session struct {
 	Task      string         `json:"task"`        // first user message (label)
 	Sandbox   bool           `json:"sandbox"`     // was sandboxed — auto-apply on resume
 	Messages  []llm.Message  `json:"messages"`    // full conversation history
+	Buffer    []string       `json:"buffer,omitempty"` // last N turn summaries (memory tier 2)
 }
 
 // ── Store ──────────────────────────────────────────────────────────────

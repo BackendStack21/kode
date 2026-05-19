@@ -28,6 +28,7 @@ import (
 
 	"github.com/BackendStack21/kode/internal/llm"
 	"github.com/BackendStack21/kode/internal/loop"
+	"github.com/BackendStack21/kode/internal/memory"
 	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/skills"
 	"github.com/BackendStack21/kode/internal/tool"
@@ -96,6 +97,14 @@ type Config struct {
 	// SkillManager holds the loaded skill state. Passed by the CLI layer;
 	// when nil, New() auto-loads from default directories.
 	SkillManager *skills.SkillManager
+
+	// MemoryDir sets the directory for persistent memory storage.
+	// Default: ~/.kode/memory/
+	MemoryDir string
+
+	// MemoryConfig controls the memory system (facts, buffer, episodes).
+	// Default: memory.DefaultMemoryConfig()
+	MemoryConfig memory.MemoryConfig
 }
 
 // Agent is the agent loop runtime.
@@ -105,6 +114,7 @@ type Agent struct {
 	registry       *tool.Registry
 	sandboxCleanup func() error // destroys the sandbox container on Close()
 	skillManager   *skills.SkillManager
+	memoryManager  *memory.MemoryManager
 }
 
 // ── Model Profiles ────────────────────────────────────────────────────
@@ -289,7 +299,6 @@ func New(cfg Config) (*Agent, error) {
 		}
 	}
 
-	registry := tool.NewRegistry(tools)
 	client := llm.New(cfg.BaseURL, cfg.APIKey, cfg.Model, cfg.Thinking, time.Duration(timeout)*time.Second)
 
 	// Load skills and inject auto-load skills into system message
@@ -318,6 +327,27 @@ func New(cfg Config) (*Agent, error) {
 		}
 	}
 
+	// Create memory manager
+	memoryDir := cfg.MemoryDir
+	if memoryDir == "" {
+		memoryDir = expandHome("~/.kode/memory")
+	}
+	memoryManager := memory.NewMemoryManager(memoryDir, client, cfg.MemoryConfig)
+	agent := &Agent{
+		config:         cfg,
+		skillManager:   sm,
+		memoryManager:  memoryManager,
+	}
+
+	// Inject memory system prompt block
+	if memoryBlock := memoryManager.BuildSystemPrompt(); memoryBlock != "" {
+		cfg.SystemMessage += memoryBlock
+	}
+
+	// Append memory tool to registry
+	tools = append(tools, &toolAdapter{memory.NewMemoryTool(memoryManager)})
+	registry := tool.NewRegistry(tools)
+
 	engine := loop.New(client, registry, cfg.MaxIterations, cfg.SystemMessage, cfg.Renderer, maxContext)
 
 	// Set the skill loader for trigger-based lazy loading
@@ -338,13 +368,10 @@ func New(cfg Config) (*Agent, error) {
 		})
 	}
 
-	return &Agent{
-		config:         cfg,
-		engine:         engine,
-		registry:       registry,
-		sandboxCleanup: cfg.SandboxCleanup,
-		skillManager:   sm,
-	}, nil
+	agent.engine = engine
+	agent.registry = registry
+	agent.sandboxCleanup = cfg.SandboxCleanup
+	return agent, nil
 }
 
 // Run executes the agent loop for the given task and returns the final answer.
@@ -371,6 +398,16 @@ func (a *Agent) Close() error {
 		return a.sandboxCleanup()
 	}
 	return nil
+}
+
+// Memory returns the agent's memory manager. Used by the CLI layer to
+// append buffer entries after each turn and signal session end.
+// Returns nil if memory is disabled.
+func (a *Agent) Memory() *memory.MemoryManager {
+	if a == nil {
+		return nil
+	}
+	return a.memoryManager
 }
 
 // expandHome replaces the leading ~/ with the user's home directory.

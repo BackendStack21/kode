@@ -19,6 +19,7 @@ import (
 	"strconv"
 
 	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/kode/internal/memory"
 	"github.com/BackendStack21/kode/internal/skills"
 )
 
@@ -96,6 +97,9 @@ type FileConfig struct {
 
 	// Skills section (see internal/skills package).
 	Skills *SkillsConfig `json:"skills,omitempty"`
+
+	// Memory section controls the persistent memory system.
+	Memory *memory.MemoryConfig `json:"memory,omitempty"`
 }
 
 // ResolvedConfig is the fully merged result. Every field has a concrete
@@ -158,6 +162,9 @@ type ResolvedConfig struct {
 
 	// Skills is the resolved skills config with default values.
 	Skills skills.SkillsConfig
+
+	// Memory is the resolved memory config with default values.
+	Memory memory.MemoryConfig
 }
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -406,6 +413,7 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		SandboxVolumes: cfg.SandboxVolumes,
 		Skills:         resolveSkills(cfg.Skills),
 		Dangerous:      resolveDangerous(cfg.Dangerous),
+		Memory:         resolveMemory(cfg.Memory),
 	}
 
 	// Booleans: default to false if not set
@@ -484,6 +492,14 @@ func resolveDangerous(cfg *danger.DangerousConfig) danger.DangerousConfig {
 		return *cfg
 	}
 	return danger.DangerousConfig{}
+}
+
+// resolveMemory merges file-level memory config with defaults.
+func resolveMemory(cfg *memory.MemoryConfig) memory.MemoryConfig {
+	if cfg != nil {
+		return *cfg
+	}
+	return memory.DefaultMemoryConfig()
 }
 
 // overlayFile overlays a higher-priority FileConfig onto a lower-priority one.
