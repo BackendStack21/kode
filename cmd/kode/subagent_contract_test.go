@@ -53,6 +53,7 @@ func init() {
 // ── 1. Flag Parsing ─────────────────────────────────────────────────
 
 func TestSubagent_GoalFlag(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent", "--goal", "test goal")
 	cmd.Stderr = &bytes.Buffer{}
 	out, err := cmd.Output()
@@ -72,6 +73,7 @@ func TestSubagent_GoalFlag(t *testing.T) {
 }
 
 func TestSubagent_ContextFlag(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent",
 		"--goal", "test",
 		"--context", "important background",
@@ -88,6 +90,7 @@ func TestSubagent_ContextFlag(t *testing.T) {
 }
 
 func TestSubagent_TaskFileFlag(t *testing.T) {
+	skipIfNoBinary(t)
 	taskFile := filepath.Join(t.TempDir(), "task.json")
 	taskData := map[string]string{
 		"goal":    "build auth middleware",
@@ -109,6 +112,7 @@ func TestSubagent_TaskFileFlag(t *testing.T) {
 }
 
 func TestSubagent_TimeoutFlag(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent",
 		"--goal", "test",
 		"--timeout", "30",
@@ -125,6 +129,7 @@ func TestSubagent_TimeoutFlag(t *testing.T) {
 }
 
 func TestSubagent_MaxIterFlag(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent",
 		"--goal", "test",
 		"--max-iter", "5",
@@ -156,6 +161,7 @@ func TestSubagent_QuietFlag(t *testing.T) {
 }
 
 func TestSubagent_ParentSessionFlag(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent",
 		"--goal", "test",
 		"--parent-session", "20260519-test123",
@@ -172,6 +178,7 @@ func TestSubagent_ParentSessionFlag(t *testing.T) {
 }
 
 func TestSubagent_RejectsGoalAndTaskTogether(t *testing.T) {
+	skipIfNoBinary(t)
 	taskFile := filepath.Join(t.TempDir(), "task.json")
 	os.WriteFile(taskFile, []byte(`{"goal":"test"}`), 0644)
 
@@ -187,6 +194,7 @@ func TestSubagent_RejectsGoalAndTaskTogether(t *testing.T) {
 }
 
 func TestSubagent_RejectsNoGoalOrTask(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent")
 	out, err := cmd.CombinedOutput()
 
@@ -201,6 +209,7 @@ func TestSubagent_RejectsNoGoalOrTask(t *testing.T) {
 // ── 2. Stdout Contract ──────────────────────────────────────────────
 
 func TestSubagent_StdoutIsJSON(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent", "--goal", "test")
 	out, err := cmd.Output()
 
@@ -286,6 +295,7 @@ func TestSubagent_ExitCodeOne(t *testing.T)  {}
 func TestSubagent_ExitCodeTwo(t *testing.T)  {}
 
 func TestSubagent_ExitCodeThree(t *testing.T) {
+	skipIfNoBinary(t)
 	cmd := exec.Command(kodeBinary, "subagent")
 	_, err := cmd.CombinedOutput()
 
@@ -696,6 +706,15 @@ func TestDelegateTasks_PipesStderr(t *testing.T) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
+
+// skipIfNoBinary skips tests that need a real kode binary.
+// These tests run as part of the E2E suite (KODE_E2E=true).
+func skipIfNoBinary(t *testing.T) {
+	t.Helper()
+	if kodeBinary == "" {
+		t.Skip("kode binary not found — set KODE_E2E=true or build first")
+	}
+}
 
 func isFlagParseError(err error) bool {
 	if err == nil {
