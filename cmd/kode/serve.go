@@ -504,6 +504,12 @@ func handleSessionList(store *session.Store) http.HandlerFunc {
 
 func handleStatic() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Browsers auto-request favicon.ico — serve a minimal SVG
+		if r.URL.Path == "/favicon.ico" {
+			w.Header().Set("Content-Type", "image/svg+xml")
+			w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text y="14" font-size="14">⚡</text></svg>`))
+			return
+		}
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
