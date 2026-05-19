@@ -944,6 +944,7 @@ func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager) []kode.Too
 		&writeFileTool{},
 		&searchFilesTool{},
 		&patchTool{},
+		newBrowserTool(),
 	}
 
 	if sm != nil {

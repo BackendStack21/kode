@@ -1,0 +1,404 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strings"
+	"sync"
+)
+
+// ── Regex helpers for HTML parsing (zero-dep) ─────────────────────────
+
+var (
+	reTitle   = regexp.MustCompile(`<title[^>]*>([^<]*)</title>`)
+	reLink    = regexp.MustCompile(`<a\s[^>]*href\s*=\s*"([^"]*)"[^>]*>([^<]*)</a>`)
+	reButton  = regexp.MustCompile(`<button[^>]*>([^<]*)</button>`)
+	reInput   = regexp.MustCompile(`<input\s[^>]*type\s*=\s*"(?:submit|button|text|search)"[^>]*>`)
+	reInputVal = regexp.MustCompile(`value\s*=\s*"([^"]*)"`)
+	reInputPlaceholder = regexp.MustCompile(`placeholder\s*=\s*"([^"]*)"`)
+	reH1      = regexp.MustCompile(`<h[1-6][^>]*>([^<]*)</h[1-6]>`)
+	rePTag    = regexp.MustCompile(`<p[^>]*>([^<]*)</p>`)
+	reLi      = regexp.MustCompile(`<li[^>]*>([^<]*)</li>`)
+	reStrip   = regexp.MustCompile(`<[^>]*>`)
+	reTitleSimplify = regexp.MustCompile(`\s+`)
+)
+
+// clickableRef represents an interactive element extracted from the page.
+type clickableRef struct {
+	Ref  string `json:"ref"`
+	Type string `json:"type"` // "link", "button", "submit"
+	Text string `json:"text"`
+	URL  string `json:"url,omitempty"` // for links
+}
+
+// browserSnapshot holds the structured view of a loaded page.
+type browserSnapshot struct {
+	Title    string         `json:"title"`
+	URL      string         `json:"url"`
+	Content  string         `json:"content"`
+	Status   int            `json:"status,omitempty"`
+	Elements []clickableRef `json:"elements,omitempty"`
+}
+
+// browserState holds the shared state for one browser session.
+type browserState struct {
+	mu       sync.Mutex
+	history  []browserSnapshot
+	current  *browserSnapshot
+	nextRef  int
+}
+
+// ── Browser Tool ──────────────────────────────────────────────────────
+
+type browserTool struct {
+	state *browserState
+	client *http.Client
+}
+
+func newBrowserTool() *browserTool {
+	return &browserTool{
+		state:  &browserState{nextRef: 1},
+		client: &http.Client{},
+	}
+}
+
+func (t *browserTool) Name() string { return "browser" }
+
+func (t *browserTool) Description() string {
+	return `Navigate and interact with web pages. Supports four actions:
+
+  navigate — Fetch a URL and extract page content + interactive elements
+  snapshot — Return the current page's text view with ref IDs for elements
+  click    — Follow a link or interact with an element by ref ID
+  back     — Return to the previous page in navigation history
+
+Use browser_navigate(url) first, then browser_snapshot() to see interactive
+elements with their ref IDs (e.g. @e1, @e2), then browser_click(ref) to
+follow links or interact with buttons.`
+}
+
+// browserArgs holds all possible parameters for the browser tool.
+type browserArgs struct {
+	Action string `json:"action"`
+	URL    string `json:"url"`
+	Ref    string `json:"ref"`
+}
+
+// browserResult is the generic response returned by any browser action.
+type browserResult struct {
+	Title    string         `json:"title,omitempty"`
+	URL      string         `json:"url,omitempty"`
+	Content  string         `json:"content,omitempty"`
+	Status   int            `json:"status,omitempty"`
+	Elements []clickableRef `json:"elements,omitempty"`
+	Error    string         `json:"error,omitempty"`
+}
+
+func (t *browserTool) Schema() any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"action": map[string]any{
+				"type":        "string",
+				"enum":        []string{"navigate", "snapshot", "click", "back"},
+				"description": "Action to perform: 'navigate' (fetch a URL), 'snapshot' (view current page), 'click' (interact with element by ref), 'back' (go to previous page).",
+			},
+			"url": map[string]any{
+				"type":        "string",
+				"description": "URL to navigate to (required for 'navigate' action).",
+			},
+			"ref": map[string]any{
+				"type":        "string",
+				"description": "Element reference ID (e.g. 'e1', 'e3') from a snapshot. Required for 'click' action.",
+			},
+		},
+		"required": []string{"action"},
+	}
+}
+
+func (t *browserTool) Call(argsJSON string) (string, error) {
+	var args browserArgs
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return jsonError("invalid arguments: " + err.Error())
+	}
+	if args.Action == "" {
+		return jsonError("action is required (navigate, snapshot, click, back)")
+	}
+
+	// Ensure state and client exist
+	if t.state == nil {
+		t.state = &browserState{nextRef: 1}
+	}
+	if t.client == nil {
+		t.client = &http.Client{}
+	}
+
+	switch args.Action {
+	case "navigate":
+		return t.doNavigate(args.URL)
+	case "snapshot":
+		return t.doSnaPshot()
+	case "click":
+		return t.doClick(args.Ref)
+	case "back":
+		return t.doBack()
+	default:
+		return jsonError(fmt.Sprintf("unknown action %q: must be navigate, snapshot, click, or back", args.Action))
+	}
+}
+
+func (t *browserTool) doNavigate(rawURL string) (string, error) {
+	if rawURL == "" {
+		return jsonError("url is required for navigate action")
+	}
+
+	// Validate URL
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return jsonError(fmt.Sprintf("invalid URL %q: must start with http:// or https://", rawURL))
+	}
+
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return jsonError(fmt.Sprintf("cannot create request: %v", err))
+	}
+	req.Header.Set("User-Agent", "kode-browser/0.1")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return jsonError(fmt.Sprintf("cannot fetch %q: %v", rawURL, err))
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB cap
+	if err != nil {
+		return jsonError(fmt.Sprintf("cannot read response: %v", err))
+	}
+
+	html := string(body)
+	snap := parseHTML(html, rawURL, resp.StatusCode)
+
+	// Store in state
+	t.state.mu.Lock()
+	t.state.history = append(t.state.history, snap)
+	t.state.current = &snap
+	t.state.nextRef = len(snap.Elements) + 1
+	t.state.mu.Unlock()
+
+	return jsonResult(browserResult{
+		Title:    snap.Title,
+		URL:      snap.URL,
+		Content:  snap.Content,
+		Status:   snap.Status,
+		Elements: snap.Elements,
+	})
+}
+
+func (t *browserTool) doSnaPshot() (string, error) {
+	t.state.mu.Lock()
+	defer t.state.mu.Unlock()
+
+	if t.state.current == nil {
+		return jsonError("no page loaded — call browser_navigate(url) first")
+	}
+
+	return jsonResult(browserResult{
+		Title:    t.state.current.Title,
+		URL:      t.state.current.URL,
+		Content:  t.state.current.Content,
+		Elements: t.state.current.Elements,
+	})
+}
+
+func (t *browserTool) doClick(ref string) (string, error) {
+	if ref == "" {
+		return jsonError("ref is required for click action")
+	}
+
+	t.state.mu.Lock()
+	current := t.state.current
+	t.state.mu.Unlock()
+
+	if current == nil {
+		return jsonError("no page loaded — call browser_navigate(url) first")
+	}
+
+	// Find the element by ref
+	var target *clickableRef
+	for i := range current.Elements {
+		if current.Elements[i].Ref == ref {
+			target = &current.Elements[i]
+			break
+		}
+	}
+
+	if target == nil {
+		return jsonError(fmt.Sprintf("element %q not found on current page. Use browser_snapshot() to see available refs.", ref))
+	}
+
+	if target.Type == "link" {
+		// Resolve relative URLs
+		baseURL := current.URL
+		targetURL := resolveURL(target.URL, baseURL)
+		return t.doNavigate(targetURL)
+	}
+
+	if target.Type == "button" || target.Type == "submit" {
+		// For buttons, just acknowledge the click (no form submission logic yet)
+		return jsonResult(browserResult{
+			Content: fmt.Sprintf("Clicked %s: %s", target.Type, target.Text),
+		})
+	}
+
+	return jsonError(fmt.Sprintf("cannot click on element type %q", target.Type))
+}
+
+func (t *browserTool) doBack() (string, error) {
+	t.state.mu.Lock()
+	defer t.state.mu.Unlock()
+
+	if len(t.state.history) < 2 {
+		return jsonError("no previous page in history")
+	}
+
+	// Pop current, go to previous
+	t.state.history = t.state.history[:len(t.state.history)-1]
+	t.state.current = &t.state.history[len(t.state.history)-1]
+
+	return jsonResult(browserResult{
+		Title:   t.state.current.Title,
+		URL:     t.state.current.URL,
+		Content: t.state.current.Content,
+	})
+}
+
+// ── HTML Parsing ──────────────────────────────────────────────────────
+
+func parseHTML(html, pageURL string, status int) browserSnapshot {
+	var snap browserSnapshot
+	snap.URL = pageURL
+	snap.Status = status
+
+	// Extract title
+	if m := reTitle.FindStringSubmatch(html); len(m) > 1 {
+		snap.Title = strings.TrimSpace(m[1])
+	}
+
+	var contentParts []string
+	var elements []clickableRef
+	refCounter := 1
+	seen := make(map[string]bool) // track unique URLs to avoid duplicate refs
+
+	// Extract headings
+	for _, m := range reH1.FindAllStringSubmatch(html, -1) {
+		text := strings.TrimSpace(m[1])
+		if text != "" {
+			contentParts = append(contentParts, "# "+text)
+		}
+	}
+
+	// Extract paragraphs
+	for _, m := range rePTag.FindAllStringSubmatch(html, -1) {
+		text := strings.TrimSpace(m[1])
+		if text != "" {
+			contentParts = append(contentParts, text)
+		}
+	}
+
+	// Extract list items
+	for _, m := range reLi.FindAllStringSubmatch(html, -1) {
+		text := strings.TrimSpace(m[1])
+		if text != "" {
+			contentParts = append(contentParts, "• "+text)
+		}
+	}
+
+	// Extract links
+	for _, m := range reLink.FindAllStringSubmatch(html, -1) {
+		href := strings.TrimSpace(m[1])
+		text := strings.TrimSpace(m[2])
+		if href == "" || text == "" || href == "#" || strings.HasPrefix(href, "javascript:") {
+			continue
+		}
+		// Skip duplicates
+		uniqKey := href + "|" + text
+		if seen[uniqKey] {
+			continue
+		}
+		seen[uniqKey] = true
+
+		ref := fmt.Sprintf("e%d", refCounter)
+		refCounter++
+		elements = append(elements, clickableRef{
+			Ref:  ref,
+			Type: "link",
+			Text: text,
+			URL:  href,
+		})
+		contentParts = append(contentParts, fmt.Sprintf("[%s] %s → %s", ref, text, href))
+	}
+
+	// Extract buttons and inputs
+	for _, m := range reButton.FindAllStringSubmatch(html, -1) {
+		text := strings.TrimSpace(m[1])
+		if text == "" {
+			text = "button"
+		}
+		ref := fmt.Sprintf("e%d", refCounter)
+		refCounter++
+		elements = append(elements, clickableRef{
+			Ref:  ref,
+			Type: "button",
+			Text: text,
+		})
+		contentParts = append(contentParts, fmt.Sprintf("[%s] [button: %s]", ref, text))
+	}
+
+	for _, m := range reInput.FindAllStringSubmatch(html, -1) {
+		tag := m[0]
+		text := ""
+		if vm := reInputVal.FindStringSubmatch(tag); len(vm) > 1 {
+			text = vm[1]
+		} else if pm := reInputPlaceholder.FindStringSubmatch(tag); len(pm) > 1 {
+			text = "[" + pm[1] + "]"
+		}
+		if text == "" {
+			text = "input"
+		}
+		ref := fmt.Sprintf("e%d", refCounter)
+		refCounter++
+		elements = append(elements, clickableRef{
+			Ref:  ref,
+			Type: "submit",
+			Text: text,
+		})
+		contentParts = append(contentParts, fmt.Sprintf("[%s] [input: %s]", ref, text))
+	}
+
+	snap.Content = strings.Join(contentParts, "\n")
+	snap.Elements = elements
+
+	return snap
+}
+
+// ── URL Resolution ────────────────────────────────────────────────────
+
+func resolveURL(href, base string) string {
+	if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+		return href
+	}
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return href
+	}
+	refURL, err := url.Parse(href)
+	if err != nil {
+		return href
+	}
+	return baseURL.ResolveReference(refURL).String()
+}
