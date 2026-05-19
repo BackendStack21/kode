@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/BackendStack21/kode/internal/config"
+	"github.com/BackendStack21/kode/internal/resource"
 	"github.com/BackendStack21/kode/internal/session"
 	golangws "golang.org/x/net/websocket"
 )
@@ -478,3 +482,139 @@ func TestServe_MultiplePrompts(t *testing.T) {
 		}
 	}
 }
+
+// ── E2E Integration Test ───────────────────────────────────────────────
+//
+// Starts the real kode serve process and verifies the full WebSocket
+// pipeline: upgrade, message send, response receive.
+
+func TestServe_E2E_WebSocketPipeline(t *testing.T) {
+	// Create a listener on a random port — no TOCTOU race since we pass
+	// the listener directly to serveOnListener.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	// Load config and build the mux (same setup as serveCmd)
+	resolved := config.LoadConfig(config.CLIFlags{})
+	systemMessage := resolved.System
+	if systemMessage == "" {
+		systemMessage = defaultSystem
+	}
+
+	store, err := session.NewStore()
+	if err != nil {
+		t.Fatalf("session store: %v", err)
+	}
+
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	resourceReg := resource.NewRegistry(
+		resource.NewFileResolver(cwd),
+		resource.NewSessionResolver(filepath.Join(home, ".kode", "sessions")),
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", handleStatic())
+	mux.Handle("/ws", &golangws.Server{
+		Handshake: func(*golangws.Config, *http.Request) error { return nil },
+		Handler: func(conn *golangws.Conn) {
+			handleWS(store, resourceReg, resolved, systemMessage, conn)
+		},
+	})
+	mux.HandleFunc("/api/resources", handleResourceSearch(resourceReg))
+	mux.HandleFunc("/api/sessions", handleSessionList(store))
+
+	// Start serving on the pre-created listener in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- serveOnListener(ln, mux)
+	}()
+	defer ln.Close()
+
+	// Wait for server to be ready
+	var httpReady bool
+	for i := 0; i < 20; i++ {
+		time.Sleep(250 * time.Millisecond)
+		resp, err := http.Get("http://" + addr + "/")
+		if err == nil && resp.StatusCode == 200 {
+			resp.Body.Close()
+			httpReady = true
+			break
+		}
+	}
+	if !httpReady {
+		// Check if serveCmd returned an error immediately
+		select {
+		case err := <-errCh:
+			t.Fatalf("server exited before ready: %v", err)
+		default:
+			t.Fatal("server not ready after 5s")
+		}
+	}
+	defer ln.Close()
+
+	// 1. Connect via WebSocket
+	wsURL := "ws://" + addr + "/ws"
+	conn, err := golangws.Dial(wsURL, "", "http://localhost")
+	if err != nil {
+		t.Fatalf("Dial(%q): %v", wsURL, err)
+	}
+	defer conn.Close()
+	t.Log("E2E: WebSocket connected")
+
+	// 2. Send a prompt
+	msg := map[string]string{"type": "prompt", "content": "say hello"}
+	payload, _ := json.Marshal(msg)
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	t.Log("E2E: Prompt sent")
+
+	// 3. Read response — we expect at minimum a 'session' event
+	// followed by either a token/error/done event.
+	// This proves the full WS pipeline: upgrade → handler → agent → response.
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+
+	var sawSession bool
+	for i := 0; i < 5; i++ {
+		var data []byte
+		if err := golangws.Message.Receive(conn, &data); err != nil {
+			t.Fatalf("Receive event %d: %v", i, err)
+		}
+		t.Logf("E2E event %d: %s", i, string(data))
+
+		var evt map[string]any
+		if err := json.Unmarshal(data, &evt); err != nil {
+			t.Fatalf("unmarshal event %d: %v", i, err)
+		}
+
+		switch evt["type"] {
+		case "session":
+			sawSession = true
+			if sid, ok := evt["session_id"].(string); ok && sid != "" {
+				t.Logf("E2E: session %s created", sid)
+			}
+		case "token", "thinking", "tool_call", "tool_result":
+			// Normal streaming events — pipeline is working
+		case "done":
+			if !sawSession {
+				t.Error("E2E: got 'done' before 'session' event")
+			}
+			return // success
+		case "error":
+			// Two possible flows:
+			//   1. Agent setup fails (no API key) → error before session
+			//   2. LLM call fails (bad API key) → session then error
+			// Both prove the WS pipeline works.
+			t.Logf("E2E: expected error (no API key in test env): %s", evt["message"])
+			return // success — WS pipeline proven
+		}
+	}
+
+	// Read deadline means we missed events
+	t.Error("E2E: did not complete message exchange before deadline")
+}
+

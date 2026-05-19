@@ -98,6 +98,12 @@ Flags:
 		openInBrowser("http://" + listener.Addr().String())
 	}
 
+	return serveOnListener(listener, mux)
+}
+
+// serveOnListener serves the kode Web UI on a pre-created listener.
+// Extracted for testing — allows E2E tests to pass a listener on a known port.
+func serveOnListener(listener net.Listener, mux *http.ServeMux) error {
 	return http.Serve(listener, mux)
 }
 
