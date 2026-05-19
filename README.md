@@ -8,7 +8,7 @@ One binary. One loop. Zero frameworks. ReAct (Reasoning + Acting) — think, the
 # Install
 go install github.com/BackendStack21/kode/cmd/kode@latest
 
-# Use
+# Use (set DEEPSEEK_API_KEY or OPENAI_API_KEY)
 export DEEPSEEK_API_KEY=sk-...
 kode run "How many lines in go.mod?"
 # → 3 lines
@@ -39,7 +39,7 @@ kode is not a framework. It's a **runtime** — the smallest possible surface ar
 Parallel OS-process sub-agents via `delegate_tasks`. True isolation — each sub-agent is a fresh `kode subagent` process with its own config, tools, and termination timeout. Up to 8 concurrent workers. [docs/SUBAGENTS.md](docs/SUBAGENTS.md)
 
 ### 🧠 Skill System (on by default)
-|Trigger-matched `SKILL.md` files load on-demand. Auto-learns from patterns every session — detects multi-step procedures, error recoveries, repeated actions, and user corrections. **LLM-enhanced**: each detected pattern is enriched with an LLM-generated name, description, trigger keywords, and structured body with overview, steps, pitfalls, and verification sections. Use `--no-learn` to disable. Import skills from any URI with automatic LLM risk assessment. [docs/CLI.md#skills](docs/CLI.md#skills)
+Skill-matched `SKILL.md` files load on-demand. Auto-learns from patterns every session — detects multi-step procedures, error recoveries, repeated actions, and user corrections. **LLM-enhanced**: each detected pattern is enriched with an LLM-generated name, description, trigger keywords, and structured body with overview, steps, pitfalls, and verification sections. Use `--no-learn` to disable. Import skills from any URI with automatic LLM risk assessment. [docs/CLI.md#skills](docs/CLI.md#skills)
 
 ### 💾 Persistent Memory
 Three tiers: **facts** (agent-managed durable entries), **session buffer** (auto-appended turn summaries), **episodes** (LLM-extracted knowledge from past sessions). Merge-on-write via go-vector RandomProjections — cosine >0.7 auto-merges, <0.3 auto-adds. Saves ~80% LLM calls. [docs/MEMORY.md](docs/MEMORY.md)
@@ -56,7 +56,7 @@ Any OpenAI-compatible endpoint: Deepseek, OpenAI, Anthropic, Ollama, vLLM, Groq,
 ### 🌐 Web UI
 `kode serve` — browser-based agent with `@` resource completion (`@file.go`, `@sess:abc123`), WebSocket streaming, and a full IDE-style console. [docs/WEBUI.md](docs/WEBUI.md)
 
-### 🔌 MCP (Two-Way)
+### 🔗 MCP (Two-Way)
 **Server** (`kode mcp`) — expose kode's native tools (shell, read/write/search files, patch, browser) to Claude Code, Cursor, and any MCP client. **Client** (`mcp_servers` config) — kode connects to external MCP servers (Playwright, Fetch, GitHub, SQLite, etc.) and makes their tools available to the agent as `<server>__<tool>`. Both directions in one binary. [docs/MCP.md](docs/MCP.md)
 
 ### 🔍 Native Tools
@@ -112,6 +112,7 @@ kode repl
 | `kode serve [--addr :8080]` | Start Web UI server |
 | `kode subagent --goal <string>` | Run a focused sub-task |
 | `kode init [--global]` | Create config file |
+| `kode mcp [--sandbox]` | Start MCP server — expose tools to Claude Code |
 | `kode version` | Print version |
 
 ### Key Flags
@@ -172,9 +173,9 @@ The full `Config` struct supports: `BaseURL`, `Thinking`, `SandboxCleanup`, `Ren
 ## Test
 
 ```bash
-go test ./...                  # 220+ tests, all pass
+go test ./...                  # 695+ tests, all pass
 go test -race ./...           # race detector clean
-go test -cover ./...          # 80%+ coverage
+go test -cover ./...          # 80%+ average coverage
 ```
 
 Everything runs with `go test` — no Docker, no network, no external services required for unit tests.
