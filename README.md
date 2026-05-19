@@ -1,165 +1,181 @@
 # kode
 
-The fastest, minimal, zero-dependency Go autonomous agent runtime.
+**The fastest, minimal, zero-dependency Go autonomous agent runtime.**
 
-`kode` runs the ReAct (Reasoning + Acting) loop — "think, therefore act" — as a single binary. No frameworks, no SDKs, no Python venvs. Just one loop and your tools.
+One binary. One loop. Zero frameworks. ReAct (Reasoning + Acting) — think, therefore act.
 
 ```bash
+# Install
+go install github.com/BackendStack21/kode/cmd/kode@latest
+
+# Use
+export DEEPSEEK_API_KEY=sk-...
 kode run "How many lines in go.mod?"
 # → 3 lines
-
-kode run "Fix the OOM bug in default-hooks.js"
-# → [reads file, edits code, runs tests, reports result]
 ```
 
-## Design
+---
 
-- **Zero deps** — `net/http`, `encoding/json`, `context`. That's it.
-- **LLM-agnostic** — Any OpenAI-compatible endpoint (Deepseek, OpenAI, Ollama, vLLM...)
-- **Tool-first** — Tools are the only extension point. No chains, no prompts.
-- **Sandbox-ready** — `kode run --sandbox` → isolated Docker container, destroyed on exit
-- **Single binary** — `go build` → one file. Drop it anywhere.
-- **Multi-turn** — `kode run --session` and `kode continue` for persistent conversations
-- **Configurable** — 4-layer config (global → project → env → CLI), `${VAR}` substitution
-- **Skills system** — On-demand knowledge through trigger‑matched SKILL.md files. Auto‑learn patterns with `--learn`. Import skills from URIs with LLM risk assessment.
-- **Persistent memory** — Three‑tier memory system (facts + session buffer + episode search). Agent‑managed via `memory` tool. Merge‑on‑write with go‑vector similarity detection saves ~80% LLM calls.
+## Why kode
 
-## Install
+kode is not a framework. It's a **runtime** — the smallest possible surface area between an LLM and your tools.
 
-### go install (recommended)
+| | kode | Python agents (LangChain, CrewAI, etc.) |
+|---|---|---|
+| Dependencies | **Zero.** stdlib only | 200+ packages |
+| Binary size | ~5 MB static | 50-200 MB with venv |
+| Startup | **Instant** | 2-10s (Python imports) |
+| Sandbox | `--sandbox` flag | Requires manual Docker setup |
+| Tool interface | One interface, one method | Class hierarchies + decorators |
 
-```bash
-go install github.com/BackendStack21/kode/cmd/kode@latest
-```
+---
 
-### From source
+## Strategic Features
 
-```bash
-git clone https://github.com/BackendStack21/kode.git
-cd kode
-go build -o kode ./cmd/kode
-```
+### 🔒 Sandboxed Execution
+`kode run --sandbox` — every session spawns an isolated Docker container. No network, no host mounts beyond the working directory, zero capabilities, destroyed on exit. Full security model in [docs/SANDBOXING.md](docs/SANDBOXING.md).
 
-### Binary download
+### 🧩 Sub-Agent Delegation
+Parallel OS-process sub-agents via `delegate_tasks`. True isolation — each sub-agent is a fresh `kode subagent` process with its own config, tools, and termination timeout. Up to 8 concurrent workers. [docs/SUBAGENTS.md](docs/SUBAGENTS.md)
 
-```bash
-# Linux amd64
-curl -fsSL https://github.com/BackendStack21/kode/releases/latest/download/kode-linux-amd64 -o kode
-chmod +x kode && sudo mv kode /usr/local/bin/
+### 🧠 Skill System
+Trigger-matched `SKILL.md` files load on-demand. Auto-learn from patterns with `--learn`. Import skills from any URI with automatic LLM risk assessment before installation. [docs/CLI.md#skills](docs/CLI.md#skills)
 
-# macOS arm64 (Apple Silicon)
-curl -fsSL https://github.com/BackendStack21/kode/releases/latest/download/kode-darwin-arm64 -o kode
-chmod +x kode && sudo mv kode /usr/local/bin/
-```
+### 💾 Persistent Memory
+Three tiers: **facts** (agent-managed durable entries), **session buffer** (auto-appended turn summaries), **episodes** (LLM-extracted knowledge from past sessions). Merge-on-write via go-vector RandomProjections — cosine >0.7 auto-merges, <0.3 auto-adds. Saves ~80% LLM calls. [docs/MEMORY.md](docs/MEMORY.md)
+
+### 🔧 Multi-Turn Sessions
+Save, resume, list, trim, and clean up conversations. Sessions persist as JSON in `~/.kode/sessions/`. Continue any session with `kode continue`. [docs/SESSIONS.md](docs/SESSIONS.md)
+
+### 🏗️ Layerable Config
+Four-layer priority chain: `global (~/kode/config.json)` → `project (./kode.json)` → `KODE_*` env vars → CLI flags. `${VAR}` substitution in config files. [docs/CONFIG.md](docs/CONFIG.md)
+
+### 🔌 LLM-Agnostic
+Any OpenAI-compatible endpoint: Deepseek, OpenAI, Anthropic, Ollama, vLLM, Groq, Together, Fireworks — anything that speaks `/chat/completions`. Per-model profiles for thinking depth and context windows. [docs/PROVIDERS.md](docs/PROVIDERS.md)
+
+### 🌐 Web UI
+`kode serve` — browser-based agent with `@` resource completion (`@file.go`, `@sess:abc123`), WebSocket streaming, and a full IDE-style console. [docs/WEBUI.md](docs/WEBUI.md)
+
+### 🔍 Native Tools
+Built-in `read_file`, `write_file`, `search_files`, `patch`, `shell`, and `browser` tools. All gated by a unified security layer (`dangerous` config) — classify operations as `allow` / `deny` / `prompt` per risk class. No third-party dependencies. [docs/SECURITY.md](docs/SECURITY.md)
+
+---
 
 ## Quick Start
 
 ```bash
-# Set your API key
-export DEEPSEEK_API_KEY=sk-...
+# Single-shot task
+kode run "List the files"
 
-# Run a task
-kode run "List the files in this directory"
+# With session persistence
+kode run --session "Refactor auth module"
+kode continue "Add rate limiting"
 
-# Save as session and continue
-kode run --session "Refactor the auth module"
-kode continue "Now add error handling"
+# Sandboxed (Docker isolation)
+kode run --sandbox "npm audit"
 
-# Use a different model
-kode run --model gpt-4o --base-url https://api.openai.com/v1 "Explain this code"
+# Different model
+kode run --model gpt-4o --base-url https://api.openai.com/v1 "Explain this"
 
-# Sandboxed execution
-kode run --sandbox "npm test"
-
-# Enable skill learning (auto-detects patterns, suggests skills)
+# With skill learning
 kode run --learn "Set up a Go project with CI"
+
+# Interactive REPL
+kode repl
 ```
 
-## Documentation
+---
 
-| Topic | Doc |
-|-------|-----|
-| **CLI Reference** | [docs/CLI.md](docs/CLI.md) — commands, flags, examples |
-| **Configuration** | [docs/CONFIG.md](docs/CONFIG.md) — files, env vars, priority chain |
-| **Models & Profiles** | [docs/PROVIDERS.md](docs/PROVIDERS.md) — providers, thinking, context window |
-| **Multi-Turn Sessions** | [docs/SESSIONS.md](docs/SESSIONS.md) — save, continue, list, trim, cleanup |
-| **Sandboxing** | [docs/SANDBOXING.md](docs/SANDBOXING.md) — Docker isolation, security, config |
-| **Security** | [docs/SECURITY.md](docs/SECURITY.md) — prompt injection, sandbox model |
-| **Web UI** | [docs/WEBUI.md](docs/WEBUI.md) — `kode serve`, WebSocket protocol, `@` resource completion |
-| **Sub-Agents** | [docs/SUBAGENTS.md](docs/SUBAGENTS.md) — task decomposition, parallel OS-process sub-agents |
-| **Skills** | [docs/CLI.md#skills](docs/CLI.md#skills) — learn, list, save, import, curate |
-| **Development** | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — building, testing, contributing |
+## Cheatsheet
 
-## Quick reference
+### Commands
 
-```bash
-# Commands
-kode run [flags] <task>                        # Single-shot task
-kode run --learn [flags] <task>                # Run with skill learning
-kode run --session [flags] <task>              # Save as session
-kode continue [--id <id>] <task>               # Continue a session
-kode session list                               # List sessions
-kode session show [id]                          # Show session transcript
-kode session delete <id>                        # Delete a session
-kode session trim <id> <n>                     # Keep last n messages
-kode session cleanup <days>                    # Delete old sessions
-kode skill list                                 # List available skills
-kode skill view <name>                          # View a skill
-kode skill delete <name>                        # Delete a skill
-kode skill import <uri> [--basic --yes]         # Import skill from URI
-kode skill curate                               # Quality/overlap audit
-kode serve [--addr :8080] [--open]              # Web UI server
-kode subagent --goal <string> [flags]           # Run a focused sub-task (JSON stdout)
-kode init [--global] [--force]                  # Create config file
-kode version                                    # Print version
+| Command | What it does |
+|---------|-------------|
+| `kode run <task>` | Single-shot task |
+| `kode run --session <task>` | Save conversation as session |
+| `kode continue [--id <id>] <task>` | Resume a saved session |
+| `kode repl` | Interactive multi-turn REPL |
+| `kode session list` | List recent sessions |
+| `kode session show [id]` | View session transcript |
+| `kode session delete <id>` | Delete a session |
+| `kode session trim <id> <n>` | Keep last n messages |
+| `kode session cleanup <days>` | Delete old sessions |
+| `kode skill list` | List available skills |
+| `kode skill view <name>` | View skill content |
+| `kode skill delete <name>` | Delete a skill |
+| `kode skill import <uri>` | Import skill from URL |
+| `kode skill curate` | Audit skill quality/overlap |
+| `kode serve [--addr :8080]` | Start Web UI server |
+| `kode subagent --goal <string>` | Run a focused sub-task |
+| `kode init [--global]` | Create config file |
+| `kode version` | Print version |
 
-# Key flags
---model <name>         # LLM model (deepseek-v4-flash, gpt-4o...)
---base-url <url>       # API endpoint
---sandbox              # Docker sandbox mode
---thinking <level>     # enabled/disabled/low/medium/high
---learn                # Enable skill learning mode
---system <prompt>      # System prompt override
---no-agents            # Skip AGENTS.md
-```
+### Key Flags
 
-## Features
+| Flag | What it does |
+|------|-------------|
+| `--model <name>` | LLM model (e.g. deepseek-v4-flash, gpt-4o) |
+| `--base-url <url>` | API endpoint URL |
+| `--sandbox` | Run in Docker sandbox |
+| `--thinking <level>` | Reasoning depth (enabled/disabled/low/medium/high) |
+| `--learn` | Enable skill learning mode |
+| `--system <prompt>` | Override system prompt |
+| `--max-iter <n>` | Max think→act cycles (default 90) |
+| `--no-agents` | Skip AGENTS.md project file |
 
-### Persistent Memory
+---
 
-Three tiers managed automatically by the agent via the `memory` tool:
+## Docs
 
-| Tier | Storage | Cap | Managed by |
-|------|---------|-----|------------|
-| Facts | `~/.kode/memory/facts/{user,env}.md` | 1,500 + 2,500 chars | Agent via `memory` tool |
-| Buffer | In-session ring | 20 lines | Auto-appended each turn |
-| Episodes | `~/.kode/memory/episodes/<id>.md` | 1 KB each | LLM-extracted on session end |
+| Doc | Covers |
+|-----|--------|
+| [CLI Reference](docs/CLI.md) | All commands, subcommands, flags, error codes |
+| [Configuration](docs/CONFIG.md) | Config files, env vars, priority chain, all sections |
+| [Providers & Models](docs/PROVIDERS.md) | Supported providers, thinking config, context windows |
+| [Memory](docs/MEMORY.md) | Three-tier design, go-vector merge-on-write, `memory` tool |
+| [Sessions](docs/SESSIONS.md) | Multi-turn conversations, save/resume/trim/cleanup |
+| [Sandboxing](docs/SANDBOXING.md) | Docker isolation model, config, security hardening |
+| [Security](docs/SECURITY.md) | Threat model, prompt injection defense, sandbox model |
+| [Sub-Agents](docs/SUBAGENTS.md) | Task decomposition, delegation tool, subagent protocol |
+| [Web UI](docs/WEBUI.md) | `kode serve`, WebSocket protocol, `@` resource resolution |
+| [Skills](docs/CLI.md#skills) | Trigger-matched skills, learning, import, curation |
+| [Development](docs/DEVELOPMENT.md) | Building, testing, contributing, project structure |
 
-The agent can **add**, **replace**, **remove**, **consolidate**, **read**, or **search** memory using a single `memory` tool with six actions.
-
-**Merge-on-write** uses go-vector RandomProjections to detect duplicate entries before writing — cosine >0.7 auto-merges, <0.3 auto-adds, 0.3-0.7 asks the LLM. Saves ~80% of LLM calls.
-
-See [docs/MEMORY.md](docs/MEMORY.md) for the full design.
+---
 
 ## Programmatic API
 
 ```go
+import "github.com/BackendStack21/kode"
+
 agent, err := kode.New(kode.Config{
-    Model:  "deepseek-chat",
-    APIKey: os.Getenv("DEEPSEEK_API_KEY"),
-    Tools:  []kode.Tool{&myTool{}},
+    Model:          "deepseek-chat",
+    APIKey:         os.Getenv("DEEPSEEK_API_KEY"),
+    MaxIterations:  30,
+    Tools:          []kode.Tool{&myCustomTool{}},
+    SystemMessage:  "You are an expert at refactoring Go code.",
 })
 defer agent.Close()
 
-result, err := agent.Run(context.Background(), "Summarize this codebase")
+result, err := agent.Run(context.Background(), "Refactor this module")
 ```
 
-## Test count
+The full `Config` struct supports: `BaseURL`, `Thinking`, `SandboxCleanup`, `Renderer`, `MemoryConfig`, `MemoryDir`, `Skills`, `SkillManager`, and `NoProjectFile`.
+
+---
+
+## Test
 
 ```bash
-go test ./...
-# 220+ tests, all pass, zero external dependencies
+go test ./...                  # 220+ tests, all pass
+go test -race ./...           # race detector clean
+go test -cover ./...          # 80%+ coverage
 ```
+
+Everything runs with `go test` — no Docker, no network, no external services required for unit tests.
+
+---
 
 ## License
 
