@@ -591,95 +591,98 @@ func TestSubagentSystemPrompt_Minimal(t *testing.T) {
 	}
 }
 
-// ── 9. classifyGoal ─────────────────────────────────────────────────
+// ── 9. buildSubagentPrompt ──────────────────────────────────────────
 
-func TestClassifyGoal_Build(t *testing.T) {
-	got := classifyGoal("Create a user model with CRUD")
-	if got != buildSystem {
-		t.Errorf("classifyGoal('Create...') = %q..., want buildSystem", truncate(got, 40))
+func TestBuildSubagentPrompt_IncludesGoal(t *testing.T) {
+	got := buildSubagentPrompt("Create a user model with CRUD", "")
+	if !strings.Contains(got, "Create a user model with CRUD") {
+		t.Errorf("prompt should contain the goal text, got:\n%s", got)
 	}
 }
 
-func TestClassifyGoal_Debug(t *testing.T) {
+func TestBuildSubagentPrompt_IncludesContext(t *testing.T) {
+	got := buildSubagentPrompt("Build auth middleware", "Uses gin, models at internal/models/user.go")
+	if !strings.Contains(got, "Uses gin") {
+		t.Errorf("prompt should contain context, got:\n%s", got)
+	}
+}
+
+func TestBuildSubagentPrompt_EmptyGoal(t *testing.T) {
+	got := buildSubagentPrompt("", "")
+	if got != subagentSystem {
+		t.Errorf("empty goal should return subagentSystem, got:\n%s", got)
+	}
+}
+
+func TestBuildSubagentPrompt_DebugDetection(t *testing.T) {
 	for _, goal := range []string{"fix OOM bug in parser", "crash in websocket handler", "broken import path"} {
-		got := classifyGoal(goal)
-		if got != debugSystem {
-			t.Errorf("classifyGoal(%q) = %q..., want debugSystem", goal, truncate(got, 40))
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "debugger") && !strings.Contains(got, "root cause") {
+			t.Errorf("goal %q should produce debug prompt, got:\n%s", goal, got)
 		}
 	}
 }
 
-func TestClassifyGoal_Test(t *testing.T) {
+func TestBuildSubagentPrompt_TestDetection(t *testing.T) {
 	for _, goal := range []string{"write unit tests for auth", "add coverage for models", "create integration test for API"} {
-		got := classifyGoal(goal)
-		if got != testSystem {
-			t.Errorf("classifyGoal(%q) = %q..., want testSystem", goal, truncate(got, 40))
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "test") && !strings.Contains(got, "assert") && !strings.Contains(got, "coverage") {
+			t.Errorf("goal %q should produce test prompt, got:\n%s", goal, got)
 		}
 	}
 }
 
-func TestClassifyGoal_Review(t *testing.T) {
-	got := classifyGoal("review PR #42 for security issues")
-	if got != reviewSystem {
-		t.Errorf("classifyGoal('review...') = %q..., want reviewSystem", truncate(got, 40))
+func TestBuildSubagentPrompt_ReviewDetection(t *testing.T) {
+	got := buildSubagentPrompt("review PR #42 for security issues", "")
+	if !strings.Contains(got, "reviewing") && !strings.Contains(got, "critically") {
+		t.Errorf("review goal should produce review prompt, got:\n%s", got)
 	}
 }
 
-func TestClassifyGoal_Refactor(t *testing.T) {
-	got := classifyGoal("refactor the monolith into handlers")
-	if got != refactorSystem {
-		t.Errorf("classifyGoal('refactor...') = %q..., want refactorSystem", truncate(got, 40))
+func TestBuildSubagentPrompt_RefactorDetection(t *testing.T) {
+	got := buildSubagentPrompt("refactor the monolith into handlers", "")
+	if !strings.Contains(got, "architecture") && !strings.Contains(got, "Preserve behavior") {
+		t.Errorf("refactor goal should produce architecture prompt, got:\n%s", got)
 	}
 }
 
-func TestClassifyGoal_Config(t *testing.T) {
-	got := classifyGoal("setup Docker CI pipeline")
-	if got != configSystem {
-		t.Errorf("classifyGoal('setup...') = %q..., want configSystem", truncate(got, 40))
+func TestBuildSubagentPrompt_ConfigDetection(t *testing.T) {
+	got := buildSubagentPrompt("setup Docker CI pipeline", "")
+	if !strings.Contains(got, "DevOps") && !strings.Contains(got, "reproducible") {
+		t.Errorf("config goal should produce DevOps prompt, got:\n%s", got)
 	}
 }
 
-func TestClassifyGoal_Research(t *testing.T) {
-	got := classifyGoal("research Go HTTP router performance")
-	if got != researchSystem {
-		t.Errorf("classifyGoal('research...') = %q..., want researchSystem", truncate(got, 40))
+func TestBuildSubagentPrompt_ResearchDetection(t *testing.T) {
+	got := buildSubagentPrompt("research Go HTTP router performance", "")
+	if !strings.Contains(got, "researcher") && !strings.Contains(got, "Explore thoroughly") {
+		t.Errorf("research goal should produce research prompt, got:\n%s", got)
 	}
 }
 
-func TestClassifyGoal_FallbackToBuild(t *testing.T) {
-	got := classifyGoal("do something random")
-	if got != buildSystem {
-		t.Errorf("classifyGoal('do something random') = %q..., want buildSystem", truncate(got, 40))
+func TestBuildSubagentPrompt_FallbackToBuild(t *testing.T) {
+	got := buildSubagentPrompt("do something random", "")
+	if !strings.Contains(got, "expert engineer") {
+		t.Errorf("generic goal should produce engineer prompt, got:\n%s", got)
 	}
 }
 
-// ── 10. Category System Prompts ──────────────────────────────────────
-
-func TestCategoryPrompts_NotEmpty(t *testing.T) {
-	prompts := []struct {
-		name string
-		p    string
-	}{
-		{"buildSystem", buildSystem},
-		{"debugSystem", debugSystem},
-		{"testSystem", testSystem},
-		{"reviewSystem", reviewSystem},
-		{"refactorSystem", refactorSystem},
-		{"configSystem", configSystem},
-		{"researchSystem", researchSystem},
-		{"subagentSystem", subagentSystem},
-	}
-	for _, sp := range prompts {
-		if sp.p == "" {
-			t.Errorf("%s must not be empty", sp.name)
-		}
-		if len(sp.p) > 800 {
-			t.Errorf("%s too long: %d chars (max 800)", sp.name, len(sp.p))
-		}
+func TestBuildSubagentPrompt_UniquePerGoal(t *testing.T) {
+	p1 := buildSubagentPrompt("Build auth middleware", "")
+	p2 := buildSubagentPrompt("Create user model", "")
+	if p1 == p2 {
+		t.Error("different goals should produce different prompts")
 	}
 }
 
-// ── 11. Integration ─────────────────────────────────────────────────
+func TestBuildSubagentPrompt_MaxLength(t *testing.T) {
+	got := buildSubagentPrompt("Create a full CRUD REST API with JWT auth and PostgreSQL storage", "Uses gin, GORM, models at internal/models/")
+	if len(got) > 800 {
+		t.Errorf("prompt too long: %d chars (max 800)\n%s", len(got), got)
+	}
+}
+
+// ── 10. Integration ─────────────────────────────────────────────────
 
 func TestDelegateTasks_PipesStderr(t *testing.T) {
 	tool := &delegateTasksTool{

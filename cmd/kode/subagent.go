@@ -18,10 +18,11 @@ import (
 
 // ── Sub-agent System Prompts ────────────────────────────────────────
 //
-// Sub-agents receive a system prompt matched to their task's category.
-// The parent agent can also provide a custom system prompt via the
-// `system` field in delegate_tasks. When neither is provided, use
-// classifyGoal() to pick the best category.
+// Sub-agents receive a system prompt tailored to their specific task.
+// The parent agent can provide a custom prompt via the `system` field
+// in delegate_tasks. When not provided, buildSubagentPrompt() constructs
+// one dynamically by analyzing the goal text — embedding the actual task
+// so every prompt is unique.
 
 const subagentSystem = `You are kode working on a single focused sub-task.
 Complete the assigned goal and report what you did.
@@ -30,74 +31,70 @@ Use the shell tool when you need information or to make changes.
 Report: what you built, what files changed, any issues encountered.
 Be concise. Output your answer, then stop.`
 
-// Category-specific system prompts.
-// Each is optimized for a different task type.
+// buildSubagentPrompt constructs a system prompt tailored to the
+// specific goal and context. Every call produces a unique prompt
+// because the goal text is embedded.
+//
+// The returned string is ~90-120 tokens. Falls back to subagentSystem
+// when the goal is empty.
+func buildSubagentPrompt(goal, context string) string {
+	if goal == "" {
+		return subagentSystem
+	}
 
-const buildSystem = `You are kode — an expert engineer building production code.
-Architect and implement with confidence. Consider edge cases, error handling,
-and maintainability from the start. Write clean, idiomatic code that another
-engineer can read and extend. Report what you built and what files changed.`
-
-const debugSystem = `You are kode — an expert debugger.
-Find the root cause. Isolate the bug before you write any fix. Prove the fix
-works by reasoning through the normal and edge cases. Report what was broken,
-the root cause, and how you fixed it.`
-
-const testSystem = `You are kode — an expert in testing and quality.
-Write thorough tests. Cover the happy path, edge cases, and failure modes.
-Use table-driven tests where appropriate. Tests should be readable and
-maintainable. Report what you tested and the coverage pattern.`
-
-const reviewSystem = `You are kode — a senior engineer reviewing code.
-Read every line critically. Look for logic errors, security vulnerabilities,
-performance issues, and style problems. Be constructive — propose specific
-improvements. Report all findings with file:line references.`
-
-const refactorSystem = `You are kode — an expert in code architecture.
-Preserve behavior. Change structure only. Clean up technical debt while
-ensuring nothing breaks. Report what you changed and why the new structure
-is better.`
-
-const configSystem = `You are kode — a DevOps engineer configuring systems.
-Make every change reproducible and documented. Use minimal permissions.
-Test the configuration after changing it. Report what you set up and how
-to verify it works.`
-
-const researchSystem = `You are kode — a technical researcher.
-Explore thoroughly. Read source code, docs, and examples before concluding.
-Cite your sources. Synthesize findings into a clear recommendation.
-Report what you found and your recommended action.`
-
-// classifyGoal returns a system prompt matched to the task's category
-// by analyzing the goal text. Falls back to the default subagentSystem
-// when no strong signal is detected.
-func classifyGoal(goal string) string {
+	// Detect task type from goal keywords
 	lower := strings.ToLower(goal)
-	switch {
-	case containsAny(lower, "fix", "bug", "error", "crash", "broken", "incorrect", "wrong", "fail"):
-		return debugSystem
-	case containsAny(lower, "test", "spec", "coverage", "assert", "unit test", "integration test"):
-		return testSystem
-	case containsAny(lower, "review", "audit", "check", "inspect", "verify", "validate"):
-		return reviewSystem
-	case containsAny(lower, "refactor", "clean up", "simplify", "rename", "extract", "restructure", "reorganize"):
-		return refactorSystem
-	case containsAny(lower, "setup", "config", "install", "docker", "ci", "deploy", "provision"):
-		return configSystem
-	case containsAny(lower, "research", "explain", "compare", "understand", "find", "investigate", "analyze"):
-		return researchSystem
-	default:
-		return buildSystem // greenfield / build tasks
-	}
-}
-
-func containsAny(s string, substrs ...string) bool {
-	for _, sub := range substrs {
-		if strings.Contains(s, sub) {
-			return true
+	matches := func(kws ...string) bool {
+		for _, kw := range kws {
+			if strings.Contains(lower, kw) {
+				return true
+			}
 		}
+		return false
 	}
-	return false
+
+	// Pick persona and methodology based on detected intent
+	persona := "an expert engineer"
+	methodology := "Architect and implement with confidence."
+	focus := "Write clean, well-structured code."
+
+	switch {
+	case matches("fix", "bug", "error", "crash", "broken", "incorrect", "wrong", "fail"):
+		persona = "an expert debugger"
+		methodology = "Find the root cause before writing any fix."
+		focus = "Isolate the bug, prove the fix, and verify edge cases."
+	case matches("test", "spec", "coverage", "assert"):
+		persona = "a testing engineer"
+		methodology = "Write thorough tests. Cover happy path, edge cases, and failures."
+		focus = "Use clear assertions and descriptive test names."
+	case matches("review", "audit", "check", "inspect", "verify", "validate", "inspect"):
+		persona = "a senior engineer reviewing code"
+		methodology = "Read every line critically."
+		focus = "Find logic errors, security holes, and style issues. Be constructive."
+	case matches("refactor", "clean up", "simplify", "rename", "extract", "restructure"):
+		persona = "an architecture expert"
+		methodology = "Preserve behavior. Change only the structure."
+		focus = "Eliminate technical debt without breaking anything."
+	case matches("setup", "config", "install", "docker", "ci", "deploy", "provision"):
+		persona = "a DevOps engineer"
+		methodology = "Make every change reproducible and minimal."
+		focus = "Test the configuration after changing it."
+	case matches("research", "explain", "compare", "understand", "investigate", "analyze"):
+		persona = "a technical researcher"
+		methodology = "Explore thoroughly before concluding."
+		focus = "Read source code and docs. Cite findings. Recommend action."
+	}
+
+	// Build the prompt with the actual goal embedded
+	prompt := fmt.Sprintf("You are kode — %s.\n%s\n%s\nGoal: %s.",
+		persona, methodology, focus, goal)
+
+	if context != "" {
+		prompt += fmt.Sprintf("\n\nContext:\n%s", context)
+	}
+
+	prompt += "\n\nReport what you built and what files changed."
+	return prompt
 }
 
 // subagentResult is the JSON contract written to stdout.
@@ -271,8 +268,8 @@ func subagentCmd(args []string) error {
 	resolved := config.LoadConfig(config.CLIFlags{})
 
 	// Resolve system prompt for this sub-agent.
-	// Priority: 1) task file override  2) user config override  3) classifyGoal  4) default
-	systemMsg := classifyGoal(cfg.goal)
+	// Priority: 1) task file override  2) user config override  3) dynamic build
+	systemMsg := buildSubagentPrompt(cfg.goal, cfg.context)
 	switch {
 	case taskSystem != "":
 		systemMsg = taskSystem

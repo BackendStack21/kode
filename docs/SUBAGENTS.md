@@ -219,7 +219,7 @@ Every sub-agent receives a system prompt **tailored to its task** — not a one-
 |----------|--------|------|
 | 1 (highest) | `system` field in `delegate_tasks` | Parent explicitly provides a custom prompt |
 | 2 | `KODE_SYSTEM` / config file `system` | User-configured global override |
-| 3 | `classifyGoal()` auto-detection | Fallback — analyses the goal text |
+| 3 | `buildSubagentPrompt()` dynamic generation | Go-level fallback — analyzes goal text and constructs a per-task prompt with the actual goal embedded |
 
 ### Parent-crafted prompts
 
@@ -240,21 +240,30 @@ The parent agent (kode) is instructed to write system prompts for each sub-task.
 }
 ```
 
-### Auto-classified prompts
+### Dynamically generated prompts
 
-When no `system` field is provided, `classifyGoal()` analyzes the goal text and picks a matching category:
+When no `system` field is provided, `buildSubagentPrompt()` constructs a prompt at runtime by analyzing the goal text. Every call produces a **unique prompt** because the actual goal is embedded:
 
-| Category | Trigger keywords | Prompt persona |
-|----------|-----------------|----------------|
-| **build** (default) | *(no match)* | Expert engineer building production code |
-| **debug** | fix, bug, error, crash, broken, incorrect | Expert debugger — find root cause first |
-| **test** | test, spec, coverage, assert, unit test | Testing & quality expert |
-| **review** | review, audit, check, inspect, verify | Senior engineer reading every line critically |
-| **refactor** | refactor, clean up, simplify, rename, extract | Code architecture expert — preserve behavior |
-| **config** | setup, config, install, docker, ci, deploy | DevOps engineer — reproducible, minimal permissions |
-| **research** | research, explain, compare, understand, find | Technical researcher — explore thoroughly |
+```text
+You are kode — an expert debugger.
+Find the root cause before writing any fix.
+Isolate the bug, prove the fix, and verify edge cases.
+Goal: Fix OOM bug in parser.js.
 
-Each category prompt is a focused ~80-100 tokens with a distinct persona and methodology.
+Report what you built and what files changed.
+```
+
+The generator detects task type from keywords and builds the persona, methodology, and focus dynamically:
+
+| Detected intent | Persona | Methodology |
+|----------------|---------|-------------|
+| fix, bug, error, crash, broken | Expert debugger | Find root cause before writing fix |
+| test, spec, coverage, assert | Testing engineer | Write thorough tests — happy, edge, failure |
+| review, audit, check, inspect | Senior engineer reviewing code | Read every line critically |
+| refactor, clean up, simplify, rename | Architecture expert | Preserve behavior, change only structure |
+| setup, config, docker, ci, deploy | DevOps engineer | Reproducible, minimal permissions |
+| research, explain, compare, analyze | Technical researcher | Explore thoroughly before concluding |
+| *(default / no match)* | Expert engineer | Architect and implement with confidence |
 
 ### Default fallback
 
@@ -281,7 +290,7 @@ The temp file written by `delegate_tasks` carries the system prompt:
 }
 ```
 
-When invoked directly via `kode subagent --goal "..."`, the `--goal` path uses `classifyGoal()` (no manual override) while `--task <file>` reads the `system` field from the JSON file.
+When invoked directly via `kode subagent --goal "..."`, the `--goal` path uses `buildSubagentPrompt()` (no manual override) while `--task <file>` reads the `system` field from the JSON file.
 
 ## Configuration
 
@@ -319,7 +328,7 @@ The sub-agent system has three test layers:
 
 | Layer | Tests | Runner | What's verified |
 |-------|-------|--------|-----------------|
-| **Contract tests** | 48 | `go test ./cmd/kode/` | Flag parsing, JSON stdout protocol, exit codes, tool schema, config parsing, classifyGoal categories, system prompt length/empty checks |
+| **Contract tests** | ~50 | `go test ./cmd/kode/` | Flag parsing, JSON stdout protocol, exit codes, tool schema, config parsing, buildSubagentPrompt dynamic generation (goal embedded, context, intent detection, uniqueness, max length) |
 | **E2E tests** | 16 | `KODE_E2E=true go test ./cmd/kode/ -run "TestE2E_"` | Real subprocess spawning, tool → binary pipeline, stderr protocol, concurrency, timeouts, custom system prompt threading |
 | **Full suite** | All | `go test -race ./...` | 12 packages, race-detector clean |
 
