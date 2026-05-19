@@ -55,6 +55,7 @@
     .hero .sub {
       font-size: 1.15rem; color: var(--text2); margin-top: 16px; max-width: 600px; margin-inline: auto;
     }
+    .hero .sub .size { color: var(--green); font-weight: 600; }
     .hero .install {
       margin-top: 36px;
       background: var(--bg3); border: 1px solid var(--border); border-radius: 12px;
@@ -68,12 +69,6 @@
       cursor: pointer; transition: opacity .15s; text-decoration: none;
     }
     .hero .install .btn:hover { opacity: .85; }
-    .hero .stats {
-      display: flex; justify-content: center; gap: 48px; margin-top: 48px;
-    }
-    .hero .stats .stat { text-align: center; }
-    .hero .stats .stat .num { font-size: 1.75rem; font-weight: 700; color: var(--text); }
-    .hero .stats .stat .lbl { font-size: 0.8125rem; color: var(--text2); margin-top: 2px; }
 
     /* ── Sections ── */
     section { padding: 64px 0; }
@@ -202,19 +197,11 @@
 <section class="hero">
   <div class="container">
     <h1>kode</h1>
-    <p class="sub">The fastest, minimal, zero-dependency Go agent runtime.<br>Think, therefore act.</p>
+    <p class="sub"><span class="size">5 MB</span> zero-dependency Go agent runtime.<br>Think, therefore act.</p>
 
     <div class="install">
       <code>go install github.com/BackendStack21/kode/cmd/kode@latest</code>
       <a class="btn" href="#install">Get Started →</a>
-    </div>
-
-    <div class="stats">
-      <div class="stat"><div class="num">5 MB</div><div class="lbl">Binary</div></div>
-      <div class="stat"><div class="num">1</div><div class="lbl">Dependency</div></div>
-      <div class="stat"><div class="num">888</div><div class="lbl">Tests</div></div>
-      <div class="stat"><div class="num">79%</div><div class="lbl">Coverage</div></div>
-      <div class="stat"><div class="num">15</div><div class="lbl">Packages</div></div>
     </div>
   </div>
 </section>
