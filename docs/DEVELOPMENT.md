@@ -80,6 +80,7 @@ cmd/odek/
     index.html                Single-page web UI (~770 LOC, vanilla JS + CSS)
 docs/                         Documentation
   CLI.md                      CLI reference
+  API.md                      Programmatic API (Go library)
   CONFIG.md                   Configuration system
   PROVIDERS.md                Models, profiles, thinking, context
   SESSIONS.md                 Multi-turn sessions
