@@ -428,8 +428,8 @@ func TestRenderer_Summary_TokensOnly(t *testing.T) {
 		t.Errorf("missing output tokens: %q", out)
 	}
 	// No cache metrics
-	if strings.Contains(out, "created") {
-		t.Errorf("should not show cache creation: %q", out)
+	if strings.Contains(out, "stored") {
+		t.Errorf("should not show 'stored' when cache creation is 0: %q", out)
 	}
 	if strings.Contains(out, "read") {
 		t.Errorf("should not show cache read: %q", out)
@@ -452,7 +452,7 @@ func TestRenderer_Summary_AnthropicCache(t *testing.T) {
 	if !strings.Contains(out, "500 out") {
 		t.Errorf("missing output tokens: %q", out)
 	}
-	if !strings.Contains(out, "100 created") {
+	if !strings.Contains(out, "100 stored") {
 		t.Errorf("missing cache creation: %q", out)
 	}
 	if !strings.Contains(out, "200 read") {
@@ -479,8 +479,8 @@ func TestRenderer_Summary_OpenAICache(t *testing.T) {
 	if !strings.Contains(out, "75 cached") {
 		t.Errorf("missing cached tokens: %q", out)
 	}
-	if strings.Contains(out, "created") {
-		t.Errorf("should not show cache creation: %q", out)
+	if strings.Contains(out, "stored") {
+		t.Errorf("should not show 'stored' when cache creation is 0: %q", out)
 	}
 	if strings.Contains(out, "read") {
 		t.Errorf("should not show cache read: %q", out)
@@ -521,7 +521,7 @@ func TestRenderer_Summary_NoColor(t *testing.T) {
 	if !strings.Contains(out, "100 in") {
 		t.Errorf("missing input tokens: %q", out)
 	}
-	if !strings.Contains(out, "10 created") {
+	if !strings.Contains(out, "10 stored") {
 		t.Errorf("missing cache creation: %q", out)
 	}
 	if !strings.Contains(out, "5 read") {

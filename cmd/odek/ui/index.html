@@ -1400,7 +1400,7 @@ function connect() {
             if (event.contextTokens != null) parts.push(formatNum(event.contextTokens) + ' in');
             if (event.outputTokens != null) parts.push(formatNum(event.outputTokens) + ' out');
             // Cache metrics — show only when non-zero
-            if (event.cacheCreationTokens > 0) parts.push(formatNum(event.cacheCreationTokens) + ' created');
+            if (event.cacheCreationTokens > 0) parts.push(formatNum(event.cacheCreationTokens) + ' stored');
             if (event.cacheReadTokens > 0) parts.push(formatNum(event.cacheReadTokens) + ' read');
             if (event.cachedTokens > 0) parts.push(formatNum(event.cachedTokens) + ' cached');
             stats.textContent = parts.join('  ·  ');

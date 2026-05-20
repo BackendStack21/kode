@@ -220,7 +220,7 @@ func (r *Renderer) Summary(inTokens, outTokens, cacheCreate, cacheRead, cached i
 		fmt.Sprintf("%d out", outTokens),
 	}
 	if cacheCreate > 0 {
-		parts = append(parts, fmt.Sprintf("%d created", cacheCreate))
+		parts = append(parts, fmt.Sprintf("%d stored", cacheCreate))
 	}
 	if cacheRead > 0 {
 		parts = append(parts, fmt.Sprintf("%d read", cacheRead))
