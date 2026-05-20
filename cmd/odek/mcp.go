@@ -95,10 +95,12 @@ Flags:
 	// Sandbox setup (must happen after tools are created)
 	var sandboxCleanup func() error
 	if resolved.Sandbox {
-		cleanup, err := setupSandbox(toolSet, sbCfg)
+		var mcpContainerName string
+		mcpContainerName, cleanup, err := setupSandbox(toolSet, sbCfg)
 		if err != nil {
-			return fmt.Errorf("sandbox: %w", err)
+			return fmt.Errorf("setup sandbox: %w", err)
 		}
+		_ = mcpContainerName
 		sandboxCleanup = cleanup
 		defer sandboxCleanup()
 	}

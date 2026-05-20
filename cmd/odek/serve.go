@@ -201,11 +201,13 @@ func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v 
 			Env:      resolved.SandboxEnv,
 			Volumes:  resolved.SandboxVolumes,
 		}
-		cleanup, err := setupSandbox(tools, cfg)
-		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("sandbox: %w", err)
+		var sbContainerName string
+		var sandboxErr error
+		sbContainerName, sandboxCleanup, sandboxErr = setupSandbox(tools, cfg)
+		if sandboxErr != nil {
+			return nil, nil, nil, nil, fmt.Errorf("sandbox: %w", sandboxErr)
 		}
-		sandboxCleanup = cleanup
+		_ = sbContainerName // not used in serve mode
 	}
 
 	agent, err := odek.New(odek.Config{

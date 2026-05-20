@@ -100,10 +100,12 @@ func replCmd(args []string) error {
 			Env:      resolved.SandboxEnv,
 			Volumes:  resolved.SandboxVolumes,
 		}
-		cleanup, err := setupSandbox(tools, sbCfg)
+		var replContainerName string
+		replContainerName, cleanup, err := setupSandbox(tools, sbCfg)
 		if err != nil {
 			return fmt.Errorf("sandbox: %w", err)
 		}
+		_ = replContainerName // not used in REPL mode
 		sandboxCleanup = cleanup
 	}
 

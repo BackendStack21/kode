@@ -742,11 +742,22 @@ func run(args []string) error {
 	}
 
 	if resolved.Sandbox {
-		cleanup, err := setupSandbox(tools, sbCfg)
+		var containerName string
+		containerName, sandboxCleanup, err = setupSandbox(tools, sbCfg)
 		if err != nil {
 			return fmt.Errorf("sandbox: %w", err)
 		}
-		sandboxCleanup = cleanup
+
+		// Inject --ctx files into the sandbox container
+		if len(f.Ctx) > 0 {
+			injected, injectErr := injectFilesToSandbox(containerName, f.Ctx, cwd)
+			if injectErr != nil {
+				return fmt.Errorf("sandbox: inject ctx files: %w", injectErr)
+			}
+			if injected > 0 {
+				fmt.Fprintf(os.Stderr, "odek: copied %d file(s) into sandbox\n", injected)
+			}
+		}
 	}
 
 	// Create terminal renderer for colored step-by-step output.
@@ -902,19 +913,19 @@ func run(args []string) error {
 //   - --security-opt no-new-privileges: setuid binaries can't escalate
 //   - --tmpfs /tmp:noexec: no executable files in temp
 //   - --rm: container destroyed on agent exit
-func setupSandbox(tools []odek.Tool, cfg sandboxConfig) (func() error, error) {
+func setupSandbox(tools []odek.Tool, cfg sandboxConfig) (containerName string, cleanup func() error, err error) {
 	// Resolve the Docker image (explicit, Dockerfile.odek, or default)
 	image, err := resolveSandboxImage(cfg)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
-	containerName := fmt.Sprintf("odek-%d", os.Getpid())
+	containerName = fmt.Sprintf("odek-%d", os.Getpid())
 	fmt.Fprintf(os.Stderr, "odek: starting sandbox container %s (image: %s)...\n", containerName, image)
 
 	wd, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("getwd: %w", err)
+		return "", nil, fmt.Errorf("getwd: %w", err)
 	}
 
 	args := buildSandboxArgs(cfg, containerName, wd, image)
@@ -922,17 +933,17 @@ func setupSandbox(tools []odek.Tool, cfg sandboxConfig) (func() error, error) {
 	createCmd := exec.Command("docker", args...)
 	createCmd.Stderr = os.Stderr
 	if err := createCmd.Run(); err != nil {
-		return nil, fmt.Errorf("failed to create container: %w", err)
+		return "", nil, fmt.Errorf("failed to create container: %w", err)
 	}
 
-	cleanup := func() error {
+	cleanup = func() error {
 		fmt.Fprintf(os.Stderr, "odek: destroying sandbox container %s...\n", containerName)
 		return exec.Command("docker", "rm", "-f", containerName).Run()
 	}
 
 	// Wire the shell tool to execute commands inside the sandbox.
 	tools[0].(*shellTool).containerName = containerName
-	return cleanup, nil
+	return containerName, cleanup, nil
 }
 
 // buildSandboxArgs builds the docker run arguments from a sandboxConfig.
@@ -1001,6 +1012,60 @@ func buildSandboxArgs(cfg sandboxConfig, containerName, workdir, image string) [
 	// Image and command
 	args = append(args, image, "sleep", "infinity")
 	return args
+}
+
+// injectFilesToSandbox copies ctx files into a running sandbox container
+// using docker cp. Returns the number of files successfully injected.
+// Files are placed at /workspace/<relative-path-from-cwd> in the container.
+// Absolute-path files are placed at /workspace/<basename>.
+// Skips files that don't exist (logs warning), returns error only on docker failure.
+func injectFilesToSandbox(containerName string, files []string, cwd string) (int, error) {
+	injected := 0
+	for _, f := range files {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+
+		// Resolve to absolute path
+		absPath := f
+		if !filepath.IsAbs(absPath) {
+			absPath = filepath.Join(cwd, absPath)
+		}
+		absPath = filepath.Clean(absPath)
+
+		// Verify file exists and is a regular file
+		info, err := os.Stat(absPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "odek: warning: ctx file %q not found, skipping sandbox injection\n", f)
+			continue
+		}
+		if info.IsDir() {
+			fmt.Fprintf(os.Stderr, "odek: warning: ctx path %q is a directory, skipping sandbox injection\n", f)
+			continue
+		}
+
+		// Determine destination path inside container
+		// For files under cwd: preserve relative path
+		// For files outside cwd: use basename
+		dest := filepath.Base(absPath) // default: just the filename
+		if strings.HasPrefix(absPath, cwd+string(filepath.Separator)) || absPath == cwd {
+			rel, err := filepath.Rel(cwd, absPath)
+			if err == nil {
+				dest = rel
+			}
+		}
+
+		// docker cp into container:/workspace/<dest>
+		containerDest := fmt.Sprintf("%s:/workspace/%s", containerName, dest)
+		cpCmd := exec.Command("docker", "cp", absPath, containerDest)
+		output, err := cpCmd.CombinedOutput()
+		if err != nil {
+			return injected, fmt.Errorf("docker cp %q: %w\n%s", f, err, string(output))
+		}
+		injected++
+	}
+	return injected, nil
 }
 
 func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver danger.Approver, maxConcurrency int) []odek.Tool {
@@ -1447,11 +1512,12 @@ func continueCmd(args []string) error {
 			Env:      resolved.SandboxEnv,
 			Volumes:  resolved.SandboxVolumes,
 		}
-		cleanup, err := setupSandbox(tools, sbCfg)
+		var contContainerName string
+		contContainerName, sandboxCleanup, err = setupSandbox(tools, sbCfg)
 		if err != nil {
 			return fmt.Errorf("sandbox: %w", err)
 		}
-		sandboxCleanup = cleanup
+		_ = contContainerName
 	}
 
 	// Renderer

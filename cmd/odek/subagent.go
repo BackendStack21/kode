@@ -310,10 +310,12 @@ func subagentCmd(args []string) error {
 			Env:      resolved.SandboxEnv,
 			Volumes:  resolved.SandboxVolumes,
 		}
-		cleanup, err := setupSandbox(tools, sbCfg)
+		var subContainerName string
+		subContainerName, cleanup, err := setupSandbox(tools, sbCfg)
 		if err != nil {
-			return fmt.Errorf("sandbox: %w", err)
+			return fmt.Errorf("setup sandbox: %w", err)
 		}
+		_ = subContainerName
 		sandboxCleanup = cleanup
 	}
 
