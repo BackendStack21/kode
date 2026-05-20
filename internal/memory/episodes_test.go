@@ -304,3 +304,41 @@ func TestNewLLMRanker_DeduplicatesIndices(t *testing.T) {
 		t.Fatalf("expected 2 deduplicated results, got %d", len(results))
 	}
 }
+
+func TestEpisodeStore_Write_TruncatesSummary(t *testing.T) {
+	dir := t.TempDir()
+	es := NewEpisodeStore(dir, func(q string, eps []EpisodeMeta) ([]EpisodeMeta, error) {
+		return eps, nil
+	})
+	// Generate a summary longer than 1024 bytes
+	longSummary := strings.Repeat("This is a very long summary that should be truncated. ", 50)
+	err := es.Write("sess-trunc", longSummary, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := es.Read("sess-trunc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(content) > 1100 {
+		t.Errorf("summary too long after truncation: %d bytes", len(content))
+	}
+	if !strings.HasSuffix(content, "...") {
+		t.Errorf("expected truncated suffix '...', got %q", content[len(content)-10:])
+	}
+}
+
+func TestEpisodeStore_SkipShortSessions(t *testing.T) {
+	dir := t.TempDir()
+	es := NewEpisodeStore(dir, nil)
+	// 2 turns < threshold 3
+	err := es.WriteIfEnough("sess-short", "too brief", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify nothing was written — no file should exist
+	path := filepath.Join(dir, "sess-short.md")
+	if _, err := os.Stat(path); err == nil {
+		t.Errorf("file should not exist for skipped session: %s", path)
+	}
+}

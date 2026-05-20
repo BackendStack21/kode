@@ -325,3 +325,62 @@ func TestRegistry_LoadNoResolver(t *testing.T) {
 		t.Error("Load with unknown prefix should return error")
 	}
 }
+
+func TestRegistry_Search_ZeroLimitUsesDefault(t *testing.T) {
+	dir := newTestDir(t)
+	reg := NewRegistry(NewFileResolver(dir))
+	results, err := reg.Search(context.Background(), "main", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Error("expected at least 1 result with default limit")
+	}
+}
+
+func TestRegistry_Search_ResolverErrorSkipped(t *testing.T) {
+	// Create a resolver that errors on search — should be skipped
+	errResolver := &errorResolver{}
+	reg := NewRegistry(errResolver, &emptyResolver{})
+	results, err := reg.Search(context.Background(), "anything", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The error resolver is skipped, empty resolver returns nothing
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestRegistry_Load_NoMatchingResolver(t *testing.T) {
+	reg := NewRegistry()
+	_, err := reg.Load(context.Background(), "@nothing")
+	if err == nil {
+		t.Fatal("expected error for no resolver")
+	}
+	if !strings.Contains(err.Error(), "no resolver") {
+		t.Errorf("expected 'no resolver' error, got %v", err)
+	}
+}
+
+// errorResolver always errors on search.
+type errorResolver struct{}
+
+func (e *errorResolver) Prefix() string { return "err:" }
+func (e *errorResolver) Search(ctx context.Context, query string, limit int) ([]Resource, error) {
+	return nil, os.ErrPermission
+}
+func (e *errorResolver) Load(ctx context.Context, id string) (string, error) {
+	return "", os.ErrPermission
+}
+
+// emptyResolver returns no results.
+type emptyResolver struct{}
+
+func (e *emptyResolver) Prefix() string { return "empty:" }
+func (e *emptyResolver) Search(ctx context.Context, query string, limit int) ([]Resource, error) {
+	return nil, nil
+}
+func (e *emptyResolver) Load(ctx context.Context, id string) (string, error) {
+	return "", os.ErrNotExist
+}

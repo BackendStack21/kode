@@ -99,14 +99,6 @@ func TestFetchLocal_TooLarge(t *testing.T) {
 	}
 }
 
-func TestFetchLocal_PathTraversal(t *testing.T) {
-	_, err := fetchLocal("/etc/passwd", 1024*1024)
-	if err == nil {
-		// This depends on the OS — may succeed on Linux reading /etc/passwd
-		// The path traversal check is on ".." specifically
-		t.Log("fetchLocal /etc/passwd succeeded (expected on some systems)")
-	}
-}
 
 func TestExtractJSON_Fenced(t *testing.T) {
 	input := "```json\n{\"key\": \"value\"}\n```"
@@ -291,3 +283,41 @@ func TestFetchFromURI_RequireHTTPS(t *testing.T) {
 		t.Error("HTTPS should never be blocked by requireHTTPS flag")
 	}
 }
+
+func TestFetchLocal_Success(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.md")
+	os.WriteFile(path, []byte("content"), 0644)
+
+	result, err := fetchLocal(path, 10000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Content != "content" {
+		t.Errorf("expected 'content', got %q", result.Content)
+	}
+}
+
+func TestFetchLocal_MissingFile(t *testing.T) {
+	_, err := fetchLocal("/nonexistent/path/skill.md", 10000)
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+}
+
+func TestFetchLocal_FileTooLarge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "big.md")
+	// Write a file larger than maxBytes
+	data := make([]byte, 100)
+	os.WriteFile(path, data, 0644)
+
+	_, err := fetchLocal(path, 50)
+	if err == nil {
+		t.Fatal("expected error for oversized file")
+	}
+	if !strings.Contains(err.Error(), "too large") {
+		t.Errorf("expected 'too large' error, got %v", err)
+	}
+}
+

@@ -113,6 +113,61 @@ func TestBufferCapZero(t *testing.T) {
 	}
 }
 
+func TestBufferCap(t *testing.T) {
+	b := NewBuffer(10)
+	if b.Cap() != 10 {
+		t.Errorf("expected cap 10, got %d", b.Cap())
+	}
+}
+
+func TestBufferLen_Empty(t *testing.T) {
+	b := NewBuffer(10)
+	if b.Len() != 0 {
+		t.Errorf("expected len 0, got %d", b.Len())
+	}
+}
+
+func TestBufferLen_WithItems(t *testing.T) {
+	b := NewBuffer(10)
+	b.Append("a")
+	b.Append("b")
+	b.Append("c")
+	if b.Len() != 3 {
+		t.Errorf("expected len 3, got %d", b.Len())
+	}
+}
+
+func TestBufferLen_AfterEviction(t *testing.T) {
+	b := NewBuffer(3)
+	b.Append("1")
+	b.Append("2")
+	b.Append("3")
+	b.Append("4") // evicts 1, still 3 items
+	if b.Len() != 3 {
+		t.Errorf("expected len 3 after eviction, got %d", b.Len())
+	}
+}
+
+func TestBufferLen_AfterClear(t *testing.T) {
+	b := NewBuffer(5)
+	b.Append("something")
+	b.Clear()
+	if b.Len() != 0 {
+		t.Errorf("expected len 0 after clear, got %d", b.Len())
+	}
+}
+
+func TestBufferNegativeCap(t *testing.T) {
+	b := NewBuffer(-1)
+	if b.Cap() != 0 {
+		t.Errorf("expected cap 0 for negative input, got %d", b.Cap())
+	}
+	b.Append("should be discarded")
+	if b.Len() != 0 {
+		t.Errorf("expected len 0 for disabled buffer, got %d", b.Len())
+	}
+}
+
 func TestBufferFormatLine(t *testing.T) {
 	line := FormatBufferLine("user", "fix TOCTOU race")
 	if !strings.Contains(line, "user") {

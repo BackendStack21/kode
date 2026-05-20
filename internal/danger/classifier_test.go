@@ -1,6 +1,7 @@
 package danger
 
 import (
+	"os"
 	"testing"
 )
 
@@ -777,6 +778,153 @@ func TestClassify_SystemRedirectTarget(t *testing.T) {
 			got := Classify(tt.cmd)
 			if got != tt.cls {
 				t.Errorf("Classify(%q) = %s, want %s", tt.cmd, got, tt.cls)
+			}
+		})
+	}
+}
+
+func TestClassifyPath_Destructive_Paths(t *testing.T) {
+	tests := []struct {
+		path string
+		want RiskClass
+	}{
+		{"/boot/vmlinuz", Destructive},
+		{"/dev/sda1", Destructive},
+		{"/proc/1/cmdline", Destructive},
+		{"/sys/class/power_supply", Destructive},
+		{"/mnt/backup", Destructive},
+		{"/media/usb", Destructive},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := ClassifyPath(tt.path)
+			if got != tt.want {
+				t.Errorf("ClassifyPath(%q) = %s, want %s", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyPath_SystemWrite_Paths(t *testing.T) {
+	tests := []struct {
+		path string
+		want RiskClass
+	}{
+		{"/etc/hosts", SystemWrite},
+		{"/etc/nginx/nginx.conf", SystemWrite},
+		{"/root/.bashrc", SystemWrite},
+		{"/var/log/syslog", SystemWrite},
+		{"/var/lib/docker", SystemWrite},
+		{"/run/systemd", SystemWrite},
+		{"/lib/systemd/system", SystemWrite},
+		{"/usr/local/bin/app", SystemWrite},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := ClassifyPath(tt.path)
+			if got != tt.want {
+				t.Errorf("ClassifyPath(%q) = %s, want %s", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyPath_LocalWrite_Paths(t *testing.T) {
+	tests := []struct {
+		path string
+		want RiskClass
+	}{
+		{"/tmp/test.txt", LocalWrite},
+		{"/tmp/foo/bar", LocalWrite},
+		{"/home/user/code/main.go", LocalWrite},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := ClassifyPath(tt.path)
+			if got != tt.want {
+				t.Errorf("ClassifyPath(%q) = %s, want %s", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyPath_HomeSensitiveDirs(t *testing.T) {
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		t.Skip("no home dir")
+	}
+	tests := []struct {
+		path string
+		want RiskClass
+	}{
+		{home + "/.ssh/id_rsa", SystemWrite},
+		{home + "/.config/gh/config.yml", SystemWrite},
+		{home + "/.gnupg/private.key", SystemWrite},
+		{home + "/.aws/credentials", SystemWrite},
+		{home + "/.kube/config", SystemWrite},
+		{home + "/.docker/config.json", SystemWrite},
+		{home + "/.gitconfig", SystemWrite},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := ClassifyPath(tt.path)
+			if got != tt.want {
+				t.Errorf("ClassifyPath(%q) = %s, want %s", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyPath_LongPath(t *testing.T) {
+	// Long path under /tmp — should still be local_write
+	got := ClassifyPath("/tmp/a/b/c/d/e/f/g/h/file.txt")
+	if got != LocalWrite {
+		t.Errorf("ClassifyPath(long tmp path) = %s, want local_write", got)
+	}
+}
+
+func TestClassifyURL_InternalIPs(t *testing.T) {
+	tests := []struct {
+		url  string
+		want RiskClass
+	}{
+		{"http://127.0.0.1:8080", SystemWrite},
+		{"http://localhost:3000", SystemWrite},
+		{"http://10.0.0.1/api", SystemWrite},
+		{"http://172.16.0.1", SystemWrite},
+		{"http://192.168.1.1", SystemWrite},
+		{"http://[::1]:8080", SystemWrite},
+		{"https://127.0.0.1", SystemWrite},
+		{"https://10.0.0.5", SystemWrite},
+		{"https://172.20.0.1", SystemWrite},
+		{"https://192.168.0.1", SystemWrite},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			got := ClassifyURL(tt.url)
+			if got != tt.want {
+				t.Errorf("ClassifyURL(%q) = %s, want %s", tt.url, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyURL_ExternalURLs(t *testing.T) {
+	tests := []struct {
+		url  string
+		want RiskClass
+	}{
+		{"https://example.com", NetworkEgress},
+		{"http://api.github.com", NetworkEgress},
+		{"https://google.com/search", NetworkEgress},
+		{"https://8.8.8.8", NetworkEgress},
+		{"http://1.2.3.4", NetworkEgress},
+	}
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			got := ClassifyURL(tt.url)
+			if got != tt.want {
+				t.Errorf("ClassifyURL(%q) = %s, want %s", tt.url, got, tt.want)
 			}
 		})
 	}

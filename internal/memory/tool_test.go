@@ -206,3 +206,15 @@ func TestMemoryToolReturnsJSON(t *testing.T) {
 		t.Errorf("result should have 'success' and 'message' fields, got keys: %v", parsed)
 	}
 }
+
+func TestMemoryToolDescription(t *testing.T) {
+	mm := NewMemoryManager(t.TempDir(), nil, DefaultMemoryConfig())
+	tool := NewMemoryTool(mm)
+	desc := tool.Description()
+	if desc == "" {
+		t.Error("expected non-empty description")
+	}
+	if !strings.Contains(desc, "memory") {
+		t.Errorf("description should mention memory, got %q", desc)
+	}
+}
