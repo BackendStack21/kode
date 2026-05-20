@@ -17,7 +17,7 @@ jobs:
           go-version: "1.24"
 
       - name: build
-        run: go build -o /tmp/odek-test github.com/BackendStack21/kode/cmd/kode && chmod +x /tmp/odek-test
+        run: go build -o /tmp/odek-test github.com/BackendStack21/kode/cmd/odek && chmod +x /tmp/odek-test
 
       - name: test
         run: ODEK_BINARY=/tmp/odek-test go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
