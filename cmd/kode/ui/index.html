@@ -753,6 +753,257 @@ body {
 }
 .msg-divider::before { left: 0; }
 .msg-divider::after { right: 0; }
+
+/* ── Inline Loading Indicator (like Gemini) ── */
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  margin-bottom: 6px;
+  opacity: 0;
+  animation: msgEnter 0.2s ease-out forwards;
+}
+.loading-indicator .li-spinner {
+  width: 14px; height: 14px;
+  border: 2px solid rgba(56,189,248,0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+.loading-indicator .li-text {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.2px;
+  animation: liPulse 1.4s ease-in-out infinite;
+}
+@keyframes liPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+/* ── Message Stats ── */
+.msg-stats {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  opacity: 0.6;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  gap: 10px;
+  letter-spacing: 0.2px;
+  user-select: none;
+}
+.msg.assistant .msg-stats { border-top-color: rgba(255,255,255,0.06); }
+
+/* ── Session Stats (top bar) ── */
+.session-stats {
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border-subtle);
+  opacity: 0.7;
+  letter-spacing: 0.2px;
+  user-select: none;
+  display: none;
+}
+.session-stats.visible { display: inline; }
+
+/* ── Beautification refinements ── */
+
+/* Softer empty state */
+#empty-state .logo {
+  box-shadow: 0 0 60px rgba(56,189,248,0.12), 0 0 120px rgba(129,140,248,0.06);
+}
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 60px rgba(56,189,248,0.12), 0 0 120px rgba(129,140,248,0.06); }
+  50% { box-shadow: 0 0 70px rgba(56,189,248,0.22), 0 0 140px rgba(129,140,248,0.10); }
+}
+
+/* Smoother message entry */
+@keyframes msgEnter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Assistant bubble subtle shadow */
+.msg.assistant .bubble {
+  box-shadow: 0 1px 6px rgba(56,189,248,0.04), 0 0 0 1px rgba(255,255,255,0.02);
+}
+
+/* Thinner, styled scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, var(--accent), #818cf8);
+}
+
+/* Session items — better hierarchy */
+.session-item {
+  padding: 6px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+}
+.session-item.active {
+  background: var(--accent-glow);
+  border-left-color: var(--accent);
+}
+.session-item:hover { background: var(--accent-subtle); }
+.session-item .id { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); letter-spacing: 0.3px; }
+.session-item .task { font-size: 12px; margin-top: 2px; line-height: 1.3; }
+.session-item .meta { font-size: 10px; color: var(--text-tertiary); margin-top: 2px; display: flex; gap: 8px; }
+.session-item .meta .model-chip {
+  background: rgba(56,189,248,0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  letter-spacing: 0.3px;
+}
+
+/* Input area top border gradient */
+#input-area {
+  border-top: none;
+  background: rgba(10,10,11,0.6);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+#input-area::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(56,189,248,0.3), rgba(129,140,248,0.3), transparent);
+  pointer-events: none;
+}
+
+/* Status dot pulse animation */
+#topbar .dot.connected {
+  animation: dotPulse 2.5s ease-in-out infinite;
+}
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(61,214,140,0.3); }
+  50% { box-shadow: 0 0 12px rgba(61,214,140,0.5); }
+}
+
+/* Approval dialog — elegant */
+#approval-dialog {
+  max-width: 520px;
+  padding: 28px;
+  overflow: hidden;
+}
+#approval-dialog .approval-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+#approval-dialog .approval-icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+#approval-dialog .approval-icon.🟡 { background: rgba(245,158,11,0.12); }
+#approval-dialog .approval-icon.🔴 { background: rgba(239,68,68,0.12); }
+#approval-dialog .approval-icon.🟢 { background: rgba(61,214,140,0.12); }
+#approval-dialog .approval-title {
+  font-size: 16px; font-weight: 600; color: var(--text-primary);
+}
+#approval-dialog .approval-subtitle {
+  font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono);
+}
+#approval-dialog .approval-risk {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 4px;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+#approval-dialog .approval-risk.🟡 { background: rgba(245,158,11,0.12); color: #f59e0b; }
+#approval-dialog .approval-risk.🔴 { background: rgba(239,68,68,0.12); color: #ef4444; }
+#approval-dialog .approval-risk.🟢 { background: rgba(61,214,140,0.12); color: #3dd68c; }
+#approval-command {
+  font-family: var(--font-mono); font-size: 13px;
+  background: #0d0d0f; border-radius: 8px; padding: 12px 14px;
+  color: #e2e8f0; white-space: pre-wrap; word-break: break-all;
+  margin-bottom: 10px; max-height: 200px; overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.03);
+}
+#approval-desc {
+  font-size: 13px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.5;
+}
+#approval-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+#approval-actions button {
+  padding: 8px 16px; border-radius: 8px; border: none;
+  font-family: var(--font-sans); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+}
+#approval-actions .deny {
+  background: transparent; color: #ef4444; border: 1px solid rgba(239,68,68,0.25);
+}
+#approval-actions .deny:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.5); }
+#approval-actions .trust {
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border-subtle);
+}
+#approval-actions .trust:hover { background: var(--accent-subtle); color: var(--text-primary); border-color: var(--accent); }
+#approval-actions .approve {
+  background: linear-gradient(135deg, var(--accent), #818cf8); color: #0a0a0b;
+  box-shadow: 0 2px 8px rgba(56,189,248,0.2);
+}
+#approval-actions .approve:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(56,189,248,0.3); }
+
+/* Confirm dialog — matching elegance */
+#confirm-dialog {
+  padding: 28px;
+  text-align: center;
+}
+#confirm-dialog .confirm-icon {
+  font-size: 32px; margin-bottom: 12px;
+}
+#confirm-dialog h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+#confirm-dialog p { font-size: 13px; color: var(--text-tertiary); margin-bottom: 22px; }
+#confirm-actions .cancel {
+  background: transparent; color: var(--text-secondary); border: 1px solid var(--border-subtle);
+}
+#confirm-actions .cancel:hover { background: var(--accent-subtle); border-color: var(--accent); }
+#confirm-actions .delete-confirm {
+  background: #ef4444; color: white;
+  box-shadow: 0 2px 8px rgba(239,68,68,0.2);
+}
+#confirm-actions .delete-confirm:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(239,68,68,0.3); }
+
+/* Tool call blocks */
+.tool-block .tb-body {
+  background: #0d0d0f;
+  border: 1px solid rgba(56,189,248,0.06);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Message content spacing refinements */
+.msg .bubble .content h2 { margin: 16px 0 8px; font-size: 16px; }
+.msg .bubble .content h3 { margin: 14px 0 6px; font-size: 14px; }
+.msg .bubble .content li { margin: 3px 0; line-height: 1.55; }
+.msg .bubble .content ul { padding-left: 18px; }
+.msg .bubble .content ul li::marker { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -764,6 +1015,7 @@ body {
     <span class="status" id="ws-status">connecting...</span>
     <div class="stats" id="stats-bar"></div>
     <span class="model" id="model-label"></span>
+    <span class="session-stats" id="session-stats"></span>
   </div>
 
   <!-- Sidebar -->
@@ -810,8 +1062,14 @@ body {
 <!-- Approval Dialog -->
 <div id="approval-overlay">
   <div id="approval-dialog">
-    <h3>⚠️ Security Approval Required</h3>
-    <div class="risk" id="approval-risk"></div>
+    <div class="approval-header">
+      <div class="approval-icon" id="approval-icon">🛡️</div>
+      <div>
+        <div class="approval-title">Security Approval Required</div>
+        <div class="approval-subtitle">The agent wants to execute a command</div>
+      </div>
+    </div>
+    <div class="approval-risk" id="approval-risk"></div>
     <div id="approval-command"></div>
     <div id="approval-desc" style="display:none"></div>
     <div id="approval-actions">
@@ -838,6 +1096,7 @@ body {
 <!-- Confirm Dialog -->
 <div id="confirm-overlay">
   <div id="confirm-dialog">
+    <div class="confirm-icon">🗑️</div>
     <h3>Delete session?</h3>
     <p id="confirm-msg">This action cannot be undone.</p>
     <div id="confirm-actions">
@@ -846,6 +1105,8 @@ body {
     </div>
   </div>
 </div>
+
+<!-- No loading indicator here — injected inline by showLoading() -->
 
 <!-- Toast -->
 <div class="toast" id="toast"></div>
@@ -887,14 +1148,26 @@ let currentToolBlock = null;
 // ── Sub-agent state ──
 let subagentGroup = null;
 
-// ── Scroll ──
+// ── Smart Scroll ──
 let scrollRAF = null;
+const SCROLL_THRESHOLD = 100;
+function isNearBottom() {
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < SCROLL_THRESHOLD;
+}
 function scrollBottom() {
+  if (!isNearBottom()) return; // user is reading up — don't steal scroll
   if (scrollRAF) return;
   scrollRAF = requestAnimationFrame(() => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
     scrollRAF = null;
   });
+}
+function forceScrollBottom() {
+  if (scrollRAF) {
+    cancelAnimationFrame(scrollRAF);
+    scrollRAF = null;
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 // ── Toast ──
@@ -905,6 +1178,62 @@ function showToast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Inline Loading Indicator (Gemini-style) ──
+const loadingMessages = [
+  '⚡ Thinking...',
+  '🧠 Consulting circuits...',
+  '🤔 Processing...',
+  '🔮 Computing...',
+  '✨ Channeling...',
+  '🔬 Analyzing...',
+  '🎯 Focusing...',
+  '🧪 Running diagnostics...',
+  '📡 Connecting...',
+  '⚙️ Working...',
+  '🌀 Reasoning...',
+  '💭 Considering...',
+];
+let loadingEl = null;
+let loadingTimer = null;
+
+function showLoading() {
+  const el = document.createElement('div');
+  el.className = 'loading-indicator';
+  el.innerHTML = '<div class="li-spinner"></div><div class="li-text">⚡ Thinking...</div>';
+  // Insert after the last message (the user message we just added)
+  messagesEl.appendChild(el);
+  loadingEl = el;
+  // Cycle messages
+  let idx = 0;
+  loadingTimer = setInterval(() => {
+    if (!loadingEl) return;
+    const textEl = loadingEl.querySelector('.li-text');
+    if (!textEl) return;
+    textEl.textContent = loadingMessages[idx % loadingMessages.length];
+    idx++;
+  }, 2000);
+  pruneMessages();
+  // Force scroll to show the indicator (user just sent — they're at bottom)
+  forceScrollBottom();
+}
+
+function hideLoading() {
+  if (loadingEl) {
+    loadingEl.remove();
+    loadingEl = null;
+  }
+  if (loadingTimer) {
+    clearInterval(loadingTimer);
+    loadingTimer = null;
+  }
+}
+
+// ── Number formatting ──
+function formatNum(n) {
+  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+  return String(n);
 }
 
 // ── Mesage cap ──
@@ -1005,6 +1334,26 @@ function connect() {
         streamFlush();
         endThinking();
         endStream();
+        // Append per-message stats to the last assistant bubble
+        if (event.latency != null) {
+          const lastAssistant = messagesEl.querySelector('.msg.assistant:last-child .bubble');
+          if (lastAssistant) {
+            const stats = document.createElement('div');
+            stats.className = 'msg-stats';
+            const parts = [];
+            parts.push('⚡ ' + (event.latency < 1 ? (event.latency * 1000).toFixed(0) + 'ms' : event.latency.toFixed(1) + 's'));
+            if (event.contextTokens != null) parts.push('⌂ ' + formatNum(event.contextTokens));
+            if (event.outputTokens != null) parts.push('⎇ ' + formatNum(event.outputTokens));
+            stats.textContent = parts.join('  ·  ');
+            lastAssistant.appendChild(stats);
+          }
+        }
+        // Update session-level token stats in top bar
+        const sessionStatsEl = document.getElementById('session-stats');
+        if (event.sessionContextTokens != null && event.sessionOutputTokens != null) {
+          sessionStatsEl.textContent = '∑ ⌂ ' + formatNum(event.sessionContextTokens) + '  ·  ⎇ ' + formatNum(event.sessionOutputTokens);
+          sessionStatsEl.classList.add('visible');
+        }
         if (sessionId) loadSessions();
         break;
 
@@ -1119,6 +1468,7 @@ function removeStreamCursor() {
 function startStream() {
   hideEmptyState();
   endThinking();
+  hideLoading(); // remove the inline loading indicator — streaming has started
 
   const wrapper = document.createElement('div');
   wrapper.className = 'msg assistant';
@@ -1143,6 +1493,7 @@ function endStream() {
   currentToolBlock = null;
   subagentGroup = null;
   busy = false;
+  hideLoading();
   sendBtn.disabled = !ws || ws.readyState !== WebSocket.OPEN;
   promptEl.disabled = false;
   promptEl.focus();
@@ -1374,7 +1725,12 @@ window.showApprovalDialog = function(event) {
   approvalId = event.id;
   const riskEl = document.getElementById('approval-risk');
   riskEl.textContent = event.risk;
-  riskEl.className = 'risk ' + event.risk;
+  riskEl.className = 'approval-risk ' + event.risk;
+  // Set icon based on risk
+  const iconEl = document.getElementById('approval-icon');
+  const iconMap = { '🟡': '⚠️', '🔴': '🚫', '🟢': '✅' };
+  iconEl.textContent = iconMap[event.risk] || '🛡️';
+  iconEl.className = 'approval-icon ' + (event.risk || '');
   document.getElementById('approval-command').textContent = event.command;
   const descEl = document.getElementById('approval-desc');
   if (event.description) {
@@ -1559,6 +1915,8 @@ function send() {
   busy = true;
   sendBtn.disabled = true;
   promptEl.disabled = true;
+
+  showLoading();
 
   ws.send(JSON.stringify({
     type: 'prompt',
@@ -1772,7 +2130,7 @@ async function loadSessions() {
         <div class="task">${escapeHtml(s.task || '')}</div>
         <div class="meta">
           <span>${s.turns || 0} turns</span>
-          <span>${s.model ? escapeHtml(s.model) : ''}</span>
+          ${s.model ? `<span class="model-chip">${escapeHtml(s.model)}</span>` : ''}
         </div>
       </div>`
     ).join('');

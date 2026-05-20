@@ -944,3 +944,181 @@ multiDone:
 	t.Log("✅ Multi-tool pipeline verified: session → tokens → tool_call → tool_result → (repeat) → done")
 }
 
+// TestServe_E2E_TokenStats verifies that the done event includes
+// latency, contextTokens, outputTokens, and session-level token
+// economics fields.
+func TestServe_E2E_TokenStats(t *testing.T) {
+	// Mock LLM server with usage info in every response
+	callCount := 0
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		if callCount <= 1 {
+			// First call: tool call with usage
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"Checking.","tool_calls":[{"id":"c_1","function":{"name":"shell","arguments":"{\"command\":\"echo ok\"}"}}]}}],"usage":{"prompt_tokens":200,"completion_tokens":30}}`)
+		} else {
+			// Final answer with usage
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"All done."}}],"usage":{"prompt_tokens":300,"completion_tokens":60}}`)
+		}
+	}))
+	defer llmSrv.Close()
+
+	envCleanup := setTestEnv(t, llmSrv.URL)
+	defer envCleanup()
+
+	store := newTestSessionStore(t)
+	ln, mux := buildServeMux(t, store)
+	defer ln.Close()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- serveOnListener(ln, mux) }()
+	waitForHTTP(t, ln.Addr().String())
+
+	wsURL := "ws://" + ln.Addr().String() + "/ws"
+	conn, err := golangws.Dial(wsURL, "", "http://localhost")
+	if err != nil {
+		t.Fatalf("Dial(%q): %v", wsURL, err)
+	}
+	defer conn.Close()
+	t.Log("✅ WebSocket connected")
+
+	// Send first prompt
+	prompt := map[string]string{"type": "prompt", "content": "run a command"}
+	payload, _ := json.Marshal(prompt)
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	t.Log("✅ Prompt 1 sent")
+
+	// Collect events — focus on the done event
+	conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+
+	var doneEvent map[string]any
+	for i := 0; i < 15; i++ {
+		var raw []byte
+		if err := golangws.Message.Receive(conn, &raw); err != nil {
+			t.Fatalf("Receive event %d: %v", i, err)
+		}
+		t.Logf("  event[%d]: %s", i, string(raw))
+
+		var evt map[string]any
+		if err := json.Unmarshal(raw, &evt); err != nil {
+			t.Fatalf("unmarshal event %d: %v", i, err)
+		}
+		if evt["type"] == "done" {
+			doneEvent = evt
+			goto statsCheck
+		}
+		if evt["type"] == "error" {
+			t.Fatalf("unexpected error: %v", evt["message"])
+		}
+	}
+	t.Fatal("did not receive done event")
+
+statsCheck:
+	if doneEvent == nil {
+		t.Fatal("done event not found")
+	}
+
+	// Validate done event fields
+	latency, ok := doneEvent["latency"].(float64)
+	if !ok {
+		t.Error("done event missing 'latency' field")
+	} else if latency <= 0 {
+		t.Errorf("latency = %v, want > 0", latency)
+	}
+	t.Logf("  latency: %.2fs", latency)
+
+	ctxTokens, ok := doneEvent["contextTokens"].(float64)
+	if !ok {
+		t.Error("done event missing 'contextTokens' field")
+	} else if ctxTokens != 500 { // 200 + 300
+		t.Errorf("contextTokens = %.0f, want 500", ctxTokens)
+	}
+	t.Logf("  contextTokens: %.0f", ctxTokens)
+
+	outTokens, ok := doneEvent["outputTokens"].(float64)
+	if !ok {
+		t.Error("done event missing 'outputTokens' field")
+	} else if outTokens != 90 { // 30 + 60
+		t.Errorf("outputTokens = %.0f, want 90", outTokens)
+	}
+	t.Logf("  outputTokens: %.0f", outTokens)
+
+	// Session-level stats (first prompt = same as turn-level)
+	sessCtx, ok := doneEvent["sessionContextTokens"].(float64)
+	if !ok {
+		t.Error("done event missing 'sessionContextTokens' field")
+	} else if sessCtx != 500 {
+		t.Errorf("sessionContextTokens = %.0f, want 500", sessCtx)
+	}
+	t.Logf("  sessionContextTokens: %.0f", sessCtx)
+
+	sessOut, ok := doneEvent["sessionOutputTokens"].(float64)
+	if !ok {
+		t.Error("done event missing 'sessionOutputTokens' field")
+	} else if sessOut != 90 {
+		t.Errorf("sessionOutputTokens = %.0f, want 90", sessOut)
+	}
+	t.Logf("  sessionOutputTokens: %.0f", sessOut)
+
+	// Send a second prompt to verify session-level accumulation
+	callCount = 0 // reset mock so next prompt also makes a tool call
+	prompt2 := map[string]string{"type": "prompt", "content": "do another thing"}
+	payload2, _ := json.Marshal(prompt2)
+	if err := golangws.Message.Send(conn, string(payload2)); err != nil {
+		t.Fatalf("Send prompt 2: %v", err)
+	}
+	t.Log("✅ Prompt 2 sent")
+
+	conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+	var done2 map[string]any
+	for i := 0; i < 15; i++ {
+		var raw []byte
+		if err := golangws.Message.Receive(conn, &raw); err != nil {
+			t.Fatalf("Receive event %d (prompt 2): %v", i, err)
+		}
+		t.Logf("  event[%d]: %s", i, string(raw))
+
+		var evt map[string]any
+		if err := json.Unmarshal(raw, &evt); err != nil {
+			t.Fatalf("unmarshal event %d: %v", i, err)
+		}
+		if evt["type"] == "done" {
+			done2 = evt
+			goto sessionCheck
+		}
+		if evt["type"] == "error" {
+			t.Fatalf("unexpected error: %v", evt["message"])
+		}
+	}
+	t.Fatal("did not receive second done event")
+
+sessionCheck:
+	if done2 == nil {
+		t.Fatal("second done event not found")
+	}
+
+	// Turn-level stats should reflect only this turn's tokens
+	ctx2, _ := done2["contextTokens"].(float64)
+	if ctx2 != 500 {
+		t.Errorf("prompt 2 contextTokens = %.0f, want 500", ctx2)
+	}
+	out2, _ := done2["outputTokens"].(float64)
+	if out2 != 90 {
+		t.Errorf("prompt 2 outputTokens = %.0f, want 90", out2)
+	}
+
+	// Session-level stats should be the sum of both turns
+	sessCtx2, _ := done2["sessionContextTokens"].(float64)
+	if sessCtx2 != 1000 { // 500 + 500
+		t.Errorf("sessionContextTokens (prompt 2) = %.0f, want 1000", sessCtx2)
+	}
+	sessOut2, _ := done2["sessionOutputTokens"].(float64)
+	if sessOut2 != 180 { // 90 + 90
+		t.Errorf("sessionOutputTokens (prompt 2) = %.0f, want 180", sessOut2)
+	}
+
+	t.Log("✅ Token stats verified: turn-level + session-level accumulation")
+}
+

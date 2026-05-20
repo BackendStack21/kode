@@ -391,6 +391,18 @@ func (a *Agent) RunWithMessages(ctx context.Context, messages []llm.Message) (st
 	return a.engine.RunWithMessages(ctx, messages)
 }
 
+// TotalInputTokens returns the cumulative prompt tokens consumed across all
+// iterations of the most recent RunWithMessages call.
+func (a *Agent) TotalInputTokens() int {
+	return a.engine.TotalInputTokens
+}
+
+// TotalOutputTokens returns the cumulative completion tokens generated
+// across all iterations of the most recent RunWithMessages call.
+func (a *Agent) TotalOutputTokens() int {
+	return a.engine.TotalOutputTokens
+}
+
 // Close cleans up resources. If a sandbox container was created, it is
 // destroyed. Always call Close() when done with the agent.
 func (a *Agent) Close() error {

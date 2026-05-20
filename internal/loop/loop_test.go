@@ -235,7 +235,7 @@ func TestLastUserMessage_FindsLatest(t *testing.T) {
 
 func TestEngine_RunWithMessages(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"used RunWithMessages"}}]}`)
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"used RunWithMessages"}}],"usage":{"prompt_tokens":50,"completion_tokens":10}}`)
 	}))
 	defer server.Close()
 
@@ -252,6 +252,61 @@ func TestEngine_RunWithMessages(t *testing.T) {
 	}
 	if result != "used RunWithMessages" {
 		t.Errorf("result = %q, want %q", result, "used RunWithMessages")
+	}
+}
+
+func TestEngine_RunWithMessages_TokenAccumulation(t *testing.T) {
+	// Mock LLM that returns usage stats and triggers tool calls to
+	// exercise multi-iteration accumulation.
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		if callCount <= 2 {
+			// Tool call responses with usage
+			fmt.Fprintf(w, `{"choices":[{"message":{"content":"Step %d.","tool_calls":[{"id":"c_%d","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":%d,"completion_tokens":%d}}`,
+				callCount, callCount, callCount*100, callCount*20)
+		} else {
+			// Final answer with usage
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"done."}}],"usage":{"prompt_tokens":500,"completion_tokens":50}}`)
+		}
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	registry := tool.NewRegistry([]tool.Tool{&fakeTool{name: "echo", description: "echo", output: "pong"}})
+	engine := New(client, registry, 10, "", nil, 0)
+
+	msgs := []llm.Message{
+		{Role: "system", Content: "bot"},
+		{Role: "user", Content: "do it"},
+	}
+
+	_, _, err := engine.RunWithMessages(context.Background(), msgs)
+	if err != nil {
+		t.Fatalf("RunWithMessages error: %v", err)
+	}
+
+	// Iteration tokens: iter1=100/20, iter2=200/40, iter3=500/50
+	wantInput := 100 + 200 + 500   // 800
+	wantOutput := 20 + 40 + 50      // 110
+
+	if engine.TotalInputTokens != wantInput {
+		t.Errorf("TotalInputTokens = %d, want %d", engine.TotalInputTokens, wantInput)
+	}
+	if engine.TotalOutputTokens != wantOutput {
+		t.Errorf("TotalOutputTokens = %d, want %d", engine.TotalOutputTokens, wantOutput)
+	}
+
+	// Verify token fields reset on a second call (not cumulative)
+	callCount = 0
+	engine.RunWithMessages(context.Background(), msgs)
+	// After reset, should be 800 again (same pattern), NOT 1600 (cumulative)
+	if engine.TotalInputTokens != 800 {
+		t.Errorf("TotalInputTokens after reset = %d, want 800 (not cumulative across calls)", engine.TotalInputTokens)
+	}
+	if engine.TotalOutputTokens != 110 {
+		t.Errorf("TotalOutputTokens after reset = %d, want 110 (not cumulative)", engine.TotalOutputTokens)
 	}
 }
 

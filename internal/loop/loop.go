@@ -28,6 +28,11 @@ type Engine struct {
 	maxContext  int // max context tokens (0 = no limit)
 	skillLoader SkillLoader // optional: loads matching skills
 	lastSkillMsg string     // last user message that triggered skill loading (dedup)
+
+	// Token accounting — accumulated across all iterations of the most recent run.
+	// Reset on each Run/RunWithMessages call and read by callers (e.g. WebUI).
+	TotalInputTokens  int
+	TotalOutputTokens int
 }
 
 // New creates a new loop Engine.
@@ -178,6 +183,9 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 // Use this for multi-turn conversations: load the session, append the
 // new user message, call RunWithMessages, then save the returned messages.
 func (e *Engine) RunWithMessages(ctx context.Context, messages []llm.Message) (string, []llm.Message, error) {
+	// Reset token accounting for this run
+	e.TotalInputTokens = 0
+	e.TotalOutputTokens = 0
 	return e.runLoop(ctx, messages)
 }
 
@@ -233,6 +241,10 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 		if e.renderer != nil {
 			e.renderer.Iteration(i+1, e.maxIter, latency, result.InputTokens, result.OutputTokens, 0)
 		}
+
+		// Accumulate token usage across iterations
+		e.TotalInputTokens += result.InputTokens
+		e.TotalOutputTokens += result.OutputTokens
 
 		// No tool calls = final answer
 		if len(result.ToolCalls) == 0 {

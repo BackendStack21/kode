@@ -213,6 +213,9 @@ func handleWS(store *session.Store, resources *resource.Registry, resolved confi
 	// Track the current session across WebSocket messages
 	var currentSession *session.Session
 
+	// Session-level token economics (cumulative across all turns)
+	var sessionInputTokens, sessionOutputTokens int
+
 	for {
 		var data []byte
 		if err := golangws.Message.Receive(conn, &data); err != nil {
@@ -264,7 +267,7 @@ func handleWS(store *session.Store, resources *resource.Registry, resolved confi
 		}
 
 		// Run prompt — passes the persistent agent for buffer continuity
-		currentSession = handlePrompt(ctx, conn, store, resources, resolved, agent, currentSession, msg.Content, msg.SessionID)
+		currentSession = handlePrompt(ctx, conn, store, resources, resolved, agent, currentSession, msg.Content, msg.SessionID, &sessionInputTokens, &sessionOutputTokens)
 	}
 
 	// WebSocket disconnected — extract episode if enough turns
@@ -291,6 +294,7 @@ func handlePrompt(
 	currSess *session.Session,
 	prompt string,
 	sessionID string,
+	sessionInputTokens, sessionOutputTokens *int,
 ) *session.Session {
 	// Resolve @ references
 	refs := resource.ParseRefs(prompt)
@@ -411,9 +415,18 @@ func handlePrompt(
 		}
 	}
 
+	contextTokens := agent.TotalInputTokens()
+	outputTokens := agent.TotalOutputTokens()
+	*sessionInputTokens += contextTokens
+	*sessionOutputTokens += outputTokens
+
 	writeWSJSON(conn, map[string]any{
-		"type":    "done",
-		"latency": latency.Seconds(),
+		"type":                "done",
+		"latency":             latency.Seconds(),
+		"contextTokens":       contextTokens,
+		"outputTokens":        outputTokens,
+		"sessionContextTokens": *sessionInputTokens,
+		"sessionOutputTokens": *sessionOutputTokens,
 	})
 
 	// Save session — persist messages AND buffer
