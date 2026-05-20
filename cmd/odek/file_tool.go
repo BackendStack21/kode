@@ -106,7 +106,7 @@ func (t *readFileTool) Call(argsJSON string) (string, error) {
 		return jsonError(fmt.Sprintf("%q is a directory, not a file", args.Path))
 	}
 
-	// Check for binary content — only examine first 8KB
+	// Single pass: open → binary check from sample → seek → read+count
 	f, err := os.Open(args.Path)
 	if err != nil {
 		return jsonError(fmt.Sprintf("cannot open %q: %v", args.Path, err))
@@ -115,17 +115,16 @@ func (t *readFileTool) Call(argsJSON string) (string, error) {
 
 	sample := make([]byte, 8192)
 	n, _ := f.Read(sample)
-	sample = sample[:n]
-	if isBinary(sample) {
+	if isBinary(sample[:n]) {
 		return jsonError(fmt.Sprintf("%q appears to be a binary file — use shell to read it", args.Path))
 	}
-	f.Close() // close to re-read from start
 
-	// Count total lines first
-	totalLines := countLines(args.Path)
+	// Seek back to start for the full scan
+	if _, err := f.Seek(0, 0); err != nil {
+		return jsonError(fmt.Sprintf("cannot seek %q: %v", args.Path, err))
+	}
 
-	// Read the requested range
-	content, err := readLines(args.Path, args.Offset, args.Limit)
+	content, totalLines, err := readLinesWithCount(f, args.Offset, args.Limit)
 	if err != nil {
 		return jsonError(fmt.Sprintf("cannot read %q: %v", args.Path, err))
 	}
@@ -205,8 +204,30 @@ func (t *writeFileTool) Call(argsJSON string) (string, error) {
 		}
 	}
 
-	if err := os.WriteFile(args.Path, []byte(args.Content), 0644); err != nil {
+	// Atomic write via temp file + rename to prevent TOCTOU symlink races.
+	// os.CreateTemp creates the file in the same directory (same filesystem),
+	// and os.Rename atomically replaces the directory entry without following
+	// symlinks — closing the window between check and write.
+	tmpFile, err := os.CreateTemp(dir, ".tmp_write_*")
+	if err != nil {
+		return jsonError(fmt.Sprintf("cannot create temp file: %v", err))
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.Write([]byte(args.Content)); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
 		return jsonError(fmt.Sprintf("cannot write %q: %v", args.Path, err))
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return jsonError(fmt.Sprintf("cannot close temp file: %v", err))
+	}
+
+	// Atomic rename — replaces target directory entry without following symlinks
+	if err := os.Rename(tmpPath, args.Path); err != nil {
+		os.Remove(tmpPath)
+		return jsonError(fmt.Sprintf("cannot rename %q: %v", args.Path, err))
 	}
 
 	return jsonResult(writeFileResult{
@@ -346,24 +367,25 @@ func (t *searchFilesTool) searchContent(args searchFilesArgs) (string, error) {
 			}
 		}
 
-		// Skip binary files
-		sample := make([]byte, 512)
+		// Skip binary files — single open for check then search
 		f, err := os.Open(path)
 		if err != nil {
 			return nil
 		}
+		defer f.Close()
+
+		sample := make([]byte, 512)
 		n, _ := f.Read(sample)
-		f.Close()
 		if isBinary(sample[:n]) {
 			return nil
 		}
 
-		// Search line by line
-		f, err = os.Open(path)
-		if err != nil {
+		// Seek back to start for content search
+		if _, err := f.Seek(0, 0); err != nil {
 			return nil
 		}
-		defer f.Close()
+
+		// Search line by line
 
 		scanner := bufio.NewScanner(f)
 		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -601,28 +623,9 @@ func isBinary(data []byte) bool {
 	return float64(nonPrintable)/float64(len(data)) > 0.30
 }
 
-func countLines(path string) int {
-	f, err := os.Open(path)
-	if err != nil {
-		return 0
-	}
-	defer f.Close()
-	count := 0
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-	for scanner.Scan() {
-		count++
-	}
-	return count
-}
-
-func readLines(path string, offset, limit int) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
+// readLinesWithCount reads lines from an open file, returning content
+// and total line count in a single pass. offset is 1-based, limit caps lines.
+func readLinesWithCount(f *os.File, offset, limit int) (string, int, error) {
 	var out strings.Builder
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -636,12 +639,19 @@ func readLines(path string, offset, limit int) (string, error) {
 			continue
 		}
 		if lineNum > end {
-			break
+			continue // count total even beyond limit
 		}
 		out.WriteString(fmt.Sprintf("%d|%s\n", lineNum, scanner.Text()))
 	}
 
-	return strings.TrimSuffix(out.String(), "\n"), scanner.Err()
+	// If no limit was set (limit=0), continue counting past start
+	if limit > 0 {
+		for scanner.Scan() {
+			lineNum++
+		}
+	}
+
+	return strings.TrimSuffix(out.String(), "\n"), lineNum, scanner.Err()
 }
 
 func truncateDiff(s string, maxLen int) string {

@@ -127,6 +127,84 @@ func idFromPath(name string) string {
 	return strings.TrimSuffix(name, ".json")
 }
 
+// ── Index ──────────────────────────────────────────────────────────────
+
+const indexFile = "index.json"
+
+// IndexEntry holds minimal session metadata for the session index.
+// This avoids loading every session file just to list or find the latest.
+type IndexEntry struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Turns     int       `json:"turns"`
+}
+
+func (s *Store) indexPath() string {
+	return filepath.Join(s.dir, indexFile)
+}
+
+// loadIndex reads the session index from disk.
+// Returns an empty map if the index doesn't exist or can't be parsed
+// (backward compat with existing session directories that have no index).
+func (s *Store) loadIndex() map[string]*IndexEntry {
+	data, err := os.ReadFile(s.indexPath())
+	if err != nil {
+		return make(map[string]*IndexEntry)
+	}
+	var entries []*IndexEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return make(map[string]*IndexEntry)
+	}
+	m := make(map[string]*IndexEntry, len(entries))
+	for _, e := range entries {
+		m[e.ID] = e
+	}
+	return m
+}
+
+// saveIndexLocked atomically writes the index to disk.
+// Caller must hold s.mu.
+func (s *Store) saveIndexLocked(idx map[string]*IndexEntry) error {
+	entries := make([]*IndexEntry, 0, len(idx))
+	for _, e := range idx {
+		entries = append(entries, e)
+	}
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return fmt.Errorf("session: marshal index: %w", err)
+	}
+	target := s.indexPath()
+	tmp := target + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("session: write index tmp: %w", err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("session: rename index: %w", err)
+	}
+	return nil
+}
+
+// indexEntry builds an IndexEntry from a Session.
+func indexEntry(sess *Session) *IndexEntry {
+	return &IndexEntry{
+		ID:        sess.ID,
+		Title:     sess.Task,
+		CreatedAt: sess.CreatedAt,
+		UpdatedAt: sess.UpdatedAt,
+		Turns:     sess.Turns,
+	}
+}
+
+// isSessionFile returns true if the filename is a session JSON file
+// (not the index file, not a directory, not a temp file).
+func isSessionFile(name string) bool {
+	return strings.HasSuffix(name, ".json") && name != indexFile && !strings.HasSuffix(name, ".tmp")
+}
+
 // ── CRUD ───────────────────────────────────────────────────────────────
 
 // Create persists a new session with the given messages and metadata.
@@ -181,6 +259,7 @@ func (s *Store) Save(sess *Session) error {
 // renames over the target. os.Rename replaces the directory entry
 // without following symlinks, so a symlink swapped in between
 // read and write gets replaced with a regular file.
+// Also atomically updates the session index with the session's metadata.
 func (s *Store) saveLocked(sess *Session) error {
 	data, err := json.MarshalIndent(sess, "", "  ")
 	if err != nil {
@@ -197,7 +276,11 @@ func (s *Store) saveLocked(sess *Session) error {
 		os.Remove(tmp)
 		return fmt.Errorf("session: rename: %w", err)
 	}
-	return nil
+
+	// Update the index atomically.
+	idx := s.loadIndex()
+	idx[sess.ID] = indexEntry(sess)
+	return s.saveIndexLocked(idx)
 }
 
 // Load reads a session from disk by ID. Returns an error if the file
@@ -218,8 +301,24 @@ func (s *Store) Load(id string) (*Session, error) {
 }
 
 // Latest returns the most recently updated session, or nil if no
-// sessions exist. Returns an error when the store directory is empty.
+// sessions exist. Returns an error when no sessions exist.
+// Uses the session index for O(1) lookups. Falls back to scanning
+// individual session files when no index exists (backward compat).
 func (s *Store) Latest() (*Session, error) {
+	idx := s.loadIndex()
+	if len(idx) > 0 {
+		var latestID string
+		var latestTime time.Time
+		for id, e := range idx {
+			if latestID == "" || e.UpdatedAt.After(latestTime) {
+				latestID = id
+				latestTime = e.UpdatedAt
+			}
+		}
+		return s.Load(latestID)
+	}
+
+	// Fallback: no index — scan directory.
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, fmt.Errorf("session: list: %w", err)
@@ -227,7 +326,7 @@ func (s *Store) Latest() (*Session, error) {
 
 	var latest *Session
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() || !isSessionFile(e.Name()) {
 			continue
 		}
 		sess, err := s.Load(idFromPath(e.Name()))
@@ -248,7 +347,40 @@ func (s *Store) Latest() (*Session, error) {
 // (most recent first). limit caps the number returned (0 = all).
 // Only metadata fields are populated — Messages is nil to keep
 // listings lightweight.
+// Uses the session index for O(n) reads (n = session count, but no
+// JSON parsing per session). Falls back to loading each session file
+// when no index exists (backward compat).
 func (s *Store) List(limit int) ([]Session, error) {
+	idx := s.loadIndex()
+	if len(idx) > 0 {
+		entries := make([]*IndexEntry, 0, len(idx))
+		for _, e := range idx {
+			entries = append(entries, e)
+		}
+
+		sort.Slice(entries, func(i, j int) bool {
+			return entries[i].UpdatedAt.After(entries[j].UpdatedAt)
+		})
+
+		if limit > 0 && len(entries) > limit {
+			entries = entries[:limit]
+		}
+
+		sessions := make([]Session, len(entries))
+		for i, e := range entries {
+			sessions[i] = Session{
+				ID:        e.ID,
+				CreatedAt: e.CreatedAt,
+				UpdatedAt: e.UpdatedAt,
+				Task:      e.Title,
+				Turns:     e.Turns,
+				Messages:  nil,
+			}
+		}
+		return sessions, nil
+	}
+
+	// Fallback: no index — scan directory.
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, fmt.Errorf("session: list: %w", err)
@@ -256,7 +388,7 @@ func (s *Store) List(limit int) ([]Session, error) {
 
 	var sessions []Session
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() || !isSessionFile(e.Name()) {
 			continue
 		}
 		sess, err := s.Load(idFromPath(e.Name()))
@@ -277,23 +409,60 @@ func (s *Store) List(limit int) ([]Session, error) {
 	return sessions, nil
 }
 
-// Delete removes a session file from disk. Returns nil if the file
-// doesn't exist (idempotent delete).
+// Delete removes a session file from disk and removes its entry from
+// the session index. Returns nil if the file doesn't exist (idempotent delete).
 func (s *Store) Delete(id string) error {
 	if err := ValidateSessionID(id); err != nil {
 		return err
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	err := os.Remove(s.path(id))
 	if os.IsNotExist(err) {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Remove from index atomically.
+	idx := s.loadIndex()
+	delete(idx, id)
+	return s.saveIndexLocked(idx)
 }
 
 // Cleanup deletes all sessions whose UpdatedAt is before the given time.
 // Returns the count of deleted sessions. Idempotent — nonexistent files
-// are skipped silently (os.Remove already handles this via Delete).
+// are skipped silently.
+// Uses the session index for efficient batch operations. Falls back to
+// scanning individual session files when no index exists (backward compat).
 func (s *Store) Cleanup(before time.Time) (int, error) {
+	idx := s.loadIndex()
+	if len(idx) > 0 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		var deleted int
+		for id, e := range idx {
+			if e.UpdatedAt.Before(before) {
+				if err := os.Remove(s.path(id)); err != nil && !os.IsNotExist(err) {
+					return deleted, fmt.Errorf("session: delete %q: %w", id, err)
+				}
+				delete(idx, id)
+				deleted++
+			}
+		}
+		if deleted > 0 {
+			if err := s.saveIndexLocked(idx); err != nil {
+				return deleted, err
+			}
+		}
+		return deleted, nil
+	}
+
+	// Fallback: no index — scan directory.
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		return 0, fmt.Errorf("session: list: %w", err)
@@ -301,7 +470,7 @@ func (s *Store) Cleanup(before time.Time) (int, error) {
 
 	var deleted int
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() || !isSessionFile(e.Name()) {
 			continue
 		}
 		sess, err := s.Load(idFromPath(e.Name()))

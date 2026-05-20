@@ -141,6 +141,34 @@ func (m *MergeDetector) Classify(entry string) (action string, similarIdx int, s
 	}
 }
 
+// AppendEntry adds a single entry to the corpus. Only the new entry is embedded,
+// avoiding a full re-embed of all existing entries. The RP vocabulary is still
+// refreshed so new tokens from the entry are available for future Classify calls.
+func (m *MergeDetector) AppendEntry(entry string) {
+	m.corpus = append(m.corpus, entry)
+	m.rp.Fit(m.corpus)
+	vec, err := m.rp.Embed(entry)
+	if err != nil {
+		vec = nil
+	}
+	m.vecs = append(m.vecs, vec)
+}
+
+// ReplaceEntry replaces an entry at the given index. Only the changed entry is
+// re-embedded, avoiding a full re-embed of all existing entries.
+func (m *MergeDetector) ReplaceEntry(idx int, entry string) {
+	if idx < 0 || idx >= len(m.corpus) {
+		return
+	}
+	m.corpus[idx] = entry
+	m.rp.Fit(m.corpus)
+	vec, err := m.rp.Embed(entry)
+	if err != nil {
+		vec = nil
+	}
+	m.vecs[idx] = vec
+}
+
 // Corpus returns the current corpus (for inspection).
 func (m *MergeDetector) Corpus() []string {
 	out := make([]string, len(m.corpus))

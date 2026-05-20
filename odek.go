@@ -222,9 +222,20 @@ const ProjectFileName = "AGENTS.md"
 // LoadProjectFile reads ProjectFileName from the current working directory.
 // Returns the file content (trimmed) if it exists and is readable.
 // Returns empty string if the file doesn't exist or can't be read.
+// Checks for symlinks to prevent following attacker-controlled paths.
 // The content is intended to be appended to the system message with a
 // clear header — use it for project conventions, architecture notes, etc.
 func LoadProjectFile() string {
+	// Prevent symlink attacks: stat the file first
+	info, err := os.Lstat(ProjectFileName)
+	if err != nil {
+		return ""
+	}
+	// If it's a symlink, refuse to follow it
+	if info.Mode()&os.ModeSymlink != 0 {
+		fmt.Fprintf(os.Stderr, "odek: warning: %s is a symlink — refusing to follow for security\n", ProjectFileName)
+		return ""
+	}
 	data, err := os.ReadFile(ProjectFileName)
 	if err != nil {
 		return ""

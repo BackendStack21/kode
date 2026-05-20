@@ -10,10 +10,12 @@ package resource
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -242,7 +244,7 @@ func (f *FileResolver) Load(ctx context.Context, id string) (string, error) {
 	// id is the path after @ (e.g. "src/main.go")
 	target := filepath.Join(f.root, id)
 
-	// Security: resolve symlinks and check it's within root
+	// Security: resolve path and check it's within root (string-level check)
 	absTarget, err := filepath.Abs(target)
 	if err != nil {
 		return "", err
@@ -255,16 +257,16 @@ func (f *FileResolver) Load(ctx context.Context, id string) (string, error) {
 		return "", fmt.Errorf("resource: path %q is outside root", id)
 	}
 
-	// Check symlink
-	info, err := os.Lstat(absTarget)
+	// Open with O_NOFOLLOW to atomically prevent symlink following.
+	// If the path is a symlink, the open fails with ELOOP — closing
+	// the TOCTOU window between a separate Lstat check and the read.
+	fd, err := os.OpenFile(absTarget, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return "", err
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("resource: symlinks not allowed: %s", id)
-	}
+	defer fd.Close()
 
-	data, err := os.ReadFile(absTarget)
+	data, err := io.ReadAll(fd)
 	if err != nil {
 		return "", err
 	}

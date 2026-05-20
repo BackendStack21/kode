@@ -617,3 +617,104 @@ func containsStr(slice []string, item string) bool {
 	}
 	return false
 }
+
+// TestWriteFile_TOCTOU_SymlinkRejected verifies that write_file does NOT
+// follow symlinks (security: TOCTOU race prevention).
+// This test writes to a temp path, then replaces it with a symlink
+// to a protected file, and verifies the tool refuses or replaces the symlink.
+func TestWriteFile_TOCTOU_SymlinkRejected(t *testing.T) {
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.txt")
+	protectedPath := filepath.Join(dir, "protected.txt")
+
+	// Create the protected file (what attacker wants us to overwrite)
+	if err := os.WriteFile(protectedPath, []byte("sensitive data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create target then replace with symlink to protected file
+	if err := os.WriteFile(targetPath, []byte("original"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(targetPath)
+	if err := os.Symlink(protectedPath, targetPath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Try to write to targetPath — if the tool follows the symlink,
+	// protected.txt gets overwritten. Our fix should prevent this.
+	tool := &writeFileTool{}
+	result := callJSON(t, tool, `{"path":"`+targetPath+`","content":"overwritten!"}`)
+
+	// After the write, protected.txt should still be intact
+	data, _ := os.ReadFile(protectedPath)
+	if string(data) != "sensitive data" {
+		t.Errorf("protected file was overwritten! Got: %q", string(data))
+	}
+
+	// The call should have succeeded (it writes to a temp file + renames,
+	// which replaces the symlink entry not the target)
+	_ = result
+}
+
+// TestReadFile_CountAndContentSinglePass verifies that readLinesWithCount
+// returns both content and total line count in one pass.
+func TestReadFile_CountAndContentSinglePass(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "count.txt")
+	content := "line1\nline2\nline3\nline4\nline5\n"
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	gotContent, totalLines, err := readLinesWithCount(f, 1, 3)
+	if err != nil {
+		t.Fatalf("readLinesWithCount error: %v", err)
+	}
+	if totalLines != 5 {
+		t.Errorf("totalLines = %d, want 5", totalLines)
+	}
+	if !strings.Contains(gotContent, "1|line1") || !strings.Contains(gotContent, "3|line3") {
+		t.Errorf("gotContent missing expected lines: %s", gotContent)
+	}
+}
+
+// defaultTestDangerousConfig returns a permissive DangerousConfig for tests.
+func defaultTestDangerousConfig() DangerConfig {
+	return DangerConfig{
+		Action: "allow",
+		NonInteractive: "allow",
+		Classes: map[RiskClass]string{
+			RiskClassDestructive:    "allow",
+			RiskClassNetworkEgress:  "allow",
+			RiskClassCodeExecution:  "allow",
+			RiskClassInstall:        "allow",
+			RiskClassSystemWrite:    "allow",
+		},
+	}
+}
+
+// DangerConfig matches the danger.DangerousConfig structure for test use.
+type DangerConfig struct {
+	Action         string                 `json:"action"`
+	NonInteractive string                 `json:"non_interactive"`
+	Classes        map[RiskClass]string   `json:"classes"`
+	Allowlist      []string               `json:"allowlist,omitempty"`
+	Denylist       []string               `json:"denylist,omitempty"`
+}
+
+type RiskClass string
+
+const (
+	RiskClassDestructive   RiskClass = "destructive"
+	RiskClassNetworkEgress RiskClass = "network_egress"
+	RiskClassCodeExecution RiskClass = "code_execution"
+	RiskClassInstall       RiskClass = "install"
+	RiskClassSystemWrite   RiskClass = "system_write"
+)

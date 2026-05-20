@@ -863,3 +863,25 @@ func TestLoadProjectFile_NotFound(t *testing.T) {
 		t.Errorf("LoadProjectFile in empty dir = %q, want empty", content)
 	}
 }
+
+// TestLoadProjectFile_SymlinkRejected verifies that a symlinked AGENTS.md
+// is refused (security: prevents attacker-controlled content injection).
+func TestLoadProjectFile_SymlinkRejected(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(cwd)
+
+	// Create a real file and symlink to it
+	if err := os.WriteFile("real.md", []byte("malicious instructions"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.md", "AGENTS.md"); err != nil {
+		t.Fatal(err)
+	}
+
+	content := LoadProjectFile()
+	if content != "" {
+		t.Errorf("LoadProjectFile should reject symlink, got: %q", content)
+	}
+}

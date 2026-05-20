@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -186,7 +188,7 @@ func replCmd(args []string) error {
 
 		input, err := editor.ReadLine()
 		if err != nil {
-			if err.Error() == "EOF" || err.Error() == "interrupt" {
+			if errors.Is(err, io.EOF) || err.Error() == "interrupt" {
 				fmt.Fprintf(os.Stderr, "\n")
 				break
 			}

@@ -134,6 +134,12 @@ type ServerConfig struct {
 	Env map[string]string `json:"env,omitempty"`
 }
 
+// lineResult carries the result of a single readLine from the reader goroutine.
+type lineResult struct {
+	line string
+	err  error
+}
+
 // ── Client ─────────────────────────────────────────────────────────────
 
 // Client manages a connection to an external MCP server over stdio.
@@ -142,7 +148,8 @@ type Client struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout *bufio.Reader
-	done   chan struct{} // closed when process exits
+	lineCh chan lineResult // single-reader goroutine sends lines here
+	done   chan struct{}   // closed when process exits
 	mu     sync.Mutex
 	nextID int
 }
@@ -181,8 +188,12 @@ func New(name string, cfg ServerConfig) (*Client, error) {
 		cmd:    cmd,
 		stdin:  stdin,
 		stdout: bufio.NewReader(stdout),
+		lineCh: make(chan lineResult, 10),
 		done:   make(chan struct{}),
 	}
+
+	// Start single-reader goroutine
+	go c.readLoop()
 
 	// Monitor process exit in background
 	go func() {
@@ -381,23 +392,39 @@ func (c *Client) call(ctx context.Context, method string, params json.RawMessage
 	}
 }
 
-// readLine reads a single line with context-based timeout.
-func (c *Client) readLine(ctx context.Context) (string, error) {
-	type lineResult struct {
-		line string
-		err  error
+// readLoop is a single reader goroutine that reads lines from stdout and
+// sends them on lineCh. It exits when stdout returns an error (EOF on pipe close).
+func (c *Client) readLoop() {
+	defer close(c.lineCh)
+	for {
+		line, err := c.stdout.ReadString('\n')
+		select {
+		case c.lineCh <- lineResult{strings.TrimSpace(line), err}:
+		default:
+			// Channel full — drain the queue by consuming one stale entry,
+			// then retry. This prevents a stuck server from deadlocking the
+			// reader goroutine.
+			<-c.lineCh
+			c.lineCh <- lineResult{strings.TrimSpace(line), err}
+		}
+		if err != nil {
+			return
+		}
 	}
+}
 
-	ch := make(chan lineResult, 1)
-	go func() {
-		l, err := c.stdout.ReadString('\n')
-		ch <- lineResult{strings.TrimSpace(l), err}
-	}()
-
+// readLine reads a single line with context-based timeout.
+// Uses the single-reader goroutine (readLoop) so no goroutine leaks on context
+// cancellation — the goroutine is owned by the connection, not the RPC call.
+func (c *Client) readLine(ctx context.Context) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
-	case r := <-ch:
+	case r, ok := <-c.lineCh:
+		if !ok {
+			// Channel closed — reader goroutine exited (process gone)
+			return "", io.EOF
+		}
 		return r.line, r.err
 	}
 }

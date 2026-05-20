@@ -113,7 +113,8 @@ func NewMemoryManager(memoryDir string, llc LLMClient, cfg MemoryConfig) *Memory
 //  1. Security scan (reject if dangerous)
 //  2. Dedup (FactStore handles this)
 //  3. Merge-on-write using go-vector RP if MergeOnWrite is enabled
-//  4. Fits the merge detector after mutation
+//  4. Fits the merge detector after mutation (incrementally — only re-embeds
+//     the changed entry instead of all entries, avoiding a double disk-read).
 func (m *MemoryManager) AddFact(target, content string) error {
 	if !m.cfg.Enabled {
 		return fmt.Errorf("memory: disabled")
@@ -124,9 +125,17 @@ func (m *MemoryManager) AddFact(target, content string) error {
 		return err
 	}
 
+	// We read entries once and keep them cached below to avoid re-parsing
+	// the file and re-embedding every entry after the mutation.
+	var entries []string
+
 	// Merge-on-write: check similarity against existing entries
 	if m.cfg.MergeOnWrite {
-		entries, _ := m.facts.Entries(target)
+		var err error
+		entries, err = m.facts.Entries(target)
+		if err != nil {
+			entries = nil // non-fatal — we just skip merge-on-write
+		}
 		if len(entries) > 0 {
 			m.merge.Fit(entries)
 			action, similarIdx, similarity := m.merge.Classify(content)
@@ -135,7 +144,12 @@ func (m *MemoryManager) AddFact(target, content string) error {
 			case "merge":
 				// Auto-merge: replace similar entry with merged content
 				merged := mergeEntries(entries[similarIdx], content)
-				return m.facts.Replace(target, entries[similarIdx][:min(30, len(entries[similarIdx]))], merged)
+				if err := m.facts.Replace(target, entries[similarIdx][:min(30, len(entries[similarIdx]))], merged); err != nil {
+					return err
+				}
+				// Update merge detector incrementally — only re-embed the changed entry
+				m.merge.ReplaceEntry(similarIdx, merged)
+				return nil
 			case "judge":
 				// Borderline: use LLM to decide
 				if m.llm != nil {
@@ -143,7 +157,12 @@ func (m *MemoryManager) AddFact(target, content string) error {
 					if err == nil {
 						if decision == "merge" {
 							merged := mergeEntries(entries[similarIdx], content)
-							return m.facts.Replace(target, entries[similarIdx][:min(30, len(entries[similarIdx]))], merged)
+							if err := m.facts.Replace(target, entries[similarIdx][:min(30, len(entries[similarIdx]))], merged); err != nil {
+								return err
+							}
+							// Update merge detector incrementally
+							m.merge.ReplaceEntry(similarIdx, merged)
+							return nil
 						}
 						// decision == "add" — fall through to normal add
 					}
@@ -164,10 +183,27 @@ func (m *MemoryManager) AddFact(target, content string) error {
 		return err
 	}
 
-	// Re-fit merge detector after mutation
+	// Incrementally update merge detector instead of re-reading + re-embedding all.
+	// Check dedup: if content already existed in the entries we read at the top,
+	// m.facts.Add silently no-oped and the corpus hasn't changed.
 	if m.cfg.MergeOnWrite {
-		entries, _ := m.facts.Entries(target)
-		m.merge.Fit(entries)
+		if entries == nil {
+			// We didn't read entries above (MergeOnWrite just got enabled, or
+			// Entries returned an error). Read fresh to stay correct.
+			entries, _ = m.facts.Entries(target)
+			m.merge.Fit(entries)
+		} else {
+			dedup := false
+			for _, e := range entries {
+				if e == content {
+					dedup = true
+					break
+				}
+			}
+			if !dedup {
+				m.merge.AppendEntry(content)
+			}
+		}
 	}
 
 	return nil

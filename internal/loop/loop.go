@@ -234,7 +234,12 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 						}
 					}
 					skillMsg := llm.Message{Role: "system", Content: "# Relevant Skill\n\n" + skillContext}
-					messages = append(messages[:insertIdx], append([]llm.Message{skillMsg}, messages[insertIdx:]...)...)
+					// Pre-allocate and copy to avoid nested append allocations
+					newMsgs := make([]llm.Message, 0, len(messages)+1)
+					newMsgs = append(newMsgs, messages[:insertIdx]...)
+					newMsgs = append(newMsgs, skillMsg)
+					newMsgs = append(newMsgs, messages[insertIdx:]...)
+					messages = newMsgs
 				}
 			}
 		}
