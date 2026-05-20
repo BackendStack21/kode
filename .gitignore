@@ -1,4 +1,4 @@
 bin/
-/kode
+/odek
 *.test
 coverage.out
