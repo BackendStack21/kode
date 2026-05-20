@@ -16,27 +16,14 @@
   <meta name="twitter:description" content="The fastest, minimal Go autonomous agent runtime. ~11 MB static binary, zero frameworks.">
   <meta name="keywords" content="Go, autonomous agent, AI agent, LLM, ReAct, MCP, Docker sandbox, CLI, zero-dependency, open-source">
   <meta name="robots" content="index, follow">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://assets.21no.de/fonts/fonts.css">
+  <link rel="stylesheet" href="https://assets.21no.de/css/tokens.css">
   <style>
-    :root {
-      --bg: #0a0a0b;
-      --bg2: #121214;
-      --bg3: #1a1a1e;
-      --border: #252529;
-      --text: #e4e4e7;
-      --text2: #a1a1aa;
-      --accent: #38bdf8;
-      --accent2: #818cf8;
-      --green: #4ade80;
-      --amber: #fbbf24;
-      --red: #f87171;
-    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
       line-height: 1.6;
       -webkit-font-smoothing: antialiased;
     }
@@ -48,9 +35,9 @@
       padding: 16px 24px; max-width: 1008px; margin: 0 auto;
     }
     nav .logo { font-weight: 700; font-size: 1.25rem; color: var(--accent); }
-    nav .logo span { color: var(--text2); font-weight: 400; }
-    nav a { color: var(--text2); text-decoration: none; font-size: 0.875rem; transition: color .15s; margin-left: 24px; }
-    nav a:hover { color: var(--text); }
+    nav .logo span { color: var(--text-secondary); font-weight: 400; }
+    nav a { color: var(--text-secondary); text-decoration: none; font-size: 0.875rem; transition: color .15s; margin-left: 24px; }
+    nav a:hover { color: var(--text-primary); }
 
     /* ── Hero ── */
     .hero {
@@ -59,18 +46,18 @@
     }
     .hero h1 {
       font-size: 3.5rem; font-weight: 800; letter-spacing: -.03em;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      background: linear-gradient(135deg, var(--accent), var(--purple));
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
     }
     .hero .sub {
-      font-size: 1.15rem; color: var(--text2); margin-top: 16px; max-width: 600px; margin-inline: auto;
+      font-size: 1.15rem; color: var(--text-secondary); margin-top: 16px; max-width: 600px; margin-inline: auto;
     }
     .hero .sub .size { color: var(--green); font-weight: 600; }
     .install-block {
       display: inline-flex; align-items: center; padding: 4px 4px 4px 20px;
-      background: var(--bg3); border: 1px solid var(--border); border-radius: 12px;
-      font-family: 'JetBrains Mono', monospace; font-size: 0.875rem;
+      background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px;
+      font-family: var(--font-mono); font-size: 0.875rem;
       position: relative;
     }
     .hero .install-block {
@@ -87,9 +74,9 @@
 
     /* ── Copy button ── */
     .copy-btn {
-      background: transparent; border: 1px solid var(--border); color: var(--text2);
+      background: transparent; border: 1px solid var(--border-subtle); color: var(--text-secondary);
       padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.75rem;
-      font-family: 'Outfit', sans-serif; transition: all .15s; margin-left: 12px;
+      font-family: var(--font-sans); transition: all .15s; margin-left: 12px;
       white-space: nowrap; line-height: 1;
     }
     .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -98,7 +85,7 @@
 
     /* ── Sections ── */
     section { padding: 64px 0; }
-    section + section { border-top: 1px solid var(--border); }
+    section + section { border-top: 1px solid var(--border-subtle); }
     h2 {
       font-size: 1.75rem; font-weight: 700; margin-bottom: 24px;
       letter-spacing: -.02em;
@@ -107,25 +94,25 @@
     h3 {
       font-size: 1.125rem; font-weight: 600; margin-bottom: 8px; margin-top: 28px;
     }
-    p, li { color: var(--text2); font-size: 0.9375rem; }
+    p, li { color: var(--text-secondary); font-size: 0.9375rem; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
     /* ── Five Whys ── */
     .whys { list-style: none; }
     .whys li {
-      padding: 20px 0; border-bottom: 1px solid var(--border);
+      padding: 20px 0; border-bottom: 1px solid var(--border-subtle);
       display: flex; gap: 16px; align-items: flex-start;
     }
     .whys li:last-child { border-bottom: none; }
     .whys li .q { font-weight: 700; color: var(--accent); min-width: 60px; font-size: 1rem; }
-    .whys li .a { color: var(--text2); }
-    .whys li .a strong { color: var(--text); }
+    .whys li .a { color: var(--text-secondary); }
+    .whys li .a strong { color: var(--text-primary); }
 
     /* ── Feature grid ── */
     .features { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     .features .card {
-      background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+      background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 12px;
       padding: 24px;
     }
     .features .card .icon { font-size: 1.5rem; margin-bottom: 8px; }
@@ -134,21 +121,21 @@
 
     /* ── Terminal carousel ── */
     .carousel {
-      background: #0d0d11; border: 1px solid var(--border); border-radius: 12px;
+      background: #0d0d11; border: 1px solid var(--border-subtle); border-radius: 12px;
       overflow: hidden; margin: 20px 0;
     }
     .carousel .bar {
       display: flex; align-items: center; gap: 8px;
-      padding: 8px 16px; background: var(--bg2);
-      border-bottom: 1px solid var(--border);
+      padding: 8px 16px; background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-subtle);
     }
     .carousel .bar .dot { width: 10px; height: 10px; border-radius: 50%; }
     .carousel .bar .dot:nth-child(1) { background: #ff5f56; }
     .carousel .bar .dot:nth-child(2) { background: #ffbd2e; }
     .carousel .bar .dot:nth-child(3) { background: #27c93f; }
     .carousel .bar .label {
-      margin-left: auto; font-size: 0.75rem; color: var(--text2);
-      font-family: 'JetBrains Mono', monospace;
+      margin-left: auto; font-size: 0.75rem; color: var(--text-secondary);
+      font-family: var(--font-mono);
     }
     .carousel .slides {
       position: relative; min-height: 280px;
@@ -156,20 +143,20 @@
     .carousel .slide {
       position: absolute; inset: 0; padding: 20px 24px;
       opacity: 0; transition: opacity .6s ease;
-      font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;
+      font-family: var(--font-mono); font-size: 0.8125rem;
       line-height: 1.7; overflow-y: auto;
       pointer-events: none;
     }
     .carousel .slide.active { opacity: 1; position: relative; pointer-events: auto; }
     .carousel .slide .prompt { color: var(--green); }
-    .carousel .slide .output { color: var(--text2); }
+    .carousel .slide .output { color: var(--text-secondary); }
     .carousel .slide .info { color: #6b7280; font-style: italic; }
     .carousel .nav {
       display: flex; justify-content: center; gap: 8px;
       padding: 8px 0 16px;
     }
     .carousel .nav button {
-      background: var(--bg3); border: 1px solid var(--border); color: var(--text2);
+      background: var(--bg-card); border: 1px solid var(--border-subtle); color: var(--text-secondary);
       width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
       font-size: 0.75rem; transition: all .15s;
     }
@@ -179,7 +166,7 @@
     /* ── Install steps ── */
     .steps { list-style: none; }
     .steps li {
-      padding: 16px 0; border-bottom: 1px solid var(--border);
+      padding: 16px 0; border-bottom: 1px solid var(--border-subtle);
       display: flex; gap: 16px;
     }
     .steps li:last-child { border-bottom: none; }
@@ -189,73 +176,73 @@
       font-weight: 700; font-size: 0.8125rem; flex-shrink: 0; margin-top: 2px;
     }
     .steps li code {
-      background: var(--bg3); padding: 2px 8px; border-radius: 4px;
-      font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;
+      background: var(--bg-card); padding: 2px 8px; border-radius: 4px;
+      font-family: var(--font-mono); font-size: 0.8125rem;
     }
 
     /* ── Code blocks ── */
     pre {
-      background: var(--bg3); border: 1px solid var(--border); border-radius: 10px;
+      background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 10px;
       padding: 20px; overflow-x: auto; font-size: 0.8125rem; margin: 16px 0;
       position: relative;
     }
-    pre code { font-family: 'JetBrains Mono', monospace; color: var(--text); }
+    pre code { font-family: var(--font-mono); color: var(--text-primary); }
     pre .clip {
       position: absolute; top: 12px; right: 12px;
-      background: var(--bg2); border: 1px solid var(--border); color: var(--text2);
+      background: var(--bg-secondary); border: 1px solid var(--border-subtle); color: var(--text-secondary);
       padding: 4px 10px; border-radius: 5px; cursor: pointer; font-size: 0.6875rem;
-      font-family: 'Outfit', sans-serif; transition: all .15s;
+      font-family: var(--font-sans); transition: all .15s;
     }
     pre .clip:hover { border-color: var(--accent); color: var(--accent); }
     pre .clip.copied { border-color: var(--green); color: var(--green); }
     .hljs-comment { color: #6b7280; }
     .hljs-string { color: var(--green); }
     .hljs-keyword { color: var(--accent); }
-    .hljs-number { color: var(--amber); }
+    .hljs-number { color: var(--yellow); }
 
     /* ── Platform tags ── */
     .platform-tags {
       display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px;
     }
     .platform-tags .tag {
-      background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
-      padding: 6px 12px; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;
-      color: var(--text2);
+      background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 6px;
+      padding: 6px 12px; font-size: 0.75rem; font-family: var(--font-mono);
+      color: var(--text-secondary);
     }
     .platform-tags .tag .ok { color: var(--green); }
 
     /* ── Table comparison ── */
     .compare { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
     .compare th, .compare td {
-      text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border);
+      text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border-subtle);
     }
-    .compare th { color: var(--text2); font-weight: 500; }
-    .compare td:first-child { font-weight: 500; color: var(--text); }
+    .compare th { color: var(--text-secondary); font-weight: 500; }
+    .compare td:first-child { font-weight: 500; color: var(--text-primary); }
     .compare .win { color: var(--green); font-weight: 600; }
 
     /* ── Command list ── */
     .cmd-list { list-style: none; }
     .cmd-list li {
       padding: 10px 0; display: flex; gap: 16px;
-      border-bottom: 1px solid var(--border); font-family: 'JetBrains Mono', monospace; font-size: 0.8125rem;
+      border-bottom: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 0.8125rem;
     }
     .cmd-list li:last-child { border-bottom: none; }
     .cmd-list li .cmd { color: var(--green); white-space: nowrap; min-width: 220px; }
-    .cmd-list li .desc { color: var(--text2); }
+    .cmd-list li .desc { color: var(--text-secondary); }
 
     /* ── Doc links ── */
     .doc-links { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
     .doc-links a {
-      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px;
       padding: 14px 16px; font-size: 0.8125rem; font-weight: 500; transition: border-color .15s;
     }
     .doc-links a:hover { border-color: var(--accent); text-decoration: none; }
-    .doc-links a span { display: block; font-weight: 400; color: var(--text2); font-size: 0.75rem; margin-top: 2px; }
+    .doc-links a span { display: block; font-weight: 400; color: var(--text-secondary); font-size: 0.75rem; margin-top: 2px; }
 
     /* ── Footer ── */
     footer {
-      border-top: 1px solid var(--border); padding: 32px 0; text-align: center;
-      color: var(--text2); font-size: 0.8125rem;
+      border-top: 1px solid var(--border-subtle); padding: 32px 0; text-align: center;
+      color: var(--text-secondary); font-size: 0.8125rem;
     }
     footer a { color: var(--accent); }
 
@@ -368,7 +355,7 @@
 <!-- ═══ Terminal Demos Carousel ═══ -->
 <section id="demos">
   <h2>See it in <span class="hl">action</span></h2>
-  <p style="margin-bottom:20px;color:var(--text2);font-size:0.9375rem">
+  <p style="margin-bottom:20px;color:var(--text-secondary);font-size:0.9375rem">
     Real terminal output from real runs. Click through the examples.
   </p>
 
@@ -575,7 +562,7 @@
   </ul>
 
   <h3>One-line binary install</h3>
-  <p style="color:var(--text2);font-size:0.875rem;margin-bottom:16px">
+  <p style="color:var(--text-secondary);font-size:0.875rem;margin-bottom:16px">
     No Go toolchain? Auto-detects your OS and architecture:
   </p>
 
