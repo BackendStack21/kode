@@ -413,3 +413,118 @@ func TestRenderer_Iteration_NilSafe(t *testing.T) {
 	var r *Renderer
 	r.Iteration(1, 10, time.Second, 100, 50, 0) // should not panic
 }
+
+func TestRenderer_Summary_TokensOnly(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, true)
+
+	r.Summary(1500, 340, 0, 0, 0)
+
+	out := buf.String()
+	if !strings.Contains(out, "1500 in") {
+		t.Errorf("missing input tokens: %q", out)
+	}
+	if !strings.Contains(out, "340 out") {
+		t.Errorf("missing output tokens: %q", out)
+	}
+	// No cache metrics
+	if strings.Contains(out, "created") {
+		t.Errorf("should not show cache creation: %q", out)
+	}
+	if strings.Contains(out, "read") {
+		t.Errorf("should not show cache read: %q", out)
+	}
+	if strings.Contains(out, "cached") {
+		t.Errorf("should not show cached: %q", out)
+	}
+}
+
+func TestRenderer_Summary_AnthropicCache(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, true)
+
+	r.Summary(2000, 500, 100, 200, 0)
+
+	out := buf.String()
+	if !strings.Contains(out, "2000 in") {
+		t.Errorf("missing input tokens: %q", out)
+	}
+	if !strings.Contains(out, "500 out") {
+		t.Errorf("missing output tokens: %q", out)
+	}
+	if !strings.Contains(out, "100 created") {
+		t.Errorf("missing cache creation: %q", out)
+	}
+	if !strings.Contains(out, "200 read") {
+		t.Errorf("missing cache read: %q", out)
+	}
+	if strings.Contains(out, "cached") {
+		t.Errorf("should not show OpenAI cached: %q", out)
+	}
+}
+
+func TestRenderer_Summary_OpenAICache(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, true)
+
+	r.Summary(300, 50, 0, 0, 75)
+
+	out := buf.String()
+	if !strings.Contains(out, "300 in") {
+		t.Errorf("missing input tokens: %q", out)
+	}
+	if !strings.Contains(out, "50 out") {
+		t.Errorf("missing output tokens: %q", out)
+	}
+	if !strings.Contains(out, "75 cached") {
+		t.Errorf("missing cached tokens: %q", out)
+	}
+	if strings.Contains(out, "created") {
+		t.Errorf("should not show cache creation: %q", out)
+	}
+	if strings.Contains(out, "read") {
+		t.Errorf("should not show cache read: %q", out)
+	}
+}
+
+func TestRenderer_Summary_AllZero(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, true)
+
+	r.Summary(0, 0, 0, 0, 0)
+
+	if buf.Len() != 0 {
+		t.Errorf("Summary(all zero) should produce no output, got %q", buf.String())
+	}
+}
+
+func TestRenderer_Summary_NilRenderer(t *testing.T) {
+	var r *Renderer
+	r.Summary(100, 20, 0, 0, 0) // should not panic
+}
+
+func TestRenderer_Summary_NilWriter(t *testing.T) {
+	r := New(nil, true)
+	r.Summary(100, 20, 0, 0, 0) // should not panic
+}
+
+func TestRenderer_Summary_NoColor(t *testing.T) {
+	var buf bytes.Buffer
+	r := New(&buf, false)
+
+	r.Summary(100, 20, 10, 5, 0)
+
+	out := buf.String()
+	if strings.Contains(out, "\033[") {
+		t.Errorf("NoColor should strip ANSI codes, got: %q", out)
+	}
+	if !strings.Contains(out, "100 in") {
+		t.Errorf("missing input tokens: %q", out)
+	}
+	if !strings.Contains(out, "10 created") {
+		t.Errorf("missing cache creation: %q", out)
+	}
+	if !strings.Contains(out, "5 read") {
+		t.Errorf("missing cache read: %q", out)
+	}
+}

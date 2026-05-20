@@ -804,3 +804,134 @@ func TestEngine_ToolEventHandler(t *testing.T) {
 		t.Errorf("event[1] name = %q, want 'echo'", eventData[1])
 	}
 }
+
+func TestEngine_Run_CacheAccumulation(t *testing.T) {
+	// Server that returns cache metrics in usage, then final answer.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"done"}}],"usage":{"prompt_tokens":100,"completion_tokens":20,"cache_creation_input_tokens":40,"cache_read_input_tokens":30}}`)
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	registry := tool.NewRegistry(nil)
+	engine := New(client, registry, 10, "", nil, 0)
+
+	result, err := engine.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if result != "done" {
+		t.Errorf("result = %q, want 'done'", result)
+	}
+	if engine.TotalCacheCreationTokens != 40 {
+		t.Errorf("TotalCacheCreationTokens = %d, want 40", engine.TotalCacheCreationTokens)
+	}
+	if engine.TotalCacheReadTokens != 30 {
+		t.Errorf("TotalCacheReadTokens = %d, want 30", engine.TotalCacheReadTokens)
+	}
+	if engine.TotalCachedTokens != 0 {
+		t.Errorf("TotalCachedTokens = %d, want 0", engine.TotalCachedTokens)
+	}
+	if engine.TotalInputTokens != 100 {
+		t.Errorf("TotalInputTokens = %d, want 100", engine.TotalInputTokens)
+	}
+	if engine.TotalOutputTokens != 20 {
+		t.Errorf("TotalOutputTokens = %d, want 20", engine.TotalOutputTokens)
+	}
+}
+
+func TestEngine_Run_CacheAccumulation_MultiIter(t *testing.T) {
+	// First call returns tool call + cache, second call returns answer + cache.
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"thinking","tool_calls":[{"id":"c1","function":{"name":"echo","arguments":"{}"}}]}}],"usage":{"prompt_tokens":50,"completion_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":15}}`)
+		} else {
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"final"}}],"usage":{"prompt_tokens":30,"completion_tokens":5,"cache_creation_input_tokens":10,"cache_read_input_tokens":8}}`)
+		}
+	}))
+	defer server.Close()
+
+	echoTool := &fakeTool{name: "echo", description: "echoes", output: "ok"}
+	registry := tool.NewRegistry([]tool.Tool{echoTool})
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	engine := New(client, registry, 10, "", nil, 0)
+
+	result, err := engine.Run(context.Background(), "echo")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if result != "final" {
+		t.Errorf("result = %q, want 'final'", result)
+	}
+	// Cumulative: iter1 (20+15) + iter2 (10+8) = 30+23
+	if engine.TotalCacheCreationTokens != 30 {
+		t.Errorf("TotalCacheCreationTokens = %d, want 30", engine.TotalCacheCreationTokens)
+	}
+	if engine.TotalCacheReadTokens != 23 {
+		t.Errorf("TotalCacheReadTokens = %d, want 23", engine.TotalCacheReadTokens)
+	}
+	// Cumulative: iter1 (50+30) + iter2 (30+5) = 80+15
+	if engine.TotalInputTokens != 80 {
+		t.Errorf("TotalInputTokens = %d, want 80", engine.TotalInputTokens)
+	}
+	if engine.TotalOutputTokens != 15 {
+		t.Errorf("TotalOutputTokens = %d, want 15", engine.TotalOutputTokens)
+	}
+	if callCount != 2 {
+		t.Errorf("expected 2 LLM calls, got %d", callCount)
+	}
+}
+
+func TestEngine_Run_CacheAccumulation_OpenAI(t *testing.T) {
+	// OpenAI format: cached_tokens via prompt_tokens_details
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"cached"}}],"usage":{"prompt_tokens":200,"completion_tokens":40,"prompt_tokens_details":{"cached_tokens":150}}}`)
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	registry := tool.NewRegistry(nil)
+	engine := New(client, registry, 10, "", nil, 0)
+
+	_, err := engine.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if engine.TotalCachedTokens != 150 {
+		t.Errorf("TotalCachedTokens = %d, want 150", engine.TotalCachedTokens)
+	}
+	if engine.TotalCacheCreationTokens != 0 {
+		t.Errorf("TotalCacheCreationTokens = %d, want 0", engine.TotalCacheCreationTokens)
+	}
+	if engine.TotalCacheReadTokens != 0 {
+		t.Errorf("TotalCacheReadTokens = %d, want 0", engine.TotalCacheReadTokens)
+	}
+}
+
+func TestEngine_Run_CacheAccumulation_NoCache(t *testing.T) {
+	// Cache accumulators should be zero when no cache metrics returned.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":5}}`)
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	registry := tool.NewRegistry(nil)
+	engine := New(client, registry, 10, "", nil, 0)
+
+	_, err := engine.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if engine.TotalCacheCreationTokens != 0 {
+		t.Errorf("TotalCacheCreationTokens = %d, want 0", engine.TotalCacheCreationTokens)
+	}
+	if engine.TotalCacheReadTokens != 0 {
+		t.Errorf("TotalCacheReadTokens = %d, want 0", engine.TotalCacheReadTokens)
+	}
+	if engine.TotalCachedTokens != 0 {
+		t.Errorf("TotalCachedTokens = %d, want 0", engine.TotalCachedTokens)
+	}
+}

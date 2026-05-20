@@ -162,8 +162,15 @@ func (s *testServer) handleWebSocket(conn *golangws.Conn) {
 
 			// Send done
 			writeJSON(conn, map[string]any{
-				"type":    "done",
-				"latency": 0.5,
+				"type":                "done",
+				"latency":             0.5,
+				"contextTokens":       150,
+				"outputTokens":        30,
+				"cacheCreationTokens": 50,
+				"cacheReadTokens":     100,
+				"cachedTokens":        0,
+				"sessionContextTokens": 150,
+				"sessionOutputTokens": 30,
 			})
 		}
 	}
@@ -1383,4 +1390,75 @@ doneCheck:
 	}
 
 	t.Log("✅ Live tool events verified: tool_call + tool_result arrive before done")
+}
+
+func TestServe_DoneCacheStats(t *testing.T) {
+	// Verify that the done event carries cache statistics fields.
+	s := startTestServer(t)
+	defer s.Close()
+
+	conn, err := golangws.Dial(s.wsURL+"/ws", "", "http://localhost")
+	if err != nil {
+		t.Fatalf("Dial(): %v", err)
+	}
+	defer conn.Close()
+
+	// Send a prompt
+	prompt := map[string]string{"type": "prompt", "content": "cache test"}
+	payload, _ := json.Marshal(prompt)
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send(): %v", err)
+	}
+
+	// Collect events until done
+	var doneEvent map[string]any
+	timeout := time.After(5 * time.Second)
+
+	for doneEvent == nil {
+		select {
+		case <-timeout:
+			t.Fatal("timeout waiting for done event")
+		default:
+			var event map[string]any
+			if err := readJSON(conn, &event); err != nil {
+				t.Fatalf("Receive(): %v", err)
+			}
+			if event["type"] == "done" {
+				doneEvent = event
+			}
+		}
+	}
+
+	t.Logf("done event: %v", doneEvent)
+
+	// Verify cache fields exist (even if zero)
+	if _, ok := doneEvent["cacheCreationTokens"]; !ok {
+		t.Error("done event missing cacheCreationTokens field")
+	}
+	if _, ok := doneEvent["cacheReadTokens"]; !ok {
+		t.Error("done event missing cacheReadTokens field")
+	}
+	if _, ok := doneEvent["cachedTokens"]; !ok {
+		t.Error("done event missing cachedTokens field")
+	}
+
+	// Verify the fields are numeric
+	switch v := doneEvent["cacheCreationTokens"].(type) {
+	case float64:
+		// ok
+	default:
+		t.Errorf("cacheCreationTokens type = %T, want float64", v)
+	}
+	switch v := doneEvent["cacheReadTokens"].(type) {
+	case float64:
+		// ok
+	default:
+		t.Errorf("cacheReadTokens type = %T, want float64", v)
+	}
+	switch v := doneEvent["cachedTokens"].(type) {
+	case float64:
+		// ok
+	default:
+		t.Errorf("cachedTokens type = %T, want float64", v)
+	}
 }

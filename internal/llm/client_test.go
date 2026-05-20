@@ -949,3 +949,65 @@ func TestClient_NewWithMaxTokens(t *testing.T) {
 		t.Errorf("BaseURL = %q", c.BaseURL)
 	}
 }
+
+func TestParseResponse_NoCacheMetrics(t *testing.T) {
+	raw := `{
+		"choices": [{
+			"message": {
+				"content": "No cache"
+			}
+		}],
+		"usage": {
+			"prompt_tokens": 100,
+			"completion_tokens": 20
+		}
+	}`
+
+	result, err := parseResponse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CacheCreationTokens != 0 {
+		t.Errorf("CacheCreationTokens = %d, want 0", result.CacheCreationTokens)
+	}
+	if result.CacheReadTokens != 0 {
+		t.Errorf("CacheReadTokens = %d, want 0", result.CacheReadTokens)
+	}
+	if result.CachedTokens != 0 {
+		t.Errorf("CachedTokens = %d, want 0", result.CachedTokens)
+	}
+}
+
+func TestParseResponse_AnthropicAndOpenAICache(t *testing.T) {
+	// Both Anthropic and OpenAI cache fields present — Anthropic takes precedence.
+	raw := `{
+		"choices": [{
+			"message": {
+				"content": "Both"
+			}
+		}],
+		"usage": {
+			"prompt_tokens": 300,
+			"completion_tokens": 60,
+			"cache_creation_input_tokens": 70,
+			"cache_read_input_tokens": 140,
+			"prompt_tokens_details": {
+				"cached_tokens": 999
+			}
+		}
+	}`
+
+	result, err := parseResponse([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CacheCreationTokens != 70 {
+		t.Errorf("CacheCreationTokens = %d, want 70", result.CacheCreationTokens)
+	}
+	if result.CacheReadTokens != 140 {
+		t.Errorf("CacheReadTokens = %d, want 140", result.CacheReadTokens)
+	}
+	if result.CachedTokens != 999 {
+		t.Errorf("CachedTokens = %d, want 999", result.CachedTokens)
+	}
+}
