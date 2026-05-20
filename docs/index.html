@@ -56,12 +56,14 @@
       font-size: 1.15rem; color: var(--text2); margin-top: 16px; max-width: 600px; margin-inline: auto;
     }
     .hero .sub .size { color: var(--green); font-weight: 600; }
-    .hero .install-block {
-      margin-top: 36px;
-      background: var(--bg3); border: 1px solid var(--border); border-radius: 12px;
+    .install-block {
       display: inline-flex; align-items: center; padding: 4px 4px 4px 20px;
+      background: var(--bg3); border: 1px solid var(--border); border-radius: 12px;
       font-family: 'JetBrains Mono', monospace; font-size: 0.875rem;
       position: relative;
+    }
+    .hero .install-block {
+      margin-top: 36px;
     }
     .hero .install-block code { color: var(--green); }
     .hero .install-block .btn {
@@ -70,6 +72,7 @@
       cursor: pointer; transition: opacity .15s; text-decoration: none;
     }
     .hero .install-block .btn:hover { opacity: .85; }
+    .cta-block { margin-top: 0; }
 
     /* ── Copy button ── */
     .copy-btn {
@@ -248,12 +251,12 @@
     @media (max-width: 700px) {
       .hero h1 { font-size: 2rem; }
       .hero .sub { font-size: 1rem; }
-      .hero .install-block {
+      .install-block {
         flex-direction: column; padding: 16px; gap: 12px; width: 100%;
         font-size: 0.75rem; overflow: hidden;
       }
-      .hero .install-block code { word-break: break-all; }
-      .hero .install-block .btn { margin-left: 0; width: 100%; text-align: center; }
+      .install-block code { word-break: break-all; }
+      .install-block .btn { margin-left: 0; width: 100%; text-align: center; }
       .hero .stats { gap: 24px; flex-wrap: wrap; }
       nav { flex-wrap: wrap; gap: 8px; justify-content: center; }
       nav div { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
@@ -643,10 +646,10 @@ $ kode run --model gpt-4o --base-url https://api.openai.com/v1 <span class="hljs
     One binary. One loop. Zero frameworks.<br>
     Go install and go.
   </p>
-  <div class="install-block" style="margin-top:0;display:inline-flex;">
+  <div class="install-block cta-block">
     <code>go install github.com/BackendStack21/kode/cmd/kode@latest</code>
     <button class="copy-btn" onclick="copyText(this,'go install github.com/BackendStack21/kode/cmd/kode@latest')">📋 Copy</button>
-    <a class="btn" href="https://github.com/BackendStack21/kode" target="_blank" style="margin-left:16px;">GitHub →</a>
+    <a class="btn" href="https://github.com/BackendStack21/kode" target="_blank">GitHub →</a>
   </div>
 </section>
 
