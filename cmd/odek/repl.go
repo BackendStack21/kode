@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 
 	"github.com/BackendStack21/kode"
@@ -168,18 +168,32 @@ func replCmd(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	scanner := bufio.NewScanner(os.Stdin)
 	turn := 0
+
+	// Line editor with history and tab completion for slash commands
+	editor := newReplEditor(
+		fmt.Sprintf("odek %d> ", turn+1),
+		[]string{
+			"/exit", "/quit", "/help", "/info",
+			"/sandbox", "/model", "/session",
+		},
+	)
+	editor.history.Load(filepath.Join(odekDir(), historyFilename))
 	for {
 		fmt.Fprintf(os.Stderr, "─── Turn %d ───\n", turn+1)
-		fmt.Fprint(os.Stderr, "> ")
 
-		if !scanner.Scan() {
+		input, err := editor.ReadLine()
+		if err != nil {
+			if err.Error() == "EOF" || err.Error() == "interrupt" {
+				fmt.Fprintf(os.Stderr, "\n")
+				break
+			}
 			break
 		}
-		input := strings.TrimSpace(scanner.Text())
+		input = strings.TrimSpace(input)
 
 		if input == "" {
+			turn++
 			continue
 		}
 
@@ -187,6 +201,7 @@ func replCmd(args []string) error {
 			if handleREPLCommand(input, sess) {
 				break
 			}
+			turn++
 			continue
 		}
 
