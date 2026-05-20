@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/BackendStack21/kode/internal/danger"
 )
@@ -94,25 +96,31 @@ func (t *readFileTool) Call(argsJSON string) (string, error) {
 		return jsonError(err.Error())
 	}
 
-	// Check file exists and is not a directory
-	info, err := os.Stat(args.Path)
+	// Security: open the file without following symlinks (O_NOFOLLOW).
+	// This atomically handles the existence check, type check, and open
+	// in a single syscall — eliminating the TOCTOU window between
+	// os.Stat (check) and os.Open (use). If the path is a symlink, the
+	// open fails with ELOOP.
+	f, err := os.OpenFile(args.Path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonError(fmt.Sprintf("file not found: %s", args.Path))
 		}
-		return jsonError(fmt.Sprintf("cannot access %q: %v", args.Path, err))
+		// ELOOP means the path is a symlink — refuse to follow it
+		return jsonError(fmt.Sprintf("cannot open %q: %v", args.Path, err))
+	}
+	defer f.Close()
+
+	// Check it's a regular file, not a directory
+	info, err := f.Stat()
+	if err != nil {
+		return jsonError(fmt.Sprintf("cannot stat %q: %v", args.Path, err))
 	}
 	if info.IsDir() {
 		return jsonError(fmt.Sprintf("%q is a directory, not a file", args.Path))
 	}
 
-	// Single pass: open → binary check from sample → seek → read+count
-	f, err := os.Open(args.Path)
-	if err != nil {
-		return jsonError(fmt.Sprintf("cannot open %q: %v", args.Path, err))
-	}
-	defer f.Close()
-
+	// Single pass: binary check from sample → seek → read+count
 	sample := make([]byte, 8192)
 	n, _ := f.Read(sample)
 	if isBinary(sample[:n]) {
@@ -140,7 +148,8 @@ func (t *readFileTool) Call(argsJSON string) (string, error) {
 
 type writeFileTool struct {
 	dangerousConfig danger.DangerousConfig
-	trustedClasses map[danger.RiskClass]bool
+	trustedClasses  map[danger.RiskClass]bool
+	restrictToCWD   bool // when true, reject paths escaping the working directory
 }
 
 func (t *writeFileTool) Name() string { return "write_file" }
@@ -186,6 +195,16 @@ func (t *writeFileTool) Call(argsJSON string) (string, error) {
 	}
 	if args.Path == "" {
 		return jsonError("path is required")
+	}
+
+	// Path confinement: when restrictToCWD is enabled, reject paths that
+	// escape the working directory via ".." traversal or absolute paths.
+	if t.restrictToCWD {
+		resolved, err := confineToCWD(args.Path)
+		if err != nil {
+			return jsonError(err.Error())
+		}
+		args.Path = resolved
 	}
 
 	// Security: classify and check write operation
@@ -549,16 +568,23 @@ func (t *patchTool) Call(argsJSON string) (string, error) {
 		return jsonError(err.Error())
 	}
 
-	// Read the file
-	data, err := os.ReadFile(args.Path)
+	// Read the file without following symlinks
+	f, err := os.OpenFile(args.Path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return jsonError(fmt.Sprintf("file not found: %s", args.Path))
 		}
 		return jsonError(fmt.Sprintf("cannot read %q: %v", args.Path, err))
 	}
+	defer f.Close()
 
-	original := string(data)
+	// Read content through the opened fd (not re-opening the path)
+	var sb strings.Builder
+	_, err = io.Copy(&sb, f)
+	if err != nil {
+		return jsonError(fmt.Sprintf("cannot read %q: %v", args.Path, err))
+	}
+	original := sb.String()
 
 	// Check that old_string exists
 	if !strings.Contains(original, args.OldString) {
@@ -579,7 +605,35 @@ func (t *patchTool) Call(argsJSON string) (string, error) {
 		truncateDiff(modified, 100),
 	)
 
-	if err := os.WriteFile(args.Path, []byte(modified), 0644); err != nil {
+	// Atomic write via temp file + rename to prevent TOCTOU symlink races.
+	// The temp file is created in the same directory (same filesystem),
+	// and os.Rename atomically replaces the directory entry without
+	// following symlinks.
+	dir := filepath.Dir(args.Path)
+	tmpFile, err := os.CreateTemp(dir, ".tmp_patch_*")
+	if err != nil {
+		return jsonError(fmt.Sprintf("cannot create temp file: %v", err))
+	}
+	tmpPath := tmpFile.Name()
+
+	if _, err := tmpFile.Write([]byte(modified)); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return jsonError(fmt.Sprintf("cannot write %q: %v", args.Path, err))
+	}
+	if err := tmpFile.Chmod(0644); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpPath)
+		return jsonError(fmt.Sprintf("cannot set permissions %q: %v", args.Path, err))
+	}
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpPath)
+		return jsonError(fmt.Sprintf("cannot close temp file: %v", err))
+	}
+
+	// Atomic rename — replaces target directory entry without following symlinks
+	if err := os.Rename(tmpPath, args.Path); err != nil {
+		os.Remove(tmpPath)
 		return jsonError(fmt.Sprintf("cannot write %q: %v", args.Path, err))
 	}
 
@@ -652,6 +706,31 @@ func readLinesWithCount(f *os.File, offset, limit int) (string, int, error) {
 	}
 
 	return strings.TrimSuffix(out.String(), "\n"), lineNum, scanner.Err()
+}
+
+// confineToCWD resolves path relative to the current working directory and
+// rejects paths that escape the working directory via ".." traversal or are
+// absolute paths outside the CWD. Returns the cleaned absolute path on success.
+func confineToCWD(path string) (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine working directory: %v", err)
+	}
+
+	// Resolve to absolute path
+	var abs string
+	if filepath.IsAbs(path) {
+		abs = filepath.Clean(path)
+	} else {
+		abs = filepath.Join(cwd, path)
+	}
+
+	// Check that the resolved path is within CWD
+	if !strings.HasPrefix(abs, cwd+string(filepath.Separator)) && abs != cwd {
+		return "", fmt.Errorf("path %q escapes the working directory", path)
+	}
+
+	return abs, nil
 }
 
 func truncateDiff(s string, maxLen int) string {

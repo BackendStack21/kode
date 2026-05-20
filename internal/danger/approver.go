@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 // Approver is the interface for user approval of dangerous operations.
@@ -34,6 +35,7 @@ type Approver interface {
 type TTYApprover struct {
 	DangerousConfig *DangerousConfig
 	TrustedClasses  map[RiskClass]bool
+	mu              sync.Mutex
 	TTYPath         string // overridden in tests
 }
 
@@ -46,6 +48,14 @@ func NewTTYApprover(cfg *DangerousConfig) *TTYApprover {
 	}
 }
 
+// SetTrustedClasses atomically sets the trusted classes map.
+// Takes ownership of the provided map — caller must not write to it after calling.
+func (a *TTYApprover) SetTrustedClasses(m map[RiskClass]bool) {
+	a.mu.Lock()
+	a.TrustedClasses = m
+	a.mu.Unlock()
+}
+
 func (a *TTYApprover) PromptCommand(cls RiskClass, cmd, description string) error {
 	return a.prompt(cls, cmd, description)
 }
@@ -56,7 +66,10 @@ func (a *TTYApprover) PromptOperation(op ToolOperation) error {
 
 func (a *TTYApprover) prompt(cls RiskClass, cmd, description string) error {
 	// Check session trust cache
-	if a.TrustedClasses != nil && a.TrustedClasses[cls] {
+	a.mu.Lock()
+	trusted := a.TrustedClasses != nil && a.TrustedClasses[cls]
+	a.mu.Unlock()
+	if trusted {
 		return nil
 	}
 
@@ -92,9 +105,11 @@ func (a *TTYApprover) prompt(cls RiskClass, cmd, description string) error {
 		return nil
 	case "t", "trust":
 		// Cache this risk class for the session
+		a.mu.Lock()
 		if a.TrustedClasses != nil {
 			a.TrustedClasses[cls] = true
 		}
+		a.mu.Unlock()
 		return nil
 	case "?", "context":
 		fmt.Fprintf(tty, "\n  Command: %s\n", cmd)
@@ -102,7 +117,10 @@ func (a *TTYApprover) prompt(cls RiskClass, cmd, description string) error {
 		if description != "" {
 			fmt.Fprintf(tty, "  Description: %s\n", description)
 		}
-		fmt.Fprintf(tty, "  Trust this class: %v\n", a.TrustedClasses[cls])
+		a.mu.Lock()
+		trusted := a.TrustedClasses[cls]
+		a.mu.Unlock()
+		fmt.Fprintf(tty, "  Trust this class: %v\n", trusted)
 		// Re-prompt
 		return a.prompt(cls, cmd, description)
 	default:

@@ -142,8 +142,9 @@ func contextBudget(maxContext int) int {
 //   - System message (always first, if present)
 //   - The first user message (the original task)
 //
-// It drops the oldest non-essential messages (tool call / tool result
-// pairs) until estimated tokens fit within the budget.
+// It drops the oldest non-essential message triples (assistant tool-call
+// message + its tool result(s)) to avoid orphaning tool results without
+// their preceding tool_calls — DeepSeek rejects orphaned tool messages.
 func (e *Engine) trimContext(messages []llm.Message, toolDefs []llm.ToolDef) []llm.Message {
 	budget := contextBudget(e.maxContext)
 	if budget <= 0 {
@@ -162,21 +163,32 @@ func (e *Engine) trimContext(messages []llm.Message, toolDefs []llm.ToolDef) []l
 			break // can't trim further (need system + task at minimum)
 		}
 
-		// Find the first droppable message index.
+		// Find the first droppable index.
 		// Keep messages[0] if it's the system message.
 		// Keep the next message too (first user message = the task).
-		dropIdx := 0
+		start := 0
 		if messages[0].Role == "system" {
-			dropIdx = 1 // keep system
+			start = 1 // keep system
 		}
-		// Keep the message after system too (it's the task)
-		dropIdx++ // keep system + task
-		if dropIdx >= len(messages) {
+		start++ // keep system + task
+		if start >= len(messages) {
 			break
 		}
 
-		// Drop this message (oldest non-essential)
-		messages = append(messages[:dropIdx], messages[dropIdx+1:]...)
+		// Find the first complete droppable group starting at `start`.
+		// A group is either:
+		//   - A standalone message (user text, assistant text)
+		//   - An assistant tool_calls message + all following tool results
+		groupEnd := start + 1
+		if messages[start].Role == "assistant" && len(messages[start].ToolCalls) > 0 {
+			// Include all following tool result messages
+			for groupEnd < len(messages) && messages[groupEnd].Role == "tool" {
+				groupEnd++
+			}
+		}
+
+		// Drop the entire group atomically
+		messages = append(messages[:start], messages[groupEnd:]...)
 	}
 	return messages
 }

@@ -10,6 +10,7 @@ func boolPtr(b bool) *bool { return &b }
 
 func TestLoadConfig_Defaults(t *testing.T) {
 	// No files, no env, no CLI — everything should be zero-valued
+	t.Setenv("HOME", t.TempDir())
 	cfg := LoadConfig(CLIFlags{})
 	if cfg.Model != "" {
 		t.Errorf("Model = %q, want empty", cfg.Model)
@@ -150,8 +151,8 @@ func TestLoadConfig_EnvVars(t *testing.T) {
 
 func TestLoadConfig_APIKeyFallback(t *testing.T) {
 	// No config files, no ODEK_API_KEY — falls back to DEEPSEEK_API_KEY
-	os.Setenv("DEEPSEEK_API_KEY", "sk-deepseek-fallback")
-	defer os.Unsetenv("DEEPSEEK_API_KEY")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("DEEPSEEK_API_KEY", "sk-deepseek-fallback")
 
 	cfg := LoadConfig(CLIFlags{})
 	if cfg.APIKey != "sk-deepseek-fallback" {
@@ -160,9 +161,9 @@ func TestLoadConfig_APIKeyFallback(t *testing.T) {
 }
 
 func TestLoadConfig_APIKeyFallback_OpenAI(t *testing.T) {
-	os.Unsetenv("DEEPSEEK_API_KEY")
-	os.Setenv("OPENAI_API_KEY", "sk-openai-fallback")
-	defer os.Unsetenv("OPENAI_API_KEY")
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("DEEPSEEK_API_KEY", "") // ensure DEEPSEEK fallback is empty
+	t.Setenv("OPENAI_API_KEY", "sk-openai-fallback")
 
 	cfg := LoadConfig(CLIFlags{})
 	if cfg.APIKey != "sk-openai-fallback" {

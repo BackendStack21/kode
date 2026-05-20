@@ -1080,7 +1080,7 @@ func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver d
 			timeout:        120 * time.Second,
 		},
 		&readFileTool{dangerousConfig: dc},
-		&writeFileTool{dangerousConfig: dc},
+		&writeFileTool{dangerousConfig: dc, restrictToCWD: true},
 		&searchFilesTool{dangerousConfig: dc},
 		&patchTool{dangerousConfig: dc},
 		newBrowserTool(dc),

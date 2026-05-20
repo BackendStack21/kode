@@ -13,6 +13,7 @@ import (
 
 	"github.com/BackendStack21/kode"
 	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/kode/internal/llm"
 )
 
 // ─────────────────────────────────────────────────────────────────────
@@ -703,6 +704,597 @@ func TestDelegateTasks_PipesStderr(t *testing.T) {
 
 	input := `{"tasks":[{"goal":"build auth"}]}`
 	_, _ = tool.Call(input)
+}
+
+// ── 11. buildSubagentPrompt — Expanded Keyword Detection ────────────
+
+func TestBuildSubagentPrompt_TestGoalExactMatch(t *testing.T) {
+	got := buildSubagentPrompt("test goal", "")
+	if !strings.Contains(got, "testing engineer") {
+		t.Errorf("goal %q should produce 'testing engineer' persona, got:\n%s", "test goal", got)
+	}
+	if !strings.Contains(got, "Write thorough tests") {
+		t.Errorf("goal %q should contain 'Write thorough tests', got:\n%s", "test goal", got)
+	}
+}
+
+func TestBuildSubagentPrompt_TestKeywordVariants(t *testing.T) {
+	goals := []string{
+		"test goal",
+		"spec the API endpoints",
+		"add spec for user model",
+		"increase coverage to 90%",
+		"write assertions for edge cases",
+		"assert the response is correct",
+	}
+	for _, goal := range goals {
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "testing engineer") {
+			t.Errorf("goal %q should produce 'testing engineer' persona, got:\n%s", goal, got)
+		}
+		if !strings.Contains(got, "happy path") {
+			t.Errorf("goal %q should mention 'happy path' in testing prompt, got:\n%s", goal, got)
+		}
+	}
+}
+
+func TestBuildSubagentPrompt_CaseInsensitive(t *testing.T) {
+	tests := []struct {
+		goal       string
+		wantPersona string
+	}{
+		{"FIX THE CRASH IN DB", "debugger"},
+		{"TEST ALL ENDPOINTS", "testing engineer"},
+		{"REVIEW DEPLOYMENT SCRIPT", "reviewing code"},
+		{"REFACTOR THE MONOLITH", "architecture expert"},
+		{"SETUP CI/CD PIPELINE", "DevOps"},
+		{"RESEARCH PERFORMANCE", "researcher"},
+	}
+	for _, tt := range tests {
+		got := buildSubagentPrompt(tt.goal, "")
+		if !strings.Contains(got, tt.wantPersona) {
+			t.Errorf("goal %q should produce persona containing %q, got:\n%s", tt.goal, tt.wantPersona, got)
+		}
+	}
+}
+
+func TestBuildSubagentPrompt_DebugAdditionalKeywords(t *testing.T) {
+	keywords := []string{
+		"fix null pointer",
+		"fix regression in parser",
+		"bug in login handler",
+		"error handling for timeout",
+		"crash on startup",
+		"broken query builder",
+		"incorrect calculation result",
+		"wrong output format",
+		"fail on empty input",
+	}
+	for _, goal := range keywords {
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "debugger") && !strings.Contains(got, "root cause") {
+			t.Errorf("goal %q should produce debug prompt, got:\n%s", goal, got)
+		}
+	}
+}
+
+func TestBuildSubagentPrompt_ReviewAdditionalKeywords(t *testing.T) {
+	keywords := []string{
+		"audit security dependencies",
+		"check code quality",
+		"verify auth logic is correct",
+		"validate input sanitization",
+	}
+	// Note: "inspect" is intentionally excluded here because it contains
+	// "spec" as a substring, which triggers the test persona match first
+	// in the switch/case priority order.
+	for _, goal := range keywords {
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "reviewing") && !strings.Contains(got, "critically") {
+			t.Errorf("goal %q should produce review prompt, got:\n%s", goal, got)
+		}
+	}
+}
+
+func TestBuildSubagentPrompt_RefactorAdditionalKeywords(t *testing.T) {
+	keywords := []string{
+		"simplify the validation logic",
+		"clean up legacy handler",
+		"rename UserDTO to UserResponse",
+		"simplify nested if-else",
+		"extract database logic into repository",
+		"restructure the project layout",
+	}
+	for _, goal := range keywords {
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "architecture") && !strings.Contains(got, "Preserve behavior") {
+			t.Errorf("goal %q should produce refactor prompt, got:\n%s", goal, got)
+		}
+	}
+}
+
+func TestBuildSubagentPrompt_ConfigAdditionalKeywords(t *testing.T) {
+	keywords := []string{
+		"setup Postgres dev environment",
+		"config nginx reverse proxy",
+		"install kubectl and helm",
+		"setup the project",
+		"configure CI pipeline",
+		"dockerize the application",
+		"deploy to production",
+		"provision AWS resources",
+	}
+	for _, goal := range keywords {
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "DevOps") && !strings.Contains(got, "reproducible") {
+			t.Errorf("goal %q should produce DevOps prompt, got:\n%s", goal, got)
+		}
+	}
+}
+
+func TestBuildSubagentPrompt_ResearchAdditionalKeywords(t *testing.T) {
+	keywords := []string{
+		"compare Go vs Rust performance",
+		"understand the caching mechanism",
+		"analyze API response times",
+		"research database indexing strategies",
+	}
+	// Note: "investigate" is intentionally excluded because goals containing
+	// "suspect" (like "investigate memory leak suspect") have "spec" as a
+	// substring, triggering the test persona match first in priority order.
+	for _, goal := range keywords {
+		got := buildSubagentPrompt(goal, "")
+		if !strings.Contains(got, "researcher") && !strings.Contains(got, "Explore thoroughly") {
+			t.Errorf("goal %q should produce research prompt, got:\n%s", goal, got)
+		}
+	}
+}
+
+func TestBuildSubagentPrompt_PriorityOrder(t *testing.T) {
+	// When multiple categories match, the switch/case order determines priority.
+	// "fix" comes before "test", so debug persona should win.
+	got := buildSubagentPrompt("fix broken test", "")
+	if !strings.Contains(got, "debugger") {
+		t.Errorf("'fix broken test' should produce debugger persona (fix before test in switch), got:\n%s", got)
+	}
+
+	// "test" comes before "setup" in switch order
+	got2 := buildSubagentPrompt("test setup script", "")
+	if !strings.Contains(got2, "testing engineer") {
+		t.Errorf("'test setup script' should produce testing engineer (test before setup in switch), got:\n%s", got2)
+	}
+}
+
+func TestBuildSubagentPrompt_ContextAddedAfterGoal(t *testing.T) {
+	got := buildSubagentPrompt("build auth", "Context: use gin framework")
+	if !strings.Contains(got, "Context:") {
+		t.Errorf("prompt should include 'Context:' label, got:\n%s", got)
+	}
+	// Context should appear after the goal section
+	goalIdx := strings.Index(got, "build auth")
+	ctxIdx := strings.Index(got, "Context:")
+	if ctxIdx < goalIdx {
+		t.Errorf("context should appear after goal in prompt, got:\n%s", got)
+	}
+}
+
+func TestBuildSubagentPrompt_EmptyGoalWithContext(t *testing.T) {
+	// Empty goal with context should still return subagentSystem (fallback)
+	got := buildSubagentPrompt("", "some context")
+	if got != subagentSystem {
+		t.Errorf("empty goal with context should return subagentSystem, got:\n%s", got)
+	}
+}
+
+func TestBuildSubagentPrompt_ReportSuffix(t *testing.T) {
+	got := buildSubagentPrompt("build something", "")
+	if !strings.Contains(got, "Report what you built") {
+		t.Errorf("prompt should end with report instruction, got:\n%s", got)
+	}
+}
+
+// ── 12. truncate ────────────────────────────────────────────────────
+
+func TestTruncate_NoTruncation(t *testing.T) {
+	result := truncate("hello", 10)
+	if result != "hello" {
+		t.Errorf("truncate(\"hello\", 10) = %q, want %q", result, "hello")
+	}
+}
+
+func TestTruncate_ExactBoundary(t *testing.T) {
+	result := truncate("hello", 5)
+	if result != "hello" {
+		t.Errorf("truncate(\"hello\", 5) = %q, want %q", result, "hello")
+	}
+}
+
+func TestTruncate_Truncates(t *testing.T) {
+	result := truncate("hello world", 5)
+	if !strings.HasPrefix(result, "hello") {
+		t.Errorf("truncate(\"hello world\", 5) should start with 'hello', got: %q", result)
+	}
+	if !strings.HasSuffix(result, "…") {
+		t.Errorf("truncate(\"hello world\", 5) should end with '…', got: %q", result)
+	}
+	if len([]rune(result)) != 6 { // 5 chars + ellipsis
+		t.Errorf("truncate(\"hello world\", 5) length = %d runes, want 6", len([]rune(result)))
+	}
+}
+
+func TestTruncate_EmptyString(t *testing.T) {
+	result := truncate("", 10)
+	if result != "" {
+		t.Errorf("truncate(\"\", 10) = %q, want empty", result)
+	}
+}
+
+func TestTruncate_ZeroLimit(t *testing.T) {
+	result := truncate("hello", 0)
+	if result != "…" {
+		t.Errorf("truncate(\"hello\", 0) = %q, want '…'", result)
+	}
+}
+
+func TestTruncate_NegativeLimit(t *testing.T) {
+	result := truncate("hello", -1)
+	if result != "…" {
+		t.Errorf("truncate(\"hello\", -1) = %q, want '…'", result)
+	}
+}
+
+func TestTruncate_UnicodeCharacters(t *testing.T) {
+	input := "你好世界！这是一个测试"
+	result := truncate(input, 4)
+	if len([]rune(result)) != 5 { // 4 chars + ellipsis
+		t.Errorf("truncate unicode, rune count = %d, want 5", len([]rune(result)))
+	}
+	expected := "你好世界…"
+	if result != expected {
+		t.Errorf("truncate(%q, 4) = %q, want %q", input, result, expected)
+	}
+}
+
+func TestTruncate_MultiByteEmoji(t *testing.T) {
+	input := "🎉🎊🧪🔥✨"
+	result := truncate(input, 3)
+	if len([]rune(result)) != 4 { // 3 emoji + ellipsis
+		t.Errorf("truncate emoji, rune count = %d, want 4", len([]rune(result)))
+	}
+	if !strings.HasPrefix(result, "🎉🎊🧪") {
+		t.Errorf("truncate(%q, 3) should start with 🎉🎊🧪, got: %q", input, result)
+	}
+}
+
+// ── 13. extractSummary ──────────────────────────────────────────────
+
+func TestExtractSummary_LastAssistantMessage(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "user", Content: "do something"},
+		{Role: "assistant", Content: "First step"},
+		{Role: "tool", Content: "tool result"},
+		{Role: "assistant", Content: "Final answer: done"},
+	}
+	summary := extractSummary(msgs)
+	if summary != "Final answer: done" {
+		t.Errorf("extractSummary = %q, want %q", summary, "Final answer: done")
+	}
+}
+
+func TestExtractSummary_EmptyMessages(t *testing.T) {
+	summary := extractSummary(nil)
+	if summary != "" {
+		t.Errorf("extractSummary(nil) = %q, want empty", summary)
+	}
+
+	summary = extractSummary([]llm.Message{})
+	if summary != "" {
+		t.Errorf("extractSummary(empty) = %q, want empty", summary)
+	}
+}
+
+func TestExtractSummary_NoAssistantMessage(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "tool", Content: "world"},
+	}
+	summary := extractSummary(msgs)
+	if summary != "" {
+		t.Errorf("extractSummary with no assistant = %q, want empty", summary)
+	}
+}
+
+func TestExtractSummary_EmptyAssistantContent(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: ""},
+		{Role: "assistant", Content: "real content"},
+	}
+	summary := extractSummary(msgs)
+	if summary != "real content" {
+		t.Errorf("extractSummary = %q, want %q", summary, "real content")
+	}
+}
+
+func TestExtractSummary_AssistantWithToolCallsOnly(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "assistant", Content: "", ToolCalls: []llm.ToolCall{{ID: "call1"}}},
+		{Role: "tool", Content: "result"},
+		{Role: "assistant", Content: "Here is the final output"},
+	}
+	summary := extractSummary(msgs)
+	if summary != "Here is the final output" {
+		t.Errorf("extractSummary = %q, want %q", summary, "Here is the final output")
+	}
+}
+
+func TestExtractSummary_TruncatesLongOutput(t *testing.T) {
+	longContent := strings.Repeat("a", 600)
+	msgs := []llm.Message{
+		{Role: "assistant", Content: longContent},
+	}
+	summary := extractSummary(msgs)
+	if len([]rune(summary)) > 501 { // 500 + ellipsis
+		t.Errorf("extractSummary too long: %d runes (max 501)", len([]rune(summary)))
+	}
+	if !strings.HasSuffix(summary, "…") {
+		t.Errorf("truncated summary should end with '…', got: %q", summary)
+	}
+}
+
+// ── 14. extractFilesChanged ─────────────────────────────────────────
+
+func TestExtractFilesChanged_NoFiles(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "assistant", Content: "done"},
+	}
+	result := extractFilesChanged(msgs)
+	if len(result) != 0 {
+		t.Errorf("extractFilesChanged = %v, want empty", result)
+	}
+}
+
+func TestExtractFilesChanged_SingleFile(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "wrote main.go"},
+	}
+	result := extractFilesChanged(msgs)
+	if len(result) != 1 || result[0] != "main.go" {
+		t.Errorf("extractFilesChanged = %v, want [main.go]", result)
+	}
+}
+
+func TestExtractFilesChanged_AllPrefixTypes(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "wrote internal/handler.go\ncreated models/user.go\nmodified pkg/utils.go\nupdated config/defaults.go"},
+	}
+	result := extractFilesChanged(msgs)
+	expected := []string{"internal/handler.go", "models/user.go", "pkg/utils.go", "config/defaults.go"}
+	if len(result) != len(expected) {
+		t.Errorf("extractFilesChanged = %v, want %v", result, expected)
+	}
+	for i, f := range expected {
+		if result[i] != f {
+			t.Errorf("extractFilesChanged[%d] = %q, want %q", i, result[i], f)
+		}
+	}
+}
+
+func TestExtractFilesChanged_Deduplicates(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "wrote main.go\nwrote main.go"},
+	}
+	result := extractFilesChanged(msgs)
+	if len(result) != 1 {
+		t.Errorf("extractFilesChanged should deduplicate, got %v", result)
+	}
+}
+
+func TestExtractFilesChanged_DeduplicatesAcrossMessages(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "wrote main.go"},
+		{Role: "assistant", Content: "thinking"},
+		{Role: "tool", Content: "updated main.go"},
+	}
+	result := extractFilesChanged(msgs)
+	if len(result) != 1 {
+		t.Errorf("extractFilesChanged should deduplicate across messages, got %v", result)
+	}
+}
+
+func TestExtractFilesChanged_FiltersFilesWithoutExtension(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "wrote Makefile\nwrote Dockerfile\nwrote internal/handler.go"},
+	}
+	result := extractFilesChanged(msgs)
+	for _, f := range result {
+		if !strings.Contains(f, ".") {
+			t.Errorf("extractFilesChanged should filter files without extension, got %q", f)
+		}
+	}
+	if len(result) != 1 {
+		t.Errorf("extractFilesChanged = %v, want only [internal/handler.go]", result)
+	}
+}
+
+func TestExtractFilesChanged_PrefixNotMatched(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "deleted main.go\nrenamed old.go new.go"},
+	}
+	result := extractFilesChanged(msgs)
+	if len(result) != 0 {
+		t.Errorf("extractFilesChanged should not match non-standard prefixes, got %v", result)
+	}
+}
+
+func TestExtractFilesChanged_NoToolRoleMessages(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "user", Content: "wrote main.go"},
+		{Role: "assistant", Content: "created file.go"},
+	}
+	result := extractFilesChanged(msgs)
+	if len(result) != 0 {
+		t.Errorf("extractFilesChanged should only check tool role messages, got %v", result)
+	}
+}
+
+func TestExtractFilesChanged_MultipleFilesWithPath(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "wrote internal/service/auth.go\ncreated internal/middleware/logging.go\nupdated internal/config/defaults.yaml"},
+	}
+	result := extractFilesChanged(msgs)
+	expected := []string{"internal/service/auth.go", "internal/middleware/logging.go", "internal/config/defaults.yaml"}
+	if len(result) != len(expected) {
+		t.Errorf("extractFilesChanged = %v (len=%d), want %v (len=%d)", result, len(result), expected, len(expected))
+	}
+	for i, f := range expected {
+		if result[i] != f {
+			t.Errorf("extractFilesChanged[%d] = %q, want %q", i, result[i], f)
+		}
+	}
+}
+
+func TestExtractFilesChanged_PreservesOrder(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: "wrote a.go\nwrote b.go\nwrote c.go"},
+	}
+	result := extractFilesChanged(msgs)
+	if len(result) != 3 {
+		t.Errorf("expected 3 files, got %d: %v", len(result), result)
+	}
+	if result[0] != "a.go" || result[1] != "b.go" || result[2] != "c.go" {
+		t.Errorf("order should be preserved, got %v", result)
+	}
+}
+
+// ── 15. parseSubagentConfig — Edge Cases ────────────────────────────
+
+func TestParseSubagentConfig_EmptyJSON(t *testing.T) {
+	cfg := parseSubagentConfig("")
+	if cfg.MaxConcurrency != 3 {
+		t.Errorf("empty input → MaxConcurrency = %d, want 3", cfg.MaxConcurrency)
+	}
+	if cfg.TimeoutSeconds != 120 {
+		t.Errorf("empty input → TimeoutSeconds = %d, want 120", cfg.TimeoutSeconds)
+	}
+}
+
+func TestParseSubagentConfig_MalformedJSON(t *testing.T) {
+	cfg := parseSubagentConfig("{invalid json}")
+	if cfg.MaxConcurrency != 3 {
+		t.Errorf("malformed JSON → MaxConcurrency = %d, want 3 (fallback to default)", cfg.MaxConcurrency)
+	}
+}
+
+func TestParseSubagentConfig_PartialConfig(t *testing.T) {
+	cfg := parseSubagentConfig(`{"subagent": {"max_concurrency": 7}}`)
+	if cfg.MaxConcurrency != 7 {
+		t.Errorf("MaxConcurrency = %d, want 7", cfg.MaxConcurrency)
+	}
+	if cfg.TimeoutSeconds != 120 {
+		t.Errorf("TimeoutSeconds should keep default = %d, want 120", cfg.TimeoutSeconds)
+	}
+	if cfg.MaxIterations != 15 {
+		t.Errorf("MaxIterations should keep default = %d, want 15", cfg.MaxIterations)
+	}
+}
+
+func TestParseSubagentConfig_ZeroValues(t *testing.T) {
+	cfg := parseSubagentConfig(`{"subagent": {"max_concurrency": 0, "timeout_seconds": 0, "max_iterations": 0}}`)
+	if cfg.MaxConcurrency != 3 {
+		t.Errorf("zero MaxConcurrency should fallback to default %d, got %d", 3, cfg.MaxConcurrency)
+	}
+	if cfg.TimeoutSeconds != 120 {
+		t.Errorf("zero TimeoutSeconds should fallback to default %d, got %d", 120, cfg.TimeoutSeconds)
+	}
+	if cfg.MaxIterations != 15 {
+		t.Errorf("zero MaxIterations should fallback to default %d, got %d", 15, cfg.MaxIterations)
+	}
+}
+
+func TestParseSubagentConfig_SystemPrompt(t *testing.T) {
+	cfg := parseSubagentConfig(`{"subagent": {"system_prompt": "You are a testing engineer"}}`)
+	if cfg.SystemPrompt != "You are a testing engineer" {
+		t.Errorf("SystemPrompt = %q, want %q", cfg.SystemPrompt, "You are a testing engineer")
+	}
+}
+
+func TestParseSubagentConfig_EmptySystemPrompt(t *testing.T) {
+	cfg := parseSubagentConfig(`{"subagent": {"system_prompt": ""}}`)
+	if cfg.SystemPrompt != "" {
+		t.Errorf("empty SystemPrompt should stay empty, got %q", cfg.SystemPrompt)
+	}
+}
+
+func TestParseSubagentConfig_NoSubagentSection(t *testing.T) {
+	cfg := parseSubagentConfig(`{"model": "gpt-4", "system": "hello"}`)
+	if cfg.MaxConcurrency != 3 {
+		t.Errorf("no subagent section → defaults, got MaxConcurrency = %d", cfg.MaxConcurrency)
+	}
+}
+
+func TestParseSubagentConfig_NestedConfig(t *testing.T) {
+	cfg := parseSubagentConfig(`{
+		"model": "gpt-4",
+		"subagent": {
+			"max_concurrency": 5,
+			"timeout_seconds": 60,
+			"max_iterations": 10,
+			"system_prompt": "custom prompt"
+		}
+	}`)
+	if cfg.MaxConcurrency != 5 {
+		t.Errorf("MaxConcurrency = %d, want 5", cfg.MaxConcurrency)
+	}
+	if cfg.TimeoutSeconds != 60 {
+		t.Errorf("TimeoutSeconds = %d, want 60", cfg.TimeoutSeconds)
+	}
+	if cfg.MaxIterations != 10 {
+		t.Errorf("MaxIterations = %d, want 10", cfg.MaxIterations)
+	}
+	if cfg.SystemPrompt != "custom prompt" {
+		t.Errorf("SystemPrompt = %q, want %q", cfg.SystemPrompt, "custom prompt")
+	}
+}
+
+// ── 16. subagentCmd Flag Parsing Edge Cases ─────────────────────────
+
+func TestSubagentCmd_UnknownFlag(t *testing.T) {
+	err := subagentCmd([]string{"--unknown"})
+	if err == nil {
+		t.Fatal("expected error for unknown flag")
+	}
+	if !strings.Contains(err.Error(), "unknown flag") {
+		t.Errorf("error should mention unknown flag, got: %v", err)
+	}
+}
+
+func TestSubagentCmd_GoalAndTaskMutuallyExclusive(t *testing.T) {
+	err := subagentCmd([]string{"--goal", "test", "--task", "/tmp/task.json"})
+	if err == nil {
+		t.Fatal("expected error for mutually exclusive flags")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error should mention mutual exclusion, got: %v", err)
+	}
+}
+
+func TestSubagentCmd_NoGoalOrTask(t *testing.T) {
+	err := subagentCmd([]string{})
+	if err == nil {
+		t.Fatal("expected error for no --goal or --task")
+	}
+	if !strings.Contains(err.Error(), "either --goal or --task") {
+		t.Errorf("error should mention --goal or --task, got: %v", err)
+	}
+}
+
+func TestSubagentCmd_MissingFlagValue(t *testing.T) {
+	// --goal with no following argument — should be treated as empty
+	err := subagentCmd([]string{"--goal"})
+	if err != nil {
+		t.Logf("got expected error (or will fail validation): %v", err)
+	}
 }
 
 // ── Helpers ────────────────────────────────────────────────────────

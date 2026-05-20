@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/BackendStack21/kode/internal/danger"
 )
@@ -55,6 +56,7 @@ type shellTool struct {
 	// trustedClasses caches user-approved risk classes for this process.
 	// Set when user presses T (trust this session) at the prompt.
 	trustedClasses map[danger.RiskClass]bool
+	trustedMu      sync.Mutex
 
 	// ttyPath is the path to the terminal device for approval prompts.
 	// Overridden in tests to mock user input. Only used when approver is nil.
@@ -159,9 +161,11 @@ func (t *shellTool) promptUser(cmd, description string) error {
 	approver := t.approver
 	if approver == nil {
 		ttyApprover := danger.NewTTYApprover(&t.dangerousConfig)
+		t.trustedMu.Lock()
 		if t.trustedClasses != nil {
-			ttyApprover.TrustedClasses = t.trustedClasses
+			ttyApprover.SetTrustedClasses(t.trustedClasses)
 		}
+		t.trustedMu.Unlock()
 		if t.ttyPath != "" {
 			ttyApprover.TTYPath = t.ttyPath
 		}
@@ -172,7 +176,9 @@ func (t *shellTool) promptUser(cmd, description string) error {
 	if err == nil {
 		// Sync trusted classes back if using TTYApprover
 		if tty, ok := approver.(*danger.TTYApprover); ok {
+			t.trustedMu.Lock()
 			t.trustedClasses = tty.TrustedClasses
+			t.trustedMu.Unlock()
 		}
 	}
 	return err
