@@ -1,4 +1,4 @@
-// Package render provides emoji-driven terminal rendering for the kode agent loop.
+// Package render provides emoji-driven terminal rendering for the odek agent loop.
 //
 // It produces structured output for each phase of the ReAct cycle:
 // thinking, tool calls, tool results, and the final answer. When a Renderer
@@ -122,7 +122,7 @@ func (r *Renderer) Start(task string) {
 		return
 	}
 	preview := r.truncate(strings.ReplaceAll(task, "\n", " "), 80)
-	prefix := "⚡ kode"
+	prefix := "⚡ odek"
 	if r.model != "" {
 		prefix += " · " + r.model
 	}

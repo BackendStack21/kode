@@ -1,5 +1,5 @@
 // Package mcpclient implements an MCP client that connects to external
-// MCP servers over stdio. This allows kode to use tools from any MCP
+// MCP servers over stdio. This allows odek to use tools from any MCP
 // server (e.g., Claude Code's MCP servers for web scraping, databases,
 // APIs, etc.) alongside its built-in tools.
 //
@@ -16,7 +16,7 @@
 //	result, err := client.CallTool(ctx, "tool_name", `{"arg":"val"}`)
 //	client.Close()
 //
-// Config in kode.json:
+// Config in odek.json:
 //
 //	{
 //	  "mcp_servers": {
@@ -194,7 +194,7 @@ func New(name string, cfg ServerConfig) (*Client, error) {
 }
 
 // buildEnv constructs the environment for the subprocess.
-// Overrides KODE_ prefixed env vars cannot be removed.
+// Overrides ODEK_ prefixed env vars cannot be removed.
 func buildEnv(overrides map[string]string) []string {
 	// Start with current env
 	env := osEnviron()
@@ -253,7 +253,7 @@ func (c *Client) Name() string { return c.name }
 // Discover performs the MCP handshake and returns all available tools.
 func (c *Client) Discover(ctx context.Context) ([]ToolDef, error) {
 	// Step 1: Initialize
-	if _, err := c.call(ctx, "initialize", json.RawMessage(`{"protocolVersion":"`+ProtocolVersion+`","capabilities":{},"clientInfo":{"name":"kode","version":"dev"}}`)); err != nil {
+	if _, err := c.call(ctx, "initialize", json.RawMessage(`{"protocolVersion":"`+ProtocolVersion+`","capabilities":{},"clientInfo":{"name":"odek","version":"dev"}}`)); err != nil {
 		return nil, fmt.Errorf("mcpclient %s: initialize: %w", c.name, err)
 	}
 
@@ -416,9 +416,9 @@ func environDefault() []string { return os.Environ() }
 
 // ── ToolAdapter ────────────────────────────────────────────────────────
 
-// ToolAdapter wraps an MCP client tool as a kode.Tool-compatible value.
+// ToolAdapter wraps an MCP client tool as a odek.Tool-compatible value.
 // It implements the Name(), Description(), Schema(), and Call() methods
-// that kode's agent loop expects, forwarding calls to the MCP server.
+// that odek's agent loop expects, forwarding calls to the MCP server.
 type ToolAdapter struct {
 	// Client is the MCP client connection.
 	Client *Client

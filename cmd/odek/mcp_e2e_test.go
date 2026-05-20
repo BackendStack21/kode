@@ -12,11 +12,11 @@ import (
 // ── E2E: MCP Client with a real MCP server subprocess ──────────────────
 //
 // These tests start a real MCP server subprocess, discover tools, call
-// them, and verify the full ToolAdapter round-trip. Gated by KODE_E2E=true
+// them, and verify the full ToolAdapter round-trip. Gated by ODEK_E2E=true
 // since they spawn external processes.
 
 // fakeMCPPath returns the path to the pre-compiled fake MCP server binary.
-// The test runs inside cmd/kode/, so we go up two levels to reach the repo root.
+// The test runs inside cmd/odek/, so we go up two levels to reach the repo root.
 func fakeMCPPath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("..", "..", "internal", "mcpclient", "testdata", "fakeserver")
@@ -24,8 +24,8 @@ func fakeMCPPath(t *testing.T) string {
 
 func skipIfNoMCPE2E(t *testing.T) {
 	t.Helper()
-	if os.Getenv("KODE_E2E") == "" {
-		t.Skip("KODE_E2E not set — skipping MCP E2E test")
+	if os.Getenv("ODEK_E2E") == "" {
+		t.Skip("ODEK_E2E not set — skipping MCP E2E test")
 	}
 }
 
@@ -99,7 +99,7 @@ func TestMCPClientE2E_ToolAdapter(t *testing.T) {
 		t.Fatalf("Discover: %v", err)
 	}
 
-	// Verify ToolAdapter implements kode.Tool-compatible interface
+	// Verify ToolAdapter implements odek.Tool-compatible interface
 	adapter := &mcpclient.ToolAdapter{
 		Client:   client,
 		ToolName: "my_tool",
@@ -155,7 +155,7 @@ func TestMCPClientE2E_LoadMCPToolsIntegration(t *testing.T) {
 		Call(args string) (string, error)
 	}
 
-	// We can't call loadMCPTools directly because it takes []kode.Tool,
+	// We can't call loadMCPTools directly because it takes []odek.Tool,
 	// so we test at the mcpclient level instead
 	client, err := mcpclient.New("test-server", servers["test-server"])
 	if err != nil {

@@ -8,14 +8,14 @@
 ## Building
 
 ```bash
-go build -o odek ./cmd/kode
+go build -o odek ./cmd/odek
 ```
 
 ## Source layout
 
 ```
-kode.go                       Public API (Config, New, Run, Close)
-kode_test.go                  Config and model profile tests
+odek.go                       Public API (Config, New, Run, Close)
+`odek_test.go                  Config and model profile tests
 internal/
   config/
     loader.go                 Config file loading, env vars, priority merge
@@ -64,7 +64,7 @@ internal/
     importer.go               URI import with LLM risk assessment
     tools.go                  Skill CRUD tools (list/view/save/patch/delete/load)
     *_test.go                 106 tests across all subsystems
-cmd/kode/
+cmd/odek/
   main.go                     CLI entry point, flag parsing, commands, sandbox
   main_test.go                CLI tests (flag parsing, version, init)
   shell.go                    Built-in shell tool (local or docker exec)
@@ -103,11 +103,11 @@ go test ./internal/session/ -v
 # With race detector
 go test -race ./... -count=1
 
-# E2E tests (builds kode binary, tests real subprocess spawning)
-KODE_E2E=true go test -v -count=1 ./cmd/kode/ -run "TestE2E_"
+# E2E tests (builds odek binary, tests real subprocess spawning)
+KODE_E2E=true go test -v -count=1 ./cmd/odek/ -run "TestE2E_"
 
 # Contract tests (sub-agent interface contract — binary must already be built)
-go test -v -count=1 ./cmd/kode/ -run "TestSubagent|TestDelegateTasks"
+go test -v -count=1 ./cmd/odek/ -run "TestSubagent|TestDelegateTasks"
 ```
 
 Zero external test dependencies — tests use `httptest`, `testing`, and the standard library only.
@@ -117,14 +117,14 @@ Zero external test dependencies — tests use `httptest`, `testing`, and the sta
 | Layer | Runner | Tests | What's tested |
 |-------|--------|-------|---------------|
 | **Unit** | `go test ./...` | 859+ | All 13 packages — config, LLM client, loop, sessions, renderer, tools, WS, resources, memory, skills, danger, security |
-| **Contract** | `go test ./cmd/kode/` | 60+ | Sub-agent flag parsing, JSON stdout, exit codes, tool schema, config, serve, shell |
+| **Contract** | `go test ./cmd/odek/` | 60+ | Sub-agent flag parsing, JSON stdout, exit codes, tool schema, config, serve, shell |
 | **E2E** | `KODE_E2E=true go test -run 'TestE2E_'` | 16 | Real subprocess spawning, tool→binary pipeline, concurrency, timeouts, custom prompts |
 
 ### Test coverage
 
 | Package | Tests | Focus |
 |---------|-------|-------|
-| `kode` | 54 | Config defaults, API key fallback, thinking passthrough, model profiles, AGENTS.md, Close lifecycle |
+| `odek` | 54 | Config defaults, API key fallback, thinking passthrough, model profiles, AGENTS.md, Close lifecycle |
 | `internal/config` | 19 | Config file loading, env vars, merge chain, var expansion |
 | `internal/llm` | 40 | JSON marshaling, thinking fields, response parsing, usage statistics, SimpleCall |
 | `internal/loop` | 31 | ReAct engine with httptest mock server, context budgeting, skill loader |
@@ -136,11 +136,11 @@ Zero external test dependencies — tests use `httptest`, `testing`, and the sta
 | `internal/danger` | 209 | Command classification (8 risk classes), config overrides, allow/denylist |
 | `internal/memory` | 95 | Facts CRUD, buffer ring, episodes, merge detector (go-vector), memory tool, security scan, LLM ranking |
 | `internal/skills` | 106 | Loading, triggers, self-improvement (5 heuristics), curation, LLM-enhanced generation, import, tools |
-| `cmd/kode` | 213 | Flag parsing, init, version, sandbox setup, subagent, serve, security E2E, shell tool danger, browser tool, contract tests |
+| `cmd/odek` | 213 | Flag parsing, init, version, sandbox setup, subagent, serve, security E2E, shell tool danger, browser tool, contract tests |
 
 ## Key packages
 
-### Web UI (`cmd/kode/serve.go` + `internal/ws/ws.go` + `cmd/kode/ui/index.html`)
+### Web UI (`cmd/odek/serve.go` + `internal/ws/ws.go` + `cmd/odek/ui/index.html`)
 
 - **serve.go**: HTTP server with embedded WebSocket handler, `@` resource API, session list API
 - **ws/ws.go**: Zero-dependency RFC 6455 WebSocket (~200 LOC). Handles upgrade, text frames, close, ping/pong
@@ -148,7 +148,7 @@ Zero external test dependencies — tests use `httptest`, `testing`, and the sta
 
 See [docs/WEBUI.md](docs/WEBUI.md) for the WebSocket protocol and full documentation.
 
-### Sub-agents (`cmd/kode/subagent.go` + `cmd/kode/subagent_tool.go`)
+### Sub-agents (`cmd/odek/subagent.go` + `cmd/odek/subagent_tool.go`)
 
 - **subagent.go**: CLI handler for `odek subagent --goal <string>`. Parses flags, creates agent, runs with minimal system prompt, outputs JSON to stdout
 - **subagent_tool.go**: `delegate_tasks` built-in tool. Spawns real OS processes via `exec.Command` with temp files for task data

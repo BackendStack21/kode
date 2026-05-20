@@ -33,7 +33,7 @@ func (f *fakeTool) Call(args string) (string, error) { return f.output, nil }
 func TestEngine_Run_SimpleAnswer(t *testing.T) {
 	// Fake server that returns a final answer immediately (no tool calls).
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"choices":[{"message":{"content":"Hello from kode!"}}]}`)
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"Hello from odek!"}}]}`)
 	}))
 	defer server.Close()
 
@@ -45,8 +45,8 @@ func TestEngine_Run_SimpleAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if result != "Hello from kode!" {
-		t.Errorf("result = %q, want %q", result, "Hello from kode!")
+	if result != "Hello from odek!" {
+		t.Errorf("result = %q, want %q", result, "Hello from odek!")
 	}
 }
 

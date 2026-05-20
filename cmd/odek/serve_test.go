@@ -21,7 +21,7 @@ import (
 
 // ── Test Server ────────────────────────────────────────────────────────
 
-// testServer wraps the kode serve HTTP server for testing.
+// testServer wraps the odek serve HTTP server for testing.
 type testServer struct {
 	ln     net.Listener
 	url    string
@@ -183,9 +183,9 @@ func readJSON(conn *golangws.Conn, dst any) error {
 	return json.Unmarshal(data, dst)
 }
 
-// sessionDir returns the ~/.kode/sessions directory for testing.
+// sessionDir returns the ~/.odek/sessions directory for testing.
 func sessionDir() (string, error) {
-	return "/tmp/kode-test-sessions", nil
+	return "/tmp/odek-test-sessions", nil
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -209,17 +209,17 @@ func TestServe_ServesUI(t *testing.T) {
 		t.Errorf("Content-Type = %q, want text/html", ct)
 	}
 
-	// Check it contains kode branding
+	// Check it contains odek branding
 	scanner := bufio.NewScanner(resp.Body)
 	found := false
 	for scanner.Scan() {
-		if strings.Contains(scanner.Text(), "kode") {
+		if strings.Contains(scanner.Text(), "odek") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("UI should contain 'kode' text")
+		t.Error("UI should contain 'odek' text")
 	}
 }
 
@@ -486,7 +486,7 @@ func TestServe_MultiplePrompts(t *testing.T) {
 
 // ── E2E Integration Test ───────────────────────────────────────────────
 //
-// Starts the real kode serve process and verifies the full WebSocket
+// Starts the real odek serve process and verifies the full WebSocket
 // pipeline: upgrade, message send, response receive.
 
 func TestServe_E2E_WebSocketPipeline(t *testing.T) {
@@ -514,7 +514,7 @@ func TestServe_E2E_WebSocketPipeline(t *testing.T) {
 	home, _ := os.UserHomeDir()
 	resourceReg := resource.NewRegistry(
 		resource.NewFileResolver(cwd),
-		resource.NewSessionResolver(filepath.Join(home, ".kode", "sessions")),
+		resource.NewSessionResolver(filepath.Join(home, ".odek", "sessions")),
 	)
 
 	mux := http.NewServeMux()
@@ -619,7 +619,7 @@ func TestServe_E2E_WebSocketPipeline(t *testing.T) {
 
 // ── Full-Stack E2E with Mock LLM ──────────────────────────────────────
 //
-// Starts the real kode serve handler with a mock LLM backend and verifies
+// Starts the real odek serve handler with a mock LLM backend and verifies
 // the complete WebUI flow: WS upgrade, prompt send, streaming events,
 // tool calls, and done signal — all without needing a real API key.
 
@@ -647,7 +647,7 @@ func TestServe_E2E_FullWebUIFlow(t *testing.T) {
 	// 3. Create a session store (isolated temp dir)
 	store := newTestSessionStore(t)
 
-	// 4. Build the real kode serve mux with mock config
+	// 4. Build the real odek serve mux with mock config
 	ln, mux := buildServeMux(t, store)
 	defer ln.Close()
 
@@ -750,18 +750,18 @@ func setTestEnv(t *testing.T, llmBaseURL string) func() {
 	t.Helper()
 	origDS := os.Getenv("DEEPSEEK_API_KEY")
 	origOAI := os.Getenv("OPENAI_API_KEY")
-	origKBS := os.Getenv("KODE_BASE_URL")
+	origKBS := os.Getenv("ODEK_BASE_URL")
 	origHome := os.Getenv("HOME")
 
 	os.Setenv("DEEPSEEK_API_KEY", "sk-mock")
 	os.Unsetenv("OPENAI_API_KEY")
-	os.Setenv("KODE_BASE_URL", llmBaseURL)
+	os.Setenv("ODEK_BASE_URL", llmBaseURL)
 	os.Setenv("HOME", t.TempDir())
 
 	return func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
-		os.Setenv("KODE_BASE_URL", origKBS)
+		os.Setenv("ODEK_BASE_URL", origKBS)
 		os.Setenv("HOME", origHome)
 	}
 }
@@ -780,7 +780,7 @@ func newTestSessionStore(t *testing.T) *session.Store {
 }
 
 // buildServeMux creates a listener on a random port and builds the
-// kode serve HTTP mux with a pre-configured session store.
+// odek serve HTTP mux with a pre-configured session store.
 func buildServeMux(t *testing.T, store *session.Store) (net.Listener, *http.ServeMux) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -798,7 +798,7 @@ func buildServeMux(t *testing.T, store *session.Store) (net.Listener, *http.Serv
 	home, _ := os.UserHomeDir()
 	resourceReg := resource.NewRegistry(
 		resource.NewFileResolver(cwd),
-		resource.NewSessionResolver(filepath.Join(home, ".kode", "sessions")),
+		resource.NewSessionResolver(filepath.Join(home, ".odek", "sessions")),
 	)
 
 	mux := http.NewServeMux()

@@ -69,14 +69,14 @@ func TestLoadConfig_CLIOnly(t *testing.T) {
 }
 
 func TestLoadConfig_CLIOverridesEnv(t *testing.T) {
-	os.Setenv("KODE_MODEL", "env-model")
-	os.Setenv("KODE_BASE_URL", "https://env.example.com/v1")
-	os.Setenv("KODE_THINKING", "low")
-	os.Setenv("KODE_SANDBOX", "true")
-	defer os.Unsetenv("KODE_MODEL")
-	defer os.Unsetenv("KODE_BASE_URL")
-	defer os.Unsetenv("KODE_THINKING")
-	defer os.Unsetenv("KODE_SANDBOX")
+	os.Setenv("ODEK_MODEL", "env-model")
+	os.Setenv("ODEK_BASE_URL", "https://env.example.com/v1")
+	os.Setenv("ODEK_THINKING", "low")
+	os.Setenv("ODEK_SANDBOX", "true")
+	defer os.Unsetenv("ODEK_MODEL")
+	defer os.Unsetenv("ODEK_BASE_URL")
+	defer os.Unsetenv("ODEK_THINKING")
+	defer os.Unsetenv("ODEK_SANDBOX")
 
 	cfg := LoadConfig(CLIFlags{
 		Model:   "cli-model",
@@ -97,25 +97,25 @@ func TestLoadConfig_CLIOverridesEnv(t *testing.T) {
 }
 
 func TestLoadConfig_EnvVars(t *testing.T) {
-	os.Setenv("KODE_MODEL", "deepseek-v4-flash")
-	os.Setenv("KODE_BASE_URL", "https://custom.deepseek.com/v1")
-	os.Setenv("KODE_API_KEY", "sk-env-key")
-	os.Setenv("KODE_THINKING", "enabled")
-	os.Setenv("KODE_MAX_ITER", "50")
-	os.Setenv("KODE_SANDBOX", "true")
-	os.Setenv("KODE_NO_COLOR", "false")
-	os.Setenv("KODE_NO_AGENTS", "true")
-	os.Setenv("KODE_SYSTEM", "Env system prompt.")
+	os.Setenv("ODEK_MODEL", "deepseek-v4-flash")
+	os.Setenv("ODEK_BASE_URL", "https://custom.deepseek.com/v1")
+	os.Setenv("ODEK_API_KEY", "sk-env-key")
+	os.Setenv("ODEK_THINKING", "enabled")
+	os.Setenv("ODEK_MAX_ITER", "50")
+	os.Setenv("ODEK_SANDBOX", "true")
+	os.Setenv("ODEK_NO_COLOR", "false")
+	os.Setenv("ODEK_NO_AGENTS", "true")
+	os.Setenv("ODEK_SYSTEM", "Env system prompt.")
 	defer func() {
-		os.Unsetenv("KODE_MODEL")
-		os.Unsetenv("KODE_BASE_URL")
-		os.Unsetenv("KODE_API_KEY")
-		os.Unsetenv("KODE_THINKING")
-		os.Unsetenv("KODE_MAX_ITER")
-		os.Unsetenv("KODE_SANDBOX")
-		os.Unsetenv("KODE_NO_COLOR")
-		os.Unsetenv("KODE_NO_AGENTS")
-		os.Unsetenv("KODE_SYSTEM")
+		os.Unsetenv("ODEK_MODEL")
+		os.Unsetenv("ODEK_BASE_URL")
+		os.Unsetenv("ODEK_API_KEY")
+		os.Unsetenv("ODEK_THINKING")
+		os.Unsetenv("ODEK_MAX_ITER")
+		os.Unsetenv("ODEK_SANDBOX")
+		os.Unsetenv("ODEK_NO_COLOR")
+		os.Unsetenv("ODEK_NO_AGENTS")
+		os.Unsetenv("ODEK_SYSTEM")
 	}()
 
 	cfg := LoadConfig(CLIFlags{})
@@ -149,7 +149,7 @@ func TestLoadConfig_EnvVars(t *testing.T) {
 }
 
 func TestLoadConfig_APIKeyFallback(t *testing.T) {
-	// No config files, no KODE_API_KEY — falls back to DEEPSEEK_API_KEY
+	// No config files, no ODEK_API_KEY — falls back to DEEPSEEK_API_KEY
 	os.Setenv("DEEPSEEK_API_KEY", "sk-deepseek-fallback")
 	defer os.Unsetenv("DEEPSEEK_API_KEY")
 
@@ -171,22 +171,22 @@ func TestLoadConfig_APIKeyFallback_OpenAI(t *testing.T) {
 }
 
 func TestLoadConfig_APIKey_KODEOverridesLegacy(t *testing.T) {
-	os.Setenv("KODE_API_KEY", "sk-kode")
+	os.Setenv("ODEK_API_KEY", "sk-odek")
 	os.Setenv("DEEPSEEK_API_KEY", "sk-deepseek")
-	defer os.Unsetenv("KODE_API_KEY")
+	defer os.Unsetenv("ODEK_API_KEY")
 	defer os.Unsetenv("DEEPSEEK_API_KEY")
 
 	cfg := LoadConfig(CLIFlags{})
-	if cfg.APIKey != "sk-kode" {
-		t.Errorf("APIKey = %q, want KODE_API_KEY (higher priority)", cfg.APIKey)
+	if cfg.APIKey != "sk-odek" {
+		t.Errorf("APIKey = %q, want ODEK_API_KEY (higher priority)", cfg.APIKey)
 	}
 }
 
 func TestLoadConfig_EnvBoolParsing(t *testing.T) {
-	os.Setenv("KODE_SANDBOX", "1")
-	os.Setenv("KODE_NO_COLOR", "0")
-	defer os.Unsetenv("KODE_SANDBOX")
-	defer os.Unsetenv("KODE_NO_COLOR")
+	os.Setenv("ODEK_SANDBOX", "1")
+	os.Setenv("ODEK_NO_COLOR", "0")
+	defer os.Unsetenv("ODEK_SANDBOX")
+	defer os.Unsetenv("ODEK_NO_COLOR")
 
 	cfg := LoadConfig(CLIFlags{})
 	if !cfg.Sandbox {
@@ -203,8 +203,8 @@ func TestLoadConfig_GlobalFile(t *testing.T) {
 	os.Setenv("HOME", dir)
 	defer os.Setenv("HOME", prevHome)
 
-	// Create ~/kode/config.json
-	cfgDir := filepath.Join(dir, "kode")
+	// Create ~/.odek/config.json
+	cfgDir := filepath.Join(dir, ".odek")
 	os.MkdirAll(cfgDir, 0755)
 	cfgPath := filepath.Join(cfgDir, "config.json")
 	if err := os.WriteFile(cfgPath, []byte(`{
@@ -243,8 +243,8 @@ func TestLoadConfig_ProjectOverridesGlobal(t *testing.T) {
 	os.Setenv("HOME", dir)
 	defer os.Setenv("HOME", prevHome)
 
-	// Create ~/kode/config.json (global)
-	globalDir := filepath.Join(dir, "kode")
+	// Create ~/.odek/config.json (global)
+	globalDir := filepath.Join(dir, ".odek")
 	os.MkdirAll(globalDir, 0755)
 	if err := os.WriteFile(filepath.Join(globalDir, "config.json"), []byte(`{
 		"model": "global-model",
@@ -255,12 +255,12 @@ func TestLoadConfig_ProjectOverridesGlobal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create ./kode.json in temp dir (project)
+	// Create ./odek.json in temp dir (project)
 	cwd, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(cwd)
 
-	if err := os.WriteFile(filepath.Join(dir, "kode.json"), []byte(`{
+	if err := os.WriteFile(filepath.Join(dir, "odek.json"), []byte(`{
 		"model": "project-model",
 		"max_iterations": 50
 	}`), 0644); err != nil {
@@ -285,8 +285,8 @@ func TestLoadConfig_EnvOverridesProjectFile(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(cwd)
 
-	// Create ./kode.json
-	if err := os.WriteFile(filepath.Join(dir, "kode.json"), []byte(`{
+	// Create ./odek.json
+	if err := os.WriteFile(filepath.Join(dir, "odek.json"), []byte(`{
 		"model": "project-model",
 		"max_iterations": 50
 	}`), 0644); err != nil {
@@ -294,8 +294,8 @@ func TestLoadConfig_EnvOverridesProjectFile(t *testing.T) {
 	}
 
 	// Set env vars
-	os.Setenv("KODE_MODEL", "env-model")
-	defer os.Unsetenv("KODE_MODEL")
+	os.Setenv("ODEK_MODEL", "env-model")
+	defer os.Unsetenv("ODEK_MODEL")
 
 	cfg := LoadConfig(CLIFlags{})
 	if cfg.Model != "env-model" {
@@ -312,8 +312,8 @@ func TestLoadConfig_CLIOverridesProjectFile(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(cwd)
 
-	// Create ./kode.json
-	if err := os.WriteFile(filepath.Join(dir, "kode.json"), []byte(`{
+	// Create ./odek.json
+	if err := os.WriteFile(filepath.Join(dir, "odek.json"), []byte(`{
 		"model": "project-model",
 		"max_iterations": 50
 	}`), 0644); err != nil {
@@ -339,16 +339,16 @@ func TestLoadConfig_VarExpansion(t *testing.T) {
 	os.Setenv("HOME", dir)
 	defer os.Setenv("HOME", prevHome)
 
-	os.Setenv("KODE_MODEL_VAR", "expanded-model")
-	os.Setenv("KODE_API_KEY_VAR", "sk-expanded")
-	defer os.Unsetenv("KODE_MODEL_VAR")
-	defer os.Unsetenv("KODE_API_KEY_VAR")
+	os.Setenv("ODEK_MODEL_VAR", "expanded-model")
+	os.Setenv("ODEK_API_KEY_VAR", "sk-expanded")
+	defer os.Unsetenv("ODEK_MODEL_VAR")
+	defer os.Unsetenv("ODEK_API_KEY_VAR")
 
-	globalDir := filepath.Join(dir, "kode")
+	globalDir := filepath.Join(dir, ".odek")
 	os.MkdirAll(globalDir, 0755)
 	if err := os.WriteFile(filepath.Join(globalDir, "config.json"), []byte(`{
-		"model": "${KODE_MODEL_VAR}",
-		"api_key": "${KODE_API_KEY_VAR}"
+		"model": "${ODEK_MODEL_VAR}",
+		"api_key": "${ODEK_API_KEY_VAR}"
 	}`), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +382,7 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 	os.Setenv("HOME", dir)
 	defer os.Setenv("HOME", prevHome)
 
-	globalDir := filepath.Join(dir, "kode")
+	globalDir := filepath.Join(dir, ".odek")
 	os.MkdirAll(globalDir, 0755)
 	// Write invalid JSON
 	if err := os.WriteFile(filepath.Join(globalDir, "config.json"), []byte(`{invalid json}`), 0644); err != nil {
@@ -416,7 +416,7 @@ func TestProjectConfigPath(t *testing.T) {
 }
 
 func TestLoadConfig_SkillsLearnEnvDoesNotClobberSkillsConfig(t *testing.T) {
-	// Regression: KODE_SKILLS_LEARN env var should merge Learn into
+	// Regression: ODEK_SKILLS_LEARN env var should merge Learn into
 	// existing skills config from files, not replace the entire struct.
 	dir := t.TempDir()
 
@@ -429,7 +429,7 @@ func TestLoadConfig_SkillsLearnEnvDoesNotClobberSkillsConfig(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(cwd)
 
-	if err := os.WriteFile(filepath.Join(dir, "kode.json"), []byte(`{
+	if err := os.WriteFile(filepath.Join(dir, "odek.json"), []byte(`{
 		"skills": {
 			"max_auto_load": 5,
 			"max_lazy_slots": 10,
@@ -448,9 +448,9 @@ func TestLoadConfig_SkillsLearnEnvDoesNotClobberSkillsConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Set KODE_SKILLS_LEARN — should NOT clobber other skills fields
-	os.Setenv("KODE_SKILLS_LEARN", "true")
-	defer os.Unsetenv("KODE_SKILLS_LEARN")
+	// Set ODEK_SKILLS_LEARN — should NOT clobber other skills fields
+	os.Setenv("ODEK_SKILLS_LEARN", "true")
+	defer os.Unsetenv("ODEK_SKILLS_LEARN")
 
 	cfg := LoadConfig(CLIFlags{})
 	if !cfg.Skills.Learn {
@@ -481,7 +481,7 @@ func TestLoadConfig_SkillsLearnCLIDoesNotClobberSkillsConfig(t *testing.T) {
 	os.Chdir(dir)
 	defer os.Chdir(cwd)
 
-	if err := os.WriteFile(filepath.Join(dir, "kode.json"), []byte(`{
+	if err := os.WriteFile(filepath.Join(dir, "odek.json"), []byte(`{
 		"skills": {
 			"max_auto_load": 7,
 			"curation": {"staleness_days": 30}

@@ -187,12 +187,12 @@ func keys(m map[int]bool) []int {
 
 // dirPriority returns a sort key for skill directories (lower = higher priority).
 func dirPriority(dir string) int {
-	// Project dir: ./.kode/skills or starts with a non-home path ending in /.kode/skills
-	if dir == ".kode/skills" || strings.HasPrefix(dir, "./") && strings.Contains(dir, ".kode/skills") {
+	// Project dir: ./.odek/skills or starts with a non-home path ending in /.odek/skills
+	if dir == ".odek/skills" || strings.HasPrefix(dir, "./") && strings.Contains(dir, ".odek/skills") {
 		return 0
 	}
-	// User dir: ~/.kode/skills or /home/*/.kode/skills or any path with /.kode/skills
-	if strings.Contains(dir, ".kode/skills") {
+	// User dir: ~/.odek/skills or /home/*/.odek/skills or any path with /.odek/skills
+	if strings.Contains(dir, ".odek/skills") {
 		return 1
 	}
 	return 2

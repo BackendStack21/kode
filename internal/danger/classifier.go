@@ -101,7 +101,7 @@ func ClassifyURL(rawURL string) RiskClass {
 // ── Config ─────────────────────────────────────────────────────────────
 
 // DangerousConfig defines how dangerous operations are handled.
-// Configurable via the standard 4-layer kode config chain.
+// Configurable via the standard 4-layer odek config chain.
 //
 // Default behavior per class (no sandbox):
 //
@@ -133,7 +133,7 @@ type DangerousConfig struct {
 
 	// Approver handles interactive approval prompts for dangerous operations.
 	// When set, all Prompt-class operations use this instead of /dev/tty.
-	// Tools can inject their own approver (e.g., WebSocket-based for kode serve).
+	// Tools can inject their own approver (e.g., WebSocket-based for odek serve).
 	// When nil, CheckOperation falls back to /dev/tty (CLI-compatible default).
 	Approver Approver `json:"-"`
 }

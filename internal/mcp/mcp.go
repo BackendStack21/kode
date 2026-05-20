@@ -2,12 +2,12 @@
 //
 // MCP (https://modelcontextprotocol.io) is a standard protocol that allows
 // AI agents (Claude Code, Cursor, etc.) to discover and invoke tools.
-// This package implements an MCP server that exposes kode's built-in tools
+// This package implements an MCP server that exposes odek's built-in tools
 // via the stdio transport — the protocol Claude Code uses natively.
 //
 // Architecture:
 //
-//	MCP Client (Claude Code)          kode mcp (this package)
+//	MCP Client (Claude Code)          odek mcp (this package)
 //	┌─────────────────────┐           ┌──────────────────────┐
 //	│  tools/list ──────────────►   │  Responds with       │
 //	│                     │           │  tool schemas         │
@@ -127,7 +127,7 @@ type ContentItem struct {
 
 // ── Tool Adapter ───────────────────────────────────────────────────────
 
-// NativeTool wraps a kode Tool interface for MCP exposure.
+// NativeTool wraps a odek Tool interface for MCP exposure.
 type NativeTool struct {
 	Name        string
 	Description string
@@ -240,7 +240,7 @@ func (s *Server) handleInitialize(params json.RawMessage) any {
 			Name    string `json:"name"`
 			Version string `json:"version"`
 		}{
-			Name:    "kode",
+			Name:    "odek",
 			Version: s.version,
 		},
 	}
@@ -340,7 +340,7 @@ type ToolCaller interface {
 	Call(args string) (string, error)
 }
 
-// BuildNativeTools wraps a slice of kode.Tool-compatible values as
+// BuildNativeTools wraps a slice of odek.Tool-compatible values as
 // MCP NativeTool entries for the server. Skips tools that don't make
 // sense in MCP context (delegate_tasks, memory).
 func BuildNativeTools(callers []ToolCaller) []NativeTool {

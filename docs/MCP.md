@@ -94,7 +94,7 @@ during `odek run`, `odek repl`, `odek serve`, and `odek mcp`.
 
 ### Configuration
 
-Add `mcp_servers` to `odek.json` (project-level) or `~/kode/config.json` (global):
+Add `mcp_servers` to `odek.json` (project-level) or `~/.odek/config.json` (global):
 
 ```json
 {

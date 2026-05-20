@@ -12,8 +12,8 @@ func TestParseSkillContent_Basic(t *testing.T) {
 name: docker-build
 description: Build and optimize Docker images
 version: 1.0.0
-author: kode
-kode:
+author: odek
+odek:
   trigger:
     topic: docker container build
     action: build optimize
@@ -83,7 +83,7 @@ name: empty
 func TestParseSkillContent_AutoLoad(t *testing.T) {
 	content := `---
 name: auto-load-test
-kode:
+odek:
   auto_load: true
   quality: manual
 ---
@@ -123,7 +123,7 @@ func TestWriteAndParseSkill(t *testing.T) {
 		Name:        "test-skill",
 		Description: "A test skill",
 		Version:     "1.0.0",
-		Author:      "kode",
+		Author:      "odek",
 		AutoLoad:    true,
 		Quality:     QualityDraft,
 		Trigger: SkillTrigger{

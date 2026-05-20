@@ -13,17 +13,17 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────
-// E2E Tests: kode subagent (real subprocess)
+// E2E Tests: odek subagent (real subprocess)
 // ─────────────────────────────────────────────────────────────────────
 //
-// These tests BUILD the kode binary once (via TestMain) and then test
+// These tests BUILD the odek binary once (via TestMain) and then test
 // real subprocess spawning through the delegate_tasks tool. Unlike
 // contract tests which can run with a nonexistent binary, E2E tests
 // verify the full pipeline:
 //
-//   tool.Call() → exec.Command("kode", "subagent", ...) → JSON stdout → parse
+//   tool.Call() → exec.Command("odek", "subagent", ...) → JSON stdout → parse
 //
-// All tests are gated by KODE_E2E=true — they don't run in normal test
+// All tests are gated by ODEK_E2E=true — they don't run in normal test
 // suites because they need a compiled binary.
 //
 // No LLM provider needed: every subagent fails on setup (no API key),
@@ -38,26 +38,26 @@ var e2eBinary string // path to the once-built binary (stable, not per-test)
 var e2eBinDir string
 
 func TestMain(m *testing.M) {
-	if os.Getenv("KODE_E2E") == "" {
+	if os.Getenv("ODEK_E2E") == "" {
 		// Not running E2E — skip build, run nothing
 		os.Exit(m.Run())
 	}
 
 	// Build the binary once into a stable directory
-	dir, err := os.MkdirTemp("", "kode-e2e-*")
+	dir, err := os.MkdirTemp("", "odek-e2e-*")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "e2e: create temp dir: %v\n", err)
 		os.Exit(1)
 	}
 	e2eBinDir = dir
-	e2eBinary = filepath.Join(dir, "kode")
+	e2eBinary = filepath.Join(dir, ".odek")
 
 	cmd := exec.Command("go", "build",
 		"-ldflags", "-X main.version=v0.0.0-e2e",
 		"-o", e2eBinary,
-			"/root/projects/kode/cmd/odek/",
+			"/root/projects/odek/cmd/odek/",
 	)
-	cmd.Dir = "/root/projects/kode"
+	cmd.Dir = "/root/projects/odek"
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
@@ -79,11 +79,11 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// skipIfNoE2ESkip skips the test if KODE_E2E is not set.
+// skipIfNoE2ESkip skips the test if ODEK_E2E is not set.
 func skipIfNoE2E(t *testing.T) {
 	t.Helper()
-	if os.Getenv("KODE_E2E") == "" {
-		t.Skip("KODE_E2E not set — skipping E2E test")
+	if os.Getenv("ODEK_E2E") == "" {
+		t.Skip("ODEK_E2E not set — skipping E2E test")
 	}
 }
 
@@ -94,7 +94,7 @@ func skipIfNoE2E(t *testing.T) {
 func TestE2E_BinaryExists(t *testing.T) {
 	skipIfNoE2E(t)
 
-	// Run `kode` with no args — should print usage to stderr
+	// Run `odek` with no args — should print usage to stderr
 	cmd := exec.Command(e2eBinary)
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -111,7 +111,7 @@ func TestE2E_BinaryExists(t *testing.T) {
 	}
 }
 
-// TestE2E_SubagentRealProcess verifies that kode subagent runs as a
+// TestE2E_SubagentRealProcess verifies that odek subagent runs as a
 // real subprocess and produces valid JSON on stdout when it fails on
 // setup (no LLM provider).
 func TestE2E_SubagentRealProcess(t *testing.T) {
@@ -176,7 +176,7 @@ func TestE2E_StdErrEmoji(t *testing.T) {
 }
 
 // TestE2E_QuietSuppressesStderr verifies that --quiet suppresses
-// emoji progress on stderr. The error message "kode:" from the binary
+// emoji progress on stderr. The error message "odek:" from the binary
 // itself may still appear, but emoji indicators should not.
 func TestE2E_QuietSuppressesStderr(t *testing.T) {
 	skipIfNoE2E(t)
@@ -209,7 +209,7 @@ func runE2EDelegateTasks(t *testing.T, goals []string, timeout time.Duration) st
 
 	tool := &delegateTasksTool{
 		maxConcurrency: 2,
-		kodePath:       e2eBinary,
+		odekPath:       e2eBinary,
 		timeout:        timeout,
 	}
 
@@ -227,7 +227,7 @@ func runE2EDelegateTasks(t *testing.T, goals []string, timeout time.Duration) st
 }
 
 // TestE2E_ToolSpawnsRealSubprocess verifies that delegate_tasks tool
-// spawns real kode subprocesses and captures their JSON output.
+// spawns real odek subprocesses and captures their JSON output.
 func TestE2E_ToolSpawnsRealSubprocess(t *testing.T) {
 	skipIfNoE2E(t)
 
@@ -277,7 +277,7 @@ func TestE2E_ToolTimeout(t *testing.T) {
 
 	tool := &delegateTasksTool{
 		maxConcurrency: 1,
-		kodePath:       e2eBinary,
+		odekPath:       e2eBinary,
 		timeout:        10 * time.Millisecond, // impossibly short
 	}
 
@@ -303,7 +303,7 @@ func TestE2E_ToolConcurrencyLimit(t *testing.T) {
 
 	tool := &delegateTasksTool{
 		maxConcurrency: 2,
-		kodePath:       e2eBinary,
+		odekPath:       e2eBinary,
 		timeout:        30 * time.Second,
 	}
 
@@ -363,7 +363,7 @@ func TestE2E_TaskFileViaTool(t *testing.T) {
 	longGoal := strings.Repeat("a", 100000)
 	tool := &delegateTasksTool{
 		maxConcurrency: 1,
-		kodePath:       e2eBinary,
+		odekPath:       e2eBinary,
 		timeout:        30 * time.Second,
 	}
 
@@ -381,13 +381,13 @@ func TestE2E_TaskFileViaTool(t *testing.T) {
 }
 
 // TestE2E_BinaryNotExecutable verifies graceful degradation when the
-// kode binary isn't found or isn't executable.
+// odek binary isn't found or isn't executable.
 func TestE2E_BinaryNotExecutable(t *testing.T) {
 	skipIfNoE2E(t)
 
 	tool := &delegateTasksTool{
 		maxConcurrency: 1,
-		kodePath:       "/nonexistent/kode-binary-xyz",
+		odekPath:       "/nonexistent/odek-binary-xyz",
 		timeout:        5 * time.Second,
 	}
 
@@ -425,7 +425,7 @@ func TestE2E_CustomSystemPrompt(t *testing.T) {
 
 	tool := &delegateTasksTool{
 		maxConcurrency: 1,
-		kodePath:       e2eBinary,
+		odekPath:       e2eBinary,
 		timeout:        30 * time.Second,
 	}
 
@@ -450,7 +450,7 @@ func TestE2E_CustomSystemPromptWithEmpty(t *testing.T) {
 
 	tool := &delegateTasksTool{
 		maxConcurrency: 1,
-		kodePath:       e2eBinary,
+		odekPath:       e2eBinary,
 		timeout:        30 * time.Second,
 	}
 
@@ -472,7 +472,7 @@ func TestE2E_MixedSystemPrompts(t *testing.T) {
 
 	tool := &delegateTasksTool{
 		maxConcurrency: 2,
-		kodePath:       e2eBinary,
+		odekPath:       e2eBinary,
 		timeout:        30 * time.Second,
 	}
 

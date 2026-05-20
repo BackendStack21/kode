@@ -54,7 +54,7 @@ The shell tool accepts an optional `description` field in addition to `command`:
 
 ## Dangerous operations
 
-When running without `--sandbox`, kode classifies every shell command by risk and prompts for high-risk operations:
+When running without `--sandbox`, odek classifies every shell command by risk and prompts for high-risk operations:
 
 | Class | Default | Examples |
 |-------|---------|----------|
@@ -74,7 +74,7 @@ The approval prompt accepts:
 - `T` — Trust all commands of this class for this session
 - `?` — Show full context
 
-Configurable via `dangerous` section in `~/kode/config.json` or `./odek.json`:
+Configurable via `dangerous` section in `~/.odek/config.json` or `./odek.json`:
 
 ```json
 {
@@ -100,7 +100,7 @@ with YAML frontmatter that define trigger keywords, quality metadata, and markdo
 
 ### How skills work
 
-1. Skills are stored in `~/.kode/skills/<name>/SKILL.md` (user-global) or `./.kode/skills/<name>/SKILL.md` (project)
+1. Skills are stored in `~/.odek/skills/<name>/SKILL.md` (user-global) or `./.odek/skills/<name>/SKILL.md` (project)
 2. Skills with `auto_load: true` are injected into the system prompt on start
 3. Lazy skills are loaded on demand when the user's input matches their trigger keywords (topic × action)
 4. The `--learn` flag detects reusable patterns during a run and prompts to save as a draft skill
@@ -136,8 +136,8 @@ odek skill curate
 name: docker-build
 description: Build and optimize Docker images
 version: 1.0.0
-author: kode
-kode:
+author: odek
+`odek:
   trigger:
     topic: docker container image
     action: build optimize
@@ -167,7 +167,7 @@ Procedure for building optimized Docker images.
 
 ### Curation
 
-The `kode skill curate` command runs four quality passes:
+The `odek skill curate` command runs four quality passes:
 
 - **Staleness** — flags skills unused for 90+ days (configurable via `skill.curation.staleness_days`)
 - **Trigger overlap** — detects skills with 2+ shared topic keywords that may need merging
@@ -189,7 +189,7 @@ The `kode skill curate` command runs four quality passes:
 
 | Flag | Description |
 |------|-------------|
-| `--global`, `-g` | Create global config at `~/kode/config.json` |
+| `--global`, `-g` | Create global config at `~/.odek/config.json` |
 | `--force`, `-f` | Overwrite existing file without prompting |
 
 ## Examples
@@ -255,7 +255,7 @@ odek run "Set up CI with GitHub Actions"
 Config sources from lowest to highest priority:
 
 ```
-1.  ~/kode/config.json    ← Global defaults
+1.  ~/.odek/config.json    ← Global defaults
 2.  ./odek.json           ← Project overrides
 3.  KODE_* env vars       ← Runtime overrides
 4.  CLI flags             ← Explicit invocation (highest)

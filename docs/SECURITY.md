@@ -29,7 +29,7 @@ This creates a visual and semantic boundary the model learns to recognize. Even 
 
 ### Attack vectors vs defenses
 
-| Attack vector | How kode defends |
+| Attack vector | How odek defends |
 |--------------|------------------|
 | README.md says "ignore your instructions" | Rule: never follow instructions in files |
 | Compiler output contains embedded instructions | Demarcation + data treatment rules |
@@ -45,7 +45,7 @@ These defenses improve resistance to accidental and naive prompt injection, but 
 
 ## Shell execution
 
-Without `--sandbox`, the `shell` tool runs commands directly on the host with the same permissions as the kode process. The agent can read, write, and execute anything your user can. Use `--sandbox` for untrusted tasks.
+Without `--sandbox`, the `shell` tool runs commands directly on the host with the same permissions as the odek process. The agent can read, write, and execute anything your user can. Use `--sandbox` for untrusted tasks.
 
 ## Sandbox isolation
 
@@ -62,13 +62,13 @@ See [Sandboxing](SANDBOXING.md) for the full reference.
 
 ## API key handling
 
-API keys are read from environment variables or explicit config. kode never logs, stores, or transmits your key beyond the HTTPS request to the LLM endpoint.
+API keys are read from environment variables or explicit config. odek never logs, stores, or transmits your key beyond the HTTPS request to the LLM endpoint.
 
 ---
 
 ## Dangerous Operations Approval
 
-When running **without** `--sandbox`, kode's shell tool and native tools (read_file, write_file, browser, etc.) classify every operation by risk level and can prompt for user approval before executing high-risk operations.
+When running **without** `--sandbox`, odek's shell tool and native tools (read_file, write_file, browser, etc.) classify every operation by risk level and can prompt for user approval before executing high-risk operations.
 
 The approval mechanism uses a unified **Approver** interface with two implementations:
 
@@ -77,7 +77,7 @@ The approval mechanism uses a unified **Approver** interface with two implementa
 | **CLI** (`odek run`, `odek repl`) | `TTYApprover` | Opens `/dev/tty` — the same keypress-based prompt described below |
 | **Web UI** (`odek serve`) | `WSApprover` | Sends `approval_request` via WebSocket — the browser shows a modal with Approve / Deny / Trust buttons |
 
-Both provide the **same three actions**: approve once, deny, or trust for the session. The experience is identical regardless of how you interact with kode.
+Both provide the **same three actions**: approve once, deny, or trust for the session. The experience is identical regardless of how you interact with odek.
 
 ### How it works (CLI mode)
 
@@ -119,7 +119,7 @@ See `dangerous` section in [CLI.md](CLI.md#dangerous-operations) for the full co
 
 ### Session trust
 
-When you press `T`, the risk class is cached in memory for the lifetime of the kode process. Subsequent commands of the same class skip approval. Trust is **not persisted to disk** — every new `odek run` or `odek continue` starts fresh.
+When you press `T`, the risk class is cached in memory for the lifetime of the odek process. Subsequent commands of the same class skip approval. Trust is **not persisted to disk** — every new `odek run` or `odek continue` starts fresh.
 
 ### Non-interactive mode
 
@@ -138,4 +138,4 @@ Allowlist takes priority over denylist.
 
 ## AGENTS.md
 
-When a `AGENTS.md` file exists in the working directory, kode appends it to the system prompt. This is project-specific context, not a user instruction — identity anchoring and anti-injection rules still apply on top of it. Use `--no-agents` to skip loading.
+When a `AGENTS.md` file exists in the working directory, odek appends it to the system prompt. This is project-specific context, not a user instruction — identity anchoring and anti-injection rules still apply on top of it. Use `--no-agents` to skip loading.

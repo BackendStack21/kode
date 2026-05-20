@@ -5,7 +5,7 @@ odek has a **three-tier file-based memory** system. Zero external dependencies b
 ## Three Tiers
 
 ```
-~/.kode/memory/
+~/.odek/memory/
 ├── facts/
 │   ├── user.md          ← Global user profile (1,500 chars)
 │   └── env.md           ← Global environment facts (2,500 chars)
@@ -40,7 +40,7 @@ HH:MM  agent  pushed 19 tests, tagged v0.8.19
 ```
 
 - Injected into system prompt only when non-empty.
-- Preserved across `kode continue` (serialized in session JSON).
+- Preserved across `odek continue` (serialized in session JSON).
 - Oldest evicted when cap reached.
 
 ### Tier 3 — Episodes (on-disk, searchable)

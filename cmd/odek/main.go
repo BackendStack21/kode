@@ -29,7 +29,7 @@ import (
 var version string
 
 // defaultSystem is the built-in system prompt for the agent. It defines
-// kode's identity, rules of operation, and anti-injection defenses.
+// odek's identity, rules of operation, and anti-injection defenses.
 //
 // The prompt is intentionally concise—the agent needs room to think and
 // act. It covers:
@@ -45,9 +45,9 @@ var version string
 //
 //   - Output discipline: be concise, escape tool output when quoting.
 //
-// Users can override this with --system, KODE_SYSTEM, or system field
+// Users can override this with --system, ODEK_SYSTEM, or system field
 // in config files. The default is used when no override is provided.
-const defaultSystem = `You are kode — an expert software engineer who ships. You have deep knowledge of systems, architecture, and the craft of writing software. You work fast, think clearly, and build things that last.
+const defaultSystem = `You are odek — an expert software engineer who ships. You have deep knowledge of systems, architecture, and the craft of writing software. You work fast, think clearly, and build things that last.
 
 Core principles:
 - Think first, then act. Show your reasoning — it builds trust.
@@ -68,9 +68,9 @@ Safety:
 
 // dockerfileName is the filename for project-specific Docker images.
 // When this file exists in the working directory and no explicit
-// sandbox_image is configured, kode builds a content-hash-cached
+// sandbox_image is configured, odek builds a content-hash-cached
 // Docker image from it. See buildFromDockerfile() and SANDBOXING.md.
-const dockerfileName = "Dockerfile.kode"
+const dockerfileName = "Dockerfile.odek"
 
 // forbiddenMountPrefixes lists host paths that sandbox volume mounts
 // may not target. Mounting /, /etc, /proc, /sys would give the sandbox
@@ -148,7 +148,7 @@ func main() {
 
 // ── CLI Parsing ───────────────────────────────────────────────────────
 
-// runFlags holds the parsed CLI flags for `kode run`.
+// runFlags holds the parsed CLI flags for `odek run`.
 // Zero/nil values mean the flag was not explicitly passed —
 // the config loader resolves the final value from files, env, CLI.
 //
@@ -179,7 +179,7 @@ type runFlags struct {
 	SandboxReadonly *bool  // nil = not set; true = read-only mount
 }
 
-// parseRunFlags parses `kode run` arguments and returns the parsed flags.
+// parseRunFlags parses `odek run` arguments and returns the parsed flags.
 // Exported for testing.
 func parseRunFlags(args []string) (runFlags, error) {
 	var f runFlags
@@ -257,7 +257,7 @@ done:
 
 // ── REPL Flag Parsing ──────────────────────────────────────────────────
 
-// replFlags holds the parsed CLI flags for `kode repl`.
+// replFlags holds the parsed CLI flags for `odek repl`.
 // Same resolution model as runFlags: zero/nil = not set,
 // config loader merges file → env → CLI.
 type replFlags struct {
@@ -275,7 +275,7 @@ type replFlags struct {
 	SandboxUser     string
 }
 
-// parseReplFlags parses `kode repl` arguments and returns the parsed flags.
+// parseReplFlags parses `odek repl` arguments and returns the parsed flags.
 // Exported for testing. Unlike parseRunFlags, there is no required task argument;
 // unrecognized flags or trailing args are silently ignored.
 func parseReplFlags(args []string) (replFlags, error) {
@@ -367,11 +367,11 @@ Commands:
   skill               Manage skills: list, view, save, delete, import, curate
   mcp                 Start MCP server (Model Context Protocol) over stdio
                         Exposes all built-in tools for Claude Code, Cursor, etc.
-  init                Create a config file (default: ./kode.json)
+  init                Create a config file (default: ./odek.json)
   version             Print version and exit
 
 Init flags:
-  --global, -g        Create global config at ~/kode/config.json
+  --global, -g        Create global config at ~/.odek/config.json
   --force, -f         Overwrite existing file without prompting
 
 Run flags:
@@ -408,27 +408,27 @@ Sandbox flags:
   --sandbox-user <s>   Run as user (uid:gid or name)
 
 Config sources (lowest to highest priority):
-  ~/kode/config.json   Global defaults (shared across projects)
-  ./kode.json          Project-level overrides
-  KODE_* env vars      Environment/runtime overrides
+  ~/.odek/config.json   Global defaults (shared across projects)
+  ./odek.json          Project-level overrides
+  ODEK_* env vars      Environment/runtime overrides
   CLI flags            Explicit invocation (highest priority)
 
 Environment variables:
-  KODE_MODEL           LLM model name
-  KODE_BASE_URL        API endpoint URL
-  KODE_API_KEY         API key (overrides DEEPSEEK_API_KEY/OPENAI_API_KEY)
-  KODE_THINKING        Reasoning depth setting
-  KODE_MAX_ITER        Max think->act cycles
-  KODE_SANDBOX         true/false — run in Docker sandbox
-  KODE_NO_COLOR        true/false — disable colors
-  KODE_NO_AGENTS       true/false — skip AGENTS.md
-  KODE_SYSTEM          System prompt override
-  KODE_SANDBOX_IMAGE   Docker image for sandbox container
-  KODE_SANDBOX_NETWORK Network mode (bridge | none | host)
-  KODE_SANDBOX_READONLY true/false — mount read-only
-  KODE_SANDBOX_MEMORY  Memory limit (e.g. 512m, 2g)
-  KODE_SANDBOX_CPUS    CPU limit (e.g. 0.5, 2)
-  KODE_SANDBOX_USER    Container user (uid:gid or name)`)
+  ODEK_MODEL           LLM model name
+  ODEK_BASE_URL        API endpoint URL
+  ODEK_API_KEY         API key (overrides DEEPSEEK_API_KEY/OPENAI_API_KEY)
+  ODEK_THINKING        Reasoning depth setting
+  ODEK_MAX_ITER        Max think->act cycles
+  ODEK_SANDBOX         true/false — run in Docker sandbox
+  ODEK_NO_COLOR        true/false — disable colors
+  ODEK_NO_AGENTS       true/false — skip AGENTS.md
+  ODEK_SYSTEM          System prompt override
+  ODEK_SANDBOX_IMAGE   Docker image for sandbox container
+  ODEK_SANDBOX_NETWORK Network mode (bridge | none | host)
+  ODEK_SANDBOX_READONLY true/false — mount read-only
+  ODEK_SANDBOX_MEMORY  Memory limit (e.g. 512m, 2g)
+  ODEK_SANDBOX_CPUS    CPU limit (e.g. 0.5, 2)
+  ODEK_SANDBOX_USER    Container user (uid:gid or name)`)
 }
 
 // ── Init ──────────────────────────────────────────────────────────────
@@ -488,7 +488,7 @@ const defaultConfigTemplate = `{
   }
 }`
 
-// initConfig creates a new config file (local ./kode.json or global ~/kode/config.json).
+// initConfig creates a new config file (local ./odek.json or global ~/.odek/config.json).
 //
 // The file is populated with the defaultConfigTemplate showing every
 // available field with sensible defaults. ${VAR} substitution works
@@ -564,7 +564,7 @@ func initConfig(args []string) error {
 	fmt.Println("    sandbox_volumes Extra volume mounts (array)")
 	fmt.Println()
 	fmt.Println("  See docs/SANDBOXING.md for full sandbox documentation.")
-	fmt.Println("  Priority: config file < KODE_* env < CLI flags")
+	fmt.Println("  Priority: config file < ODEK_* env < CLI flags")
 	return nil
 }
 
@@ -576,7 +576,7 @@ func initConfig(args []string) error {
 //
 // See SANDBOXING.md for a full reference on each field.
 type sandboxConfig struct {
-	Image    string            // Docker image (e.g. "node:20-alpine", or built from Dockerfile.kode)
+	Image    string            // Docker image (e.g. "node:20-alpine", or built from Dockerfile.odek)
 	Network  string            // Docker network mode: "bridge" | "none" | "host"
 	Readonly bool              // Mount working directory read-only
 	Memory   string            // Memory limit (e.g. "512m", "2g"; empty = no limit)
@@ -590,7 +590,7 @@ type sandboxConfig struct {
 // container. Resolution order:
 //
 //  1. Explicitly configured sandbox_image → use the configured image directly
-//  2. Dockerfile.kode exists in working directory → build a cached image from it
+//  2. Dockerfile.odek exists in working directory → build a cached image from it
 //  3. Neither → "alpine:latest" (minimal default)
 //
 // This function is called by setupSandbox() before starting the container.
@@ -600,7 +600,7 @@ func resolveSandboxImage(cfg sandboxConfig) (string, error) {
 		return cfg.Image, nil
 	}
 
-	// Check for Dockerfile.kode in the working directory
+	// Check for Dockerfile.odek in the working directory
 	if _, err := os.Stat(dockerfileName); err == nil {
 		return buildFromDockerfile()
 	}
@@ -608,15 +608,15 @@ func resolveSandboxImage(cfg sandboxConfig) (string, error) {
 	return "alpine:latest", nil
 }
 
-// buildFromDockerfile builds a Docker image from Dockerfile.kode and
+// buildFromDockerfile builds a Docker image from Dockerfile.odek and
 // returns the image tag.
 //
-// The image is tagged with "kode-sandbox:<sha256[:12]>" where the hash
+// The image is tagged with "odek-sandbox:<sha256[:12]>" where the hash
 // is derived from the file content. This enables caching: the image is
-// only rebuilt when Dockerfile.kode changes. On subsequent runs with the
+// only rebuilt when Dockerfile.odek changes. On subsequent runs with the
 // same file content, the cached image is used instantly.
 //
-// The build context is the current working directory (where Dockerfile.kode
+// The build context is the current working directory (where Dockerfile.odek
 // lives). This means COPY instructions in the Dockerfile can reference
 // files in the project. stderr is piped to the user's terminal so build
 // output is visible during the (rare) first build.
@@ -627,7 +627,7 @@ func buildFromDockerfile() (string, error) {
 	}
 
 	hash := sha256.Sum256(data)
-	tag := "kode-sandbox:" + hex.EncodeToString(hash[:12])
+	tag := "odek-sandbox:" + hex.EncodeToString(hash[:12])
 
 	// Only build if not already cached
 	if _, err := exec.Command("docker", "image", "inspect", tag).CombinedOutput(); err != nil {
@@ -646,17 +646,17 @@ func buildFromDockerfile() (string, error) {
 
 // ── Run ───────────────────────────────────────────────────────────────
 
-// run executes the `kode run` command and returns an error on failure.
+// run executes the `odek run` command and returns an error on failure.
 // It is the main entry point for the CLI. The flow is:
 //
 //  1. Parse CLI flags into runFlags (raw, unmerged values)
 //  2. Load config from all sources via config.LoadConfig() — this merges
-//     global file → project file → KODE_* env → CLI flags in priority order
+//     global file → project file → ODEK_* env → CLI flags in priority order
 //  3. Resolve the system message (CLI/config override → built-in default)
 //  4. Build sandbox config from resolved settings
 //  5. If sandbox is enabled, call setupSandbox() to create the Docker container
 //  6. Create the terminal renderer with resolved model, color settings
-//  7. Create the kode Agent with all resolved config
+//  7. Create the odek Agent with all resolved config
 //  8. Run the agent loop with the user's task
 //
 // The caller is responsible for printing the error and calling os.Exit.
@@ -709,8 +709,8 @@ func run(args []string) error {
 	var sm *skills.SkillManager
 	if resolved.Skills.Learn {
 		sm = skills.NewSkillManager(
-			expandHome("~/.kode/skills"),
-			"./.kode/skills",
+			expandHome("~/.odek/skills"),
+			"./.odek/skills",
 		)
 	}
 
@@ -738,7 +738,7 @@ func run(args []string) error {
 	}
 
 	// Create terminal renderer for colored step-by-step output.
-	modelLabel := kode.ProfileLabel(resolved.Model)
+	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {
 		modelLabel = "deepseek-chat"
 	}
@@ -751,7 +751,7 @@ func run(args []string) error {
 		skillsCfg = &resolved.Skills
 	}
 
-	agent, err := kode.New(kode.Config{
+	agent, err := odek.New(odek.Config{
 		Model:          resolved.Model,
 		BaseURL:        resolved.BaseURL,
 		APIKey:         resolved.APIKey,
@@ -871,7 +871,7 @@ func run(args []string) error {
 //
 // Container lifecycle:
 //  1. Resolve the Docker image via resolveSandboxImage() — checks for
-//     explicit config, Dockerfile.kode, or uses alpine:latest
+//     explicit config, Dockerfile.odek, or uses alpine:latest
 //  2. Build "docker run" arguments from the sandboxConfig: image, network
 //     mode, volume mounts, resource limits, user, env vars
 //  3. Create the container with --rm --detach (auto-destroy on exit, background)
@@ -879,7 +879,7 @@ func run(args []string) error {
 //     into this container by setting shellTool.containerName
 //
 // The container runs "sleep infinity" so it stays alive while the agent
-// loop executes. kode communicates with it exclusively through docker exec
+// loop executes. odek communicates with it exclusively through docker exec
 // via the shell tool.
 //
 // The returned cleanup function destroys the container when the agent
@@ -890,14 +890,14 @@ func run(args []string) error {
 //   - --security-opt no-new-privileges: setuid binaries can't escalate
 //   - --tmpfs /tmp:noexec: no executable files in temp
 //   - --rm: container destroyed on agent exit
-func setupSandbox(tools []kode.Tool, cfg sandboxConfig) (func() error, error) {
-	// Resolve the Docker image (explicit, Dockerfile.kode, or default)
+func setupSandbox(tools []odek.Tool, cfg sandboxConfig) (func() error, error) {
+	// Resolve the Docker image (explicit, Dockerfile.odek, or default)
 	image, err := resolveSandboxImage(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	containerName := fmt.Sprintf("kode-%d", os.Getpid())
+	containerName := fmt.Sprintf("odek-%d", os.Getpid())
 	fmt.Fprintf(os.Stderr, "odek: starting sandbox container %s (image: %s)...\n", containerName, image)
 
 	wd, err := os.Getwd()
@@ -991,15 +991,15 @@ func buildSandboxArgs(cfg sandboxConfig, containerName, workdir, image string) [
 	return args
 }
 
-func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver danger.Approver) []kode.Tool {
-	tools := []kode.Tool{
+func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver danger.Approver) []odek.Tool {
+	tools := []odek.Tool{
 		&shellTool{
 			dangerousConfig: dc,
 			approver:        approver,
 		},
 		&delegateTasksTool{
 			maxConcurrency: 3,
-			kodePath:       os.Args[0],
+			odekPath:       os.Args[0],
 			timeout:        120 * time.Second,
 		},
 		&readFileTool{dangerousConfig: dc},
@@ -1025,7 +1025,7 @@ func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver d
 // loadMCPTools connects to configured MCP servers and appends their tools
 // to the tool slice. Returns a cleanup function that closes all connections.
 // The passed-in tool slice pointer is extended with ToolAdapters.
-func loadMCPTools(servers map[string]mcpclient.ServerConfig, tools *[]kode.Tool) (func(), error) {
+func loadMCPTools(servers map[string]mcpclient.ServerConfig, tools *[]odek.Tool) (func(), error) {
 	var cleaners []func()
 	for name, cfg := range servers {
 		client, err := mcpclient.New(name, cfg)
@@ -1155,7 +1155,7 @@ func runLearnLoop(messages []llm.Message, task string, sm *skills.SkillManager, 
 		response = strings.ToLower(strings.TrimSpace(response))
 
 		if response == "" || response == "y" || response == "yes" {
-			userDir := expandHome("~/.kode/skills")
+			userDir := expandHome("~/.odek/skills")
 			os.MkdirAll(userDir, 0755)
 			if err := skills.SaveSuggestion(userDir, s); err != nil {
 				fmt.Fprintf(os.Stderr, "   ✗ Error saving skill: %v\n", err)
@@ -1181,14 +1181,14 @@ func extractUserMessages(messages []llm.Message) []string {
 	return out
 }
 
-// skillCmd handles `kode skill <list|view|save|delete|import|curate>`.
+// skillCmd handles `odek skill <list|view|save|delete|import|curate>`.
 func skillCmd(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: odek skill <list|view|save|delete|import|curate> [args]\n")
 		return nil
 	}
 
-	userDir := expandHome("~/.kode/skills")
+	userDir := expandHome("~/.odek/skills")
 	os.MkdirAll(userDir, 0755)
 
 	// The first argument is the subcommand
@@ -1197,7 +1197,7 @@ func skillCmd(args []string) error {
 
 	switch sub {
 	case "list":
-		sm := skills.NewSkillManager(userDir, "./.kode/skills")
+		sm := skills.NewSkillManager(userDir, "./.odek/skills")
 		tool := &skills.SkillListTool{}
 		tool.Manager = sm
 		result, err := tool.Call("{}")
@@ -1211,7 +1211,7 @@ func skillCmd(args []string) error {
 		if len(subArgs) == 0 {
 			return fmt.Errorf("usage: odek skill view <name>")
 		}
-		sm := skills.NewSkillManager(userDir, "./.kode/skills")
+		sm := skills.NewSkillManager(userDir, "./.odek/skills")
 		tool := &skills.SkillLoadTool{}
 		tool.Manager = sm
 		result, err := tool.Call(jsonMarshalName(subArgs[0]))
@@ -1225,7 +1225,7 @@ func skillCmd(args []string) error {
 		if len(subArgs) == 0 {
 			return fmt.Errorf("usage: odek skill delete <name>")
 		}
-		sm := skills.NewSkillManager(userDir, "./.kode/skills")
+		sm := skills.NewSkillManager(userDir, "./.odek/skills")
 		tool := &skills.SkillDeleteTool{}
 		tool.Manager = sm
 		result, err := tool.Call(jsonMarshalName(subArgs[0]))
@@ -1320,7 +1320,7 @@ func skillCmd(args []string) error {
 		return nil
 
 	case "curate":
-		sm := skills.NewSkillManager(userDir, "./.kode/skills")
+		sm := skills.NewSkillManager(userDir, "./.odek/skills")
 		allSkills := append(sm.Result.AutoLoad, sm.Result.Lazy...)
 		report := skills.CurateSkills(allSkills, skills.CurateOptions{
 			StalenessDays: 90,
@@ -1347,7 +1347,7 @@ func expandHome(path string) string {
 
 // ── Continue (Multi-Turn) ─────────────────────────────────────────────
 
-// continueCmd handles `kode continue [--id <id>] <task>`.
+// continueCmd handles `odek continue [--id <id>] <task>`.
 // It loads an existing session (latest or by ID), appends the new task,
 // runs the agent with full history, and saves the updated session.
 func continueCmd(args []string) error {
@@ -1393,8 +1393,8 @@ func continueCmd(args []string) error {
 	var sm *skills.SkillManager
 	if resolved.Skills.Learn {
 		sm = skills.NewSkillManager(
-			expandHome("~/.kode/skills"),
-			"./.kode/skills",
+			expandHome("~/.odek/skills"),
+			"./.odek/skills",
 		)
 	}
 	tools := builtinTools(resolved.Dangerous, sm, nil)
@@ -1436,7 +1436,7 @@ func continueCmd(args []string) error {
 	}
 
 	// Renderer
-	modelLabel := kode.ProfileLabel(resolved.Model)
+	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {
 		modelLabel = "deepseek-chat"
 	}
@@ -1449,7 +1449,7 @@ func continueCmd(args []string) error {
 		skillsCfg = &resolved.Skills
 	}
 
-	agent, err := kode.New(kode.Config{
+	agent, err := odek.New(odek.Config{
 		Model:          resolved.Model,
 		BaseURL:        resolved.BaseURL,
 		APIKey:         resolved.APIKey,
@@ -1532,7 +1532,7 @@ func continueCmd(args []string) error {
 
 // ── Session Management ────────────────────────────────────────────────
 
-// sessionCmd handles `kode session <list|show|delete> [args]`.
+// sessionCmd handles `odek session <list|show|delete> [args]`.
 func sessionCmd(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: odek session <list|show [id]|delete <id>>\n")
@@ -1640,7 +1640,7 @@ func deleteSession(store *session.Store, args []string) error {
 
 // trimSession keeps only the most recent n messages from a session,
 // always preserving the system prompt if present.
-// Usage: kode session trim <id> <n>
+// Usage: odek session trim <id> <n>
 func trimSession(store *session.Store, args []string) error {
 	if len(args) < 2 {
 		return fmt.Errorf("usage: odek session trim <id> <n>")
@@ -1697,7 +1697,7 @@ func trimSession(store *session.Store, args []string) error {
 }
 
 // cleanupSessions deletes all sessions older than the given number of days.
-// Usage: kode session cleanup <days>
+// Usage: odek session cleanup <days>
 func cleanupSessions(store *session.Store, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: odek session cleanup <days>")

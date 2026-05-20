@@ -35,7 +35,7 @@ odek run --learn "set up CI with GitHub Actions"
           │ user confirms (y/yes)
           ▼
    ┌──────────────────┐
-   │ SaveSuggestion   │  Writes SKILL.md to ~/.kode/skills/<name>/
+   │ SaveSuggestion   │  Writes SKILL.md to ~/.odek/skills/<name>/
    │ SkillManager     │  Reloads to pick up new skill immediately
    │   .Reload()      │
    └──────────────────┘
@@ -102,7 +102,7 @@ npm test                                         # step 4
 ```markdown
 ## procedure-git
 
-Multi-step procedure detected during a kode session.
+Multi-step procedure detected during a odek session.
 
 ### Commands
 1. git clone https://github.com/example/repo.git
@@ -206,8 +206,8 @@ Saved skills follow the standard SKILL.md format:
 name: procedure-docker
 description: Multi-step procedure: docker (4 steps)
 version: 1.0.0
-author: kode
-kode:
+author: odek
+`odek:
   trigger:
     topic: docker
     action: clone tag push
@@ -216,7 +216,7 @@ kode:
 ---
 ## procedure-docker
 
-Multi-step procedure detected during a kode session.
+Multi-step procedure detected during a odek session.
 
 ### Commands
 1. docker build -t app .
@@ -228,7 +228,7 @@ Multi-step procedure detected during a kode session.
 - **quality: draft** — always, since these are auto-detected (not curated)
 - **auto_load: false** — skills start as lazy (loaded when triggers match), not injected into every session
 - **trigger keywords** — derived automatically from the command log (topic = first meaningful word, action = extracted verbs)
-- **author: kode** — distinguishes auto-generated skills from manually authored ones
+- **author: odek** — distinguishes auto-generated skills from manually authored ones
 
 ## Examples
 

@@ -428,7 +428,7 @@ func TestCountUserTurns(t *testing.T) {
 	}
 }
 
-// newTestStore creates a Store with a temp directory (isolated from ~/.kode/).
+// newTestStore creates a Store with a temp directory (isolated from ~/.odek/).
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	origHome := os.Getenv("HOME")

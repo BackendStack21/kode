@@ -106,7 +106,7 @@ On failure:
 ```jsonc
 {
   "status": "error",
-  "error": "create agent: kode: no API key provided",
+  "error": "create agent: odek: no API key provided",
   "summary": "",
   "files_changed": [],
   "tokens_used": 0,
@@ -218,12 +218,12 @@ Every sub-agent receives a system prompt **tailored to its task** — not a one-
 | Priority | Source | When |
 |----------|--------|------|
 | 1 (highest) | `system` field in `delegate_tasks` | Parent explicitly provides a custom prompt |
-| 2 | `KODE_SYSTEM` / config file `system` | User-configured global override |
+| 2 | `ODEK_SYSTEM` / config file `system` | User-configured global override |
 | 3 | `buildSubagentPrompt()` dynamic generation | Go-level fallback — analyzes goal text and constructs a per-task prompt with the actual goal embedded |
 
 ### Parent-crafted prompts
 
-The parent agent (kode) is instructed to write system prompts for each sub-task. This is the recommended path — the parent understands the task domain and can set the right tone:
+The parent agent (odek) is instructed to write system prompts for each sub-task. This is the recommended path — the parent understands the task domain and can set the right tone:
 
 ```jsonc
 {
@@ -245,7 +245,7 @@ The parent agent (kode) is instructed to write system prompts for each sub-task.
 When no `system` field is provided, `buildSubagentPrompt()` constructs a prompt at runtime by analyzing the goal text. Every call produces a **unique prompt** because the actual goal is embedded:
 
 ```text
-You are kode — an expert debugger.
+You are odek — an expert debugger.
 Find the root cause before writing any fix.
 Isolate the bug, prove the fix, and verify edge cases.
 Goal: Fix OOM bug in parser.js.
@@ -270,7 +270,7 @@ The generator detects task type from keywords and builds the persona, methodolog
 The original `subagentSystem` constant (~120 tokens) is retained as the ultimate fallback:
 
 ```
-You are kode working on a single focused sub-task.
+You are odek working on a single focused sub-task.
 Complete the assigned goal and report what you did.
 Do not expand scope. Do not ask questions.
 Use the shell tool when you need information or to make changes.
@@ -328,13 +328,13 @@ The sub-agent system has three test layers:
 
 | Layer | Tests | Runner | What's verified |
 |-------|-------|--------|-----------------|
-| **Contract tests** | ~50 | `go test ./cmd/kode/` | Flag parsing, JSON stdout protocol, exit codes, tool schema, config parsing, buildSubagentPrompt dynamic generation (goal embedded, context, intent detection, uniqueness, max length) |
-| **E2E tests** | 16 | `KODE_E2E=true go test ./cmd/kode/ -run "TestE2E_"` | Real subprocess spawning, tool → binary pipeline, stderr protocol, concurrency, timeouts, custom system prompt threading |
+| **Contract tests** | ~50 | `go test ./cmd/odek/` | Flag parsing, JSON stdout protocol, exit codes, tool schema, config parsing, buildSubagentPrompt dynamic generation (goal embedded, context, intent detection, uniqueness, max length) |
+| **E2E tests** | 16 | `ODEK_E2E=true go test ./cmd/odek/ -run "TestE2E_"` | Real subprocess spawning, tool → binary pipeline, stderr protocol, concurrency, timeouts, custom system prompt threading |
 | **Full suite** | All | `go test -race ./...` | 12 packages, race-detector clean |
 
 E2E tests:
-- Build the `kode` binary once via `TestMain`
-- Test the full pipeline: `tool.Call()` → `exec.Command("kode", "subagent", ...)` → JSON stdout → parse
+- Build the `odek` binary once via `TestMain`
+- Test the full pipeline: `tool.Call()` → `exec.Command("odek", "subagent", ...)` → JSON stdout → parse
 - Require no LLM provider (sub-agent fails on setup, producing JSON error — which is the exact contract verified)
 - Validate: binary exists, stderr emoji protocol, quiet mode, 100KB+ task files via temp files, missing binary graceful degradation
 

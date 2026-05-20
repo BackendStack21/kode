@@ -78,7 +78,7 @@ func TestSecurity_ReadFile_SSHKeyPath(t *testing.T) {
 
 func TestSecurity_WriteFile_SystemPath(t *testing.T) {
 	tool := &writeFileTool{dangerousConfig: denyNonInteractive()}
-	result := callJSON(t, tool, `{"path":"/etc/test-kode.txt","content":"test"}`)
+	result := callJSON(t, tool, `{"path":"/etc/test-odek.txt","content":"test"}`)
 	var r struct{ Error string `json:"error"` }
 	mustUnmarshal(t, result, &r)
 	if r.Error == "" || !strings.Contains(r.Error, "denied") {
@@ -88,7 +88,7 @@ func TestSecurity_WriteFile_SystemPath(t *testing.T) {
 
 func TestSecurity_WriteFile_TmpPath(t *testing.T) {
 	tool := &writeFileTool{dangerousConfig: denyNonInteractive()}
-	path := filepath.Join(os.TempDir(), "kode-test-"+strconv.Itoa(os.Getpid())+".txt")
+	path := filepath.Join(os.TempDir(), "odek-test-"+strconv.Itoa(os.Getpid())+".txt")
 	result := callJSON(t, tool, `{"path":"`+path+`","content":"safe"}`)
 	var r struct{ Error string `json:"error"` }
 	mustUnmarshal(t, result, &r)
@@ -358,7 +358,7 @@ func TestSecurity_ClassOverride_SystemWriteAllowed(t *testing.T) {
 
 	// write_file to /etc → system_write → should be allowed now
 	tool := &writeFileTool{dangerousConfig: dc}
-	result := callJSON(t, tool, `{"path":"/etc/kode-test-override","content":"x"}`)
+	result := callJSON(t, tool, `{"path":"/etc/odek-test-override","content":"x"}`)
 	var r struct{ Error string `json:"error"` }
 	mustUnmarshal(t, result, &r)
 	// Write will fail because /etc is not writable, but it should NOT be a security denial

@@ -71,7 +71,7 @@ Flags:
 	home, _ := os.UserHomeDir()
 	resourceReg := resource.NewRegistry(
 		resource.NewFileResolver(cwd),
-		resource.NewSessionResolver(filepath.Join(home, ".kode", "sessions")),
+		resource.NewSessionResolver(filepath.Join(home, ".odek", "sessions")),
 	)
 
 	mux := http.NewServeMux()
@@ -102,7 +102,7 @@ Flags:
 	return serveOnListener(listener, mux)
 }
 
-// serveOnListener serves the kode Web UI on a pre-created listener.
+// serveOnListener serves the odek Web UI on a pre-created listener.
 // Extracted for testing — allows E2E tests to pass a listener on a known port.
 func serveOnListener(listener net.Listener, mux *http.ServeMux) error {
 	return http.Serve(listener, mux)
@@ -110,12 +110,12 @@ func serveOnListener(listener net.Listener, mux *http.ServeMux) error {
 
 // ── Agent Builder ──────────────────────────────────────────────────────
 
-func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v any) error) (*kode.Agent, func() error, func(), *wsApprover, error) {
+func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v any) error) (*odek.Agent, func() error, func(), *wsApprover, error) {
 	var sm *skills.SkillManager
 	if resolved.Skills.Learn {
 		sm = skills.NewSkillManager(
-			expandHome("~/.kode/skills"),
-			"./.kode/skills",
+			expandHome("~/.odek/skills"),
+			"./.odek/skills",
 		)
 	}
 
@@ -154,7 +154,7 @@ func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v 
 		sandboxCleanup = cleanup
 	}
 
-	agent, err := kode.New(kode.Config{
+	agent, err := odek.New(odek.Config{
 		Model:          resolved.Model,
 		BaseURL:        resolved.BaseURL,
 		APIKey:         resolved.APIKey,
@@ -290,7 +290,7 @@ func handlePrompt(
 	store *session.Store,
 	resources *resource.Registry,
 	resolved config.ResolvedConfig,
-	agent *kode.Agent,
+	agent *odek.Agent,
 	currSess *session.Session,
 	prompt string,
 	sessionID string,

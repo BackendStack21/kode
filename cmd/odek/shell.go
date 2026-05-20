@@ -10,16 +10,16 @@ import (
 	"github.com/BackendStack21/kode/internal/danger"
 )
 
-// shellTool is kode's built-in tool that lets the agent run shell commands.
+// shellTool is odek's built-in tool that lets the agent run shell commands.
 //
 // This is the only built-in tool — it's enough for reading files, running
 // tests, building code, and interacting with git. Additional tools can be
-// added by implementing the kode.Tool interface (see README.md#Custom-Tools).
+// added by implementing the odek.Tool interface (see README.md#Custom-Tools).
 //
 // Execution modes:
 //
 //   - Host mode (default): commands run directly on the host via "sh -c".
-//     The agent has the same permissions as the kode process. Use with
+//     The agent has the same permissions as the odek process. Use with
 //     caution — the agent can read, write, and execute anything your user
 //     can. Prefer --sandbox for untrusted or exploratory tasks.
 //
@@ -67,10 +67,10 @@ func (t *shellTool) Description() string {
 	return `Run a shell command and return its output.
 Use for: reading files, listing directories, running tests, building code, and git operations.
 In sandbox mode (--sandbox), commands run inside the Docker container with restricted permissions.
-In host mode (default), commands run with the same permissions as the kode process.
+In host mode (default), commands run with the same permissions as the odek process.
 
 Risk classes: safe, local_write, system_write, destructive, network_egress, code_execution, install, blocked
-High-risk operations may prompt for approval (configurable via dangerous section in kode.json).`
+High-risk operations may prompt for approval (configurable via dangerous section in odek.json).`
 }
 
 func (t *shellTool) Schema() any {
@@ -186,7 +186,7 @@ func (t *shellTool) promptUser(cmd, description string) error {
 // that was mounted into the container during setupSandbox().
 //
 // When running on the host (default), the command executes via "sh -c"
-// in kode's current working directory.
+// in odek's current working directory.
 func (t *shellTool) buildCmd(command string) *exec.Cmd {
 	if t.containerName != "" {
 		return exec.Command("docker", "exec", "-w", "/workspace", t.containerName, "sh", "-c", command)

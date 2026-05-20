@@ -1,10 +1,10 @@
 // Package session persists agent conversation history across runs.
 //
 // Sessions enable multi-turn conversations: a user runs a task, the agent
-// responds, and the user continues the conversation with "kode continue",
+// responds, and the user continues the conversation with "odek continue",
 // picking up the full message history from the previous turn.
 //
-// Storage: ~/.kode/sessions/<id>.json. Each file is a full conversation
+// Storage: ~/.odek/sessions/<id>.json. Each file is a full conversation
 // transcript including system messages, user turns, assistant responses,
 // tool calls, and tool results. Sessions are loaded by ID for continuation
 // or by listing metadata for browsing.
@@ -50,18 +50,18 @@ type Session struct {
 // Store manages session files in a directory on disk.
 // Operations are simple file reads/writes — no locking, no caching.
 type Store struct {
-	dir string // e.g. /home/user/.kode/sessions/
+	dir string // e.g. /home/user/.odek/sessions/
 	mu  sync.Mutex
 }
 
-// NewStore creates a session store rooted at ~/.kode/sessions/.
+// NewStore creates a session store rooted at ~/.odek/sessions/.
 // The directory is created if it doesn't exist.
 func NewStore() (*Store, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("session: home dir: %w", err)
 	}
-	dir := filepath.Join(home, ".kode", "sessions")
+	dir := filepath.Join(home, ".odek", "sessions")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, fmt.Errorf("session: create dir: %w", err)
 	}
@@ -321,7 +321,7 @@ func (s *Store) Cleanup(before time.Time) (int, error) {
 // ── Helpers ────────────────────────────────────────────────────────────
 
 // countUserTurns returns the number of user messages in a slice.
-// This excludes the system message (which is always first in kode sessions).
+// This excludes the system message (which is always first in odek sessions).
 func countUserTurns(messages []llm.Message) int {
 	count := 0
 	for _, m := range messages {

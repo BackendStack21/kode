@@ -1,4 +1,4 @@
-// Package ws provides WebSocket constants used by cmd/kode/serve.go.
+// Package ws provides WebSocket constants used by cmd/odek/serve.go.
 // Frame I/O is handled directly by golang.org/x/net/websocket.
 package ws
 

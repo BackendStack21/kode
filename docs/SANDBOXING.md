@@ -1,6 +1,6 @@
 # Sandboxing
 
-odek runs agent shell commands inside an **isolated Docker container** when `--sandbox` is active. This document covers all configuration options, the `Dockerfile.kode` build system, security guarantees, and best practices.
+odek runs agent shell commands inside an **isolated Docker container** when `--sandbox` is active. This document covers all configuration options, the `Dockerfile.odek` build system, security guarantees, and best practices.
 
 ## Quick start
 
@@ -14,13 +14,13 @@ odek run --sandbox --sandbox-image node:20-alpine "echo hello"
 # Custom Dockerfile for project-specific tooling
 echo 'FROM golang:1.24-alpine
 RUN apk add --no-cache protobuf
-WORKDIR /workspace' > Dockerfile.kode
+WORKDIR /workspace' > Dockerfile.odek
 odek run --sandbox "protoc --version"
 ```
 
 ## Config reference
 
-All sandbox settings are available in `~/kode/config.json`, `./kode.json`, `KODE_*` env vars, and CLI flags, following the same [priority chain](CONFIG.md).
+All sandbox settings are available in `~/.odek/config.json`, `./kode.json`, `KODE_*` env vars, and CLI flags, following the same [priority chain](CONFIG.md).
 
 ### Config file fields
 
@@ -96,7 +96,7 @@ odek repl \
 
 ## Docker image control
 
-kode provides two ways to control the sandbox environment:
+`odek provides two ways to control the sandbox environment:
 
 ### 1. `sandbox_image` (simple)
 
@@ -116,12 +116,12 @@ odek run --sandbox --sandbox-image golang:1.24-alpine "go test ./..."
 odek run --sandbox --sandbox-image nvidia/cuda:12.2-runtime "nvidia-smi"
 ```
 
-### 2. `Dockerfile.kode` (advanced)
+### 2. `Dockerfile.odek` (advanced)
 
-Place a `Dockerfile.kode` in your working directory for **project-specific, pre-baked tooling**. kode auto-detects it and builds an image with a content-hash tag.
+Place a `Dockerfile.odek` in your working directory for **project-specific, pre-baked tooling**. odek auto-detects it and builds an image with a content-hash tag.
 
 ```dockerfile
-# Dockerfile.kode
+# Dockerfile.odek
 FROM node:20-alpine
 
 # Pre-install project dependencies
@@ -134,15 +134,15 @@ WORKDIR /workspace
 ```
 
 Build behavior:
-- odek check for `Dockerfile.kode` in the working directory
+- odek check for `Dockerfile.odek` in the working directory
 - If found and no explicit `sandbox_image` is configured, odek builds it
-- The image is tagged as `kode-sandbox:<sha256[:12]>` based on file content hash
-- **Cached:** the image is only rebuilt when `Dockerfile.kode` changes
+- The image is tagged as `odek-sandbox:<sha256[:12]>` based on file content hash
+- **Cached:** the image is only rebuilt when `Dockerfile.odek` changes
 - First build takes ~5–30s depending on the image; subsequent runs are instant
 
 **Priority:**
 1. `sandbox_image` config field → use that image directly (explicit wins)
-2. `Dockerfile.kode` exists → build and use it
+2. `Dockerfile.odek` exists → build and use it
 3. Neither → `alpine:latest`
 
 ## Network modes
@@ -242,6 +242,6 @@ odek's sandbox follows the principle of **least privilege with progressive opt-i
 
 ## Limitations
 
-- **GPU passthrough** is not yet configurable via kode flags — use `Dockerfile.kode` with `nvidia/cuda` images and run the agent without sandbox mode for now
+- **GPU passthrough** is not yet configurable via odek flags — use `Dockerfile.odek` with `nvidia/cuda` images and run the agent without sandbox mode for now
 - **Docker-in-Docker** requires special volume mounts (`/var/run/docker.sock`) — not recommended with sandbox mode
 - **Windows containers** are not supported (tested on Linux only)

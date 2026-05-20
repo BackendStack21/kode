@@ -40,13 +40,13 @@ odek ships with built-in **model profiles** that automatically apply sensible de
 
 ### How profiles work
 
-1. Set `--model deepseek-v4-pro` → kode auto-configures `thinking=enabled` + `180s timeout` + 1M context
+1. Set `--model deepseek-v4-pro` → odek auto-configures `thinking=enabled` + `180s timeout` + 1M context
 2. Explicit `--thinking` always wins over profile defaults
 3. Unknown models get no profile overrides (provider default behavior)
 
 ### Adding a profile
 
-Profiles live in `kode.go` as the `KnownProfiles` slice:
+Profiles live in `odek.go` as the `KnownProfiles` slice:
 
 ```go
 {
@@ -115,7 +115,7 @@ odek automatically trims conversation history to stay within each model's contex
 
 ```
 Before trim (6 msgs, ~250K estimated, budget=200K):
-  [system] You are kode...
+  [system] You are odek...
   [user]   Refactor this module...
   [assistant]"                       ← DROPPED
   [tool]                              ← DROPPED
@@ -123,7 +123,7 @@ Before trim (6 msgs, ~250K estimated, budget=200K):
   [tool]  File: main.go...            ← KEPT
 
 After trim (4 msgs, ~180K estimated):
-  [system] You are kode...
+  [system] You are odek...
   [user]   Refactor this module...
   [assistant] Let me check...
   [tool]  File: main.go...

@@ -16,7 +16,7 @@ import (
 )
 
 // ─────────────────────────────────────────────────────────────────────
-// Contract Tests: kode subagent CLI
+// Contract Tests: odek subagent CLI
 // ─────────────────────────────────────────────────────────────────────
 //
 // These tests verify the subagent interface contract WITHOUT running
@@ -26,27 +26,27 @@ import (
 // The subagent binary path is resolved once.
 // ─────────────────────────────────────────────────────────────────────
 
-var kodeBinary string
+var odekBinary string
 
 func init() {
 	// Environment variable takes precedence
-	if path := os.Getenv("KODE_BINARY"); path != "" {
+	if path := os.Getenv("ODEK_BINARY"); path != "" {
 		if _, err := os.Stat(path); err == nil {
-			kodeBinary = path
+			odekBinary = path
 			return
 		}
 	}
-	// Find kode relative to the test source or project root
-	for _, root := range []string{".", "/root/projects/kode"} {
-		path := root + "/kode"
+	// Find odek relative to the test source or project root
+	for _, root := range []string{".", "/root/projects/odek"} {
+		path := root + "/odek"
 		if _, err := os.Stat(path); err == nil {
-			kodeBinary = path
+			odekBinary = path
 			return
 		}
 	}
 	// Fallback: PATH
-	if path, err := exec.LookPath("kode"); err == nil {
-		kodeBinary = path
+	if path, err := exec.LookPath("odek"); err == nil {
+		odekBinary = path
 	}
 }
 
@@ -54,7 +54,7 @@ func init() {
 
 func TestSubagent_GoalFlag(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent", "--goal", "test goal")
+	cmd := exec.Command(odekBinary, "subagent", "--goal", "test goal")
 	cmd.Stderr = &bytes.Buffer{}
 	out, err := cmd.Output()
 
@@ -74,7 +74,7 @@ func TestSubagent_GoalFlag(t *testing.T) {
 
 func TestSubagent_ContextFlag(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent",
+	cmd := exec.Command(odekBinary, "subagent",
 		"--goal", "test",
 		"--context", "important background",
 	)
@@ -99,7 +99,7 @@ func TestSubagent_TaskFileFlag(t *testing.T) {
 	data, _ := json.Marshal(taskData)
 	os.WriteFile(taskFile, data, 0644)
 
-	cmd := exec.Command(kodeBinary, "subagent", "--task", taskFile)
+	cmd := exec.Command(odekBinary, "subagent", "--task", taskFile)
 	cmd.Stderr = &bytes.Buffer{}
 	_, err := cmd.Output()
 
@@ -113,7 +113,7 @@ func TestSubagent_TaskFileFlag(t *testing.T) {
 
 func TestSubagent_TimeoutFlag(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent",
+	cmd := exec.Command(odekBinary, "subagent",
 		"--goal", "test",
 		"--timeout", "30",
 	)
@@ -130,7 +130,7 @@ func TestSubagent_TimeoutFlag(t *testing.T) {
 
 func TestSubagent_MaxIterFlag(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent",
+	cmd := exec.Command(odekBinary, "subagent",
 		"--goal", "test",
 		"--max-iter", "5",
 	)
@@ -146,7 +146,7 @@ func TestSubagent_MaxIterFlag(t *testing.T) {
 }
 
 func TestSubagent_QuietFlag(t *testing.T) {
-	cmd := exec.Command(kodeBinary, "subagent",
+	cmd := exec.Command(odekBinary, "subagent",
 		"--goal", "test",
 		"--quiet",
 	)
@@ -162,7 +162,7 @@ func TestSubagent_QuietFlag(t *testing.T) {
 
 func TestSubagent_ParentSessionFlag(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent",
+	cmd := exec.Command(odekBinary, "subagent",
 		"--goal", "test",
 		"--parent-session", "20260519-test123",
 	)
@@ -182,7 +182,7 @@ func TestSubagent_RejectsGoalAndTaskTogether(t *testing.T) {
 	taskFile := filepath.Join(t.TempDir(), "task.json")
 	os.WriteFile(taskFile, []byte(`{"goal":"test"}`), 0644)
 
-	cmd := exec.Command(kodeBinary, "subagent", "--goal", "x", "--task", taskFile)
+	cmd := exec.Command(odekBinary, "subagent", "--goal", "x", "--task", taskFile)
 	out, err := cmd.CombinedOutput()
 
 	if err == nil {
@@ -195,7 +195,7 @@ func TestSubagent_RejectsGoalAndTaskTogether(t *testing.T) {
 
 func TestSubagent_RejectsNoGoalOrTask(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent")
+	cmd := exec.Command(odekBinary, "subagent")
 	out, err := cmd.CombinedOutput()
 
 	if err == nil {
@@ -210,7 +210,7 @@ func TestSubagent_RejectsNoGoalOrTask(t *testing.T) {
 
 func TestSubagent_StdoutIsJSON(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent", "--goal", "test")
+	cmd := exec.Command(odekBinary, "subagent", "--goal", "test")
 	out, err := cmd.Output()
 
 	if err != nil {
@@ -238,8 +238,8 @@ func TestSubagent_StdoutIsJSON(t *testing.T) {
 }
 
 func TestSubagent_SuccessStdoutContract(t *testing.T) {
-	if os.Getenv("KODE_INTEGRATION") == "" {
-		t.Skip("KODE_INTEGRATION not set — contract definition only")
+	if os.Getenv("ODEK_INTEGRATION") == "" {
+		t.Skip("ODEK_INTEGRATION not set — contract definition only")
 	}
 
 	result := map[string]any{
@@ -296,7 +296,7 @@ func TestSubagent_ExitCodeTwo(t *testing.T)  {}
 
 func TestSubagent_ExitCodeThree(t *testing.T) {
 	skipIfNoBinary(t)
-	cmd := exec.Command(kodeBinary, "subagent")
+	cmd := exec.Command(odekBinary, "subagent")
 	_, err := cmd.CombinedOutput()
 
 	if err == nil {
@@ -331,7 +331,7 @@ func TestDelegateTasksTool_Exists(t *testing.T) {
 func TestDelegateTasksTool_HasSchema(t *testing.T) {
 	tools := builtinTools(danger.DangerousConfig{}, nil, nil)
 
-	var tool kode.Tool
+	var tool odek.Tool
 	for _, t2 := range tools {
 		if t2.Name() == "delegate_tasks" {
 			tool = t2
@@ -420,7 +420,7 @@ func TestDelegateTasksTool_HasSchema(t *testing.T) {
 func TestDelegateTasksTool_Description(t *testing.T) {
 	tools := builtinTools(danger.DangerousConfig{}, nil, nil)
 
-	var tool kode.Tool
+	var tool odek.Tool
 	for _, t2 := range tools {
 		if t2.Name() == "delegate_tasks" {
 			tool = t2
@@ -445,7 +445,7 @@ func TestDelegateTasksTool_Description(t *testing.T) {
 func TestDelegateTasks_CallValidatesJSON(t *testing.T) {
 	tool := &delegateTasksTool{
 		maxConcurrency: 3,
-		kodePath:       "/nonexistent/kode",
+		odekPath:       "/nonexistent/odek",
 		timeout:        time.Second,
 	}
 
@@ -461,7 +461,7 @@ func TestDelegateTasks_CallValidatesJSON(t *testing.T) {
 func TestDelegateTasks_CallEmptyTasks(t *testing.T) {
 	tool := &delegateTasksTool{
 		maxConcurrency: 3,
-		kodePath:       "/nonexistent/kode",
+		odekPath:       "/nonexistent/odek",
 		timeout:        time.Second,
 	}
 
@@ -474,7 +474,7 @@ func TestDelegateTasks_CallEmptyTasks(t *testing.T) {
 func TestDelegateTasks_CallTooManyTasks(t *testing.T) {
 	tool := &delegateTasksTool{
 		maxConcurrency: 3,
-		kodePath:       "/nonexistent/kode",
+		odekPath:       "/nonexistent/odek",
 		timeout:        time.Second,
 	}
 
@@ -493,7 +493,7 @@ func TestDelegateTasks_CallTooManyTasks(t *testing.T) {
 func TestDelegateTasks_CallMissingTool(t *testing.T) {
 	tool := &delegateTasksTool{
 		maxConcurrency: 3,
-		kodePath:       "/nonexistent/kode",
+		odekPath:       "/nonexistent/odek",
 		timeout:        time.Second,
 	}
 
@@ -508,7 +508,7 @@ func TestDelegateTasks_CallMissingTool(t *testing.T) {
 func TestDelegateTasks_ConcurrencyLimit(t *testing.T) {
 	tool := &delegateTasksTool{
 		maxConcurrency: 2,
-		kodePath:       "/nonexistent/kode",
+		odekPath:       "/nonexistent/odek",
 		timeout:        time.Second,
 	}
 
@@ -527,7 +527,7 @@ func TestDelegateTasks_ConcurrencyLimit(t *testing.T) {
 func TestDelegateTasks_Timeout(t *testing.T) {
 	tool := &delegateTasksTool{
 		maxConcurrency: 2,
-		kodePath:       "/nonexistent/kode",
+		odekPath:       "/nonexistent/odek",
 		timeout:        50 * time.Millisecond,
 	}
 
@@ -697,7 +697,7 @@ func TestBuildSubagentPrompt_MaxLength(t *testing.T) {
 func TestDelegateTasks_PipesStderr(t *testing.T) {
 	tool := &delegateTasksTool{
 		maxConcurrency: 1,
-		kodePath:       "/nonexistent/kode",
+		odekPath:       "/nonexistent/odek",
 		timeout:        time.Second,
 	}
 
@@ -707,12 +707,12 @@ func TestDelegateTasks_PipesStderr(t *testing.T) {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-// skipIfNoBinary skips tests that need a real kode binary.
-// These tests run as part of the E2E suite (KODE_E2E=true).
+// skipIfNoBinary skips tests that need a real odek binary.
+// These tests run as part of the E2E suite (ODEK_E2E=true).
 func skipIfNoBinary(t *testing.T) {
 	t.Helper()
-	if kodeBinary == "" {
-		t.Skip("odek binary not found — set KODE_E2E=true or build first")
+	if odekBinary == "" {
+		t.Skip("odek binary not found — set ODEK_E2E=true or build first")
 	}
 }
 

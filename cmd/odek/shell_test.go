@@ -137,10 +137,10 @@ func TestShellTool_BuildCmd_Local(t *testing.T) {
 }
 
 func TestShellTool_BuildCmd_Docker(t *testing.T) {
-	st := &shellTool{containerName: "kode-12345"}
+	st := &shellTool{containerName: "odek-12345"}
 	cmd := st.buildCmd("echo test")
 	args := cmd.Args
-	expected := []string{"docker", "exec", "-w", "/workspace", "kode-12345", "sh", "-c", "echo test"}
+	expected := []string{"docker", "exec", "-w", "/workspace", "odek-12345", "sh", "-c", "echo test"}
 	if !stringSlicesEqual(args, expected) {
 		t.Errorf("docker cmd args = %v, want %v", args, expected)
 	}
@@ -153,8 +153,8 @@ func TestShellTool_Call_DockerExec_Integration(t *testing.T) {
 
 	// Create a test container with /workspace directory.
 	// Use a fixed path that Docker can access in CI environments.
-	containerName := "kode-test-shell"
-	tmpDir, err := os.MkdirTemp("", "kode-test-")
+	containerName := "odek-test-shell"
+	tmpDir, err := os.MkdirTemp("", "odek-test-")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestShellTool_Call_DockerExec_WorkingDir(t *testing.T) {
 		t.Skip("docker not available")
 	}
 
-	containerName := "kode-test-wd"
+	containerName := "odek-test-wd"
 	// Mount /tmp as /workspace so we can write a test file
 	tmpDir := t.TempDir()
 	markerFile := tmpDir + "/marker.txt"

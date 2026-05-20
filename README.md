@@ -1,4 +1,4 @@
-# kode
+# odek
 
 **The fastest, minimal, zero-dependency Go autonomous agent runtime.**
 
@@ -6,7 +6,7 @@ One binary. One loop. Zero frameworks. ReAct (Reasoning + Acting) — think, the
 
 ```bash
 # Install
-go install github.com/BackendStack21/kode/cmd/kode@latest
+go install github.com/BackendStack21/kode/cmd/odek@latest
 
 # Use (set DEEPSEEK_API_KEY or OPENAI_API_KEY)
 export DEEPSEEK_API_KEY=sk-...
@@ -16,11 +16,11 @@ odek run "How many lines in go.mod?"
 
 ---
 
-## Why kode
+## Why odek
 
-kode is not a framework. It's a **runtime** — the smallest possible surface area between an LLM and your tools.
+odek is not a framework. It's a **runtime** — the smallest possible surface area between an LLM and your tools.
 
-| | kode | Python agents (LangChain, CrewAI, etc.) |
+| | odek | Python agents (LangChain, CrewAI, etc.) |
 |---|---|---|
 | Dependencies | **Zero.** stdlib only | 200+ packages |
 | Binary size | ~5 MB static | 50-200 MB with venv |
@@ -45,10 +45,10 @@ Skill-matched `SKILL.md` files load on-demand. Auto-learns from patterns every s
 Three tiers: **facts** (agent-managed durable entries), **session buffer** (auto-appended turn summaries), **episodes** (LLM-extracted knowledge from past sessions). Merge-on-write via go-vector RandomProjections — cosine >0.7 auto-merges, <0.3 auto-adds. Saves ~80% LLM calls. [docs/MEMORY.md](docs/MEMORY.md)
 
 ### 🔧 Multi-Turn Sessions
-Save, resume, list, trim, and clean up conversations. Sessions persist as JSON in `~/.kode/sessions/`. Continue any session with `odek continue`. [docs/SESSIONS.md](docs/SESSIONS.md)
+Save, resume, list, trim, and clean up conversations. Sessions persist as JSON in `~/.odek/sessions/`. Continue any session with `odek continue`. [docs/SESSIONS.md](docs/SESSIONS.md)
 
 ### 🏗️ Layerable Config
-Four-layer priority chain: `global (~/kode/config.json)` → `project (./odek.json)` → `KODE_*` env vars → CLI flags. `${VAR}` substitution in config files. [docs/CONFIG.md](docs/CONFIG.md)
+Four-layer priority chain: `global (~/.odek/config.json)` → `project (./odek.json)` → `ODEK_*` env vars → CLI flags. `${VAR}` substitution in config files. [docs/CONFIG.md](docs/CONFIG.md)
 
 ### 🔌 LLM-Agnostic
 Any OpenAI-compatible endpoint: Deepseek, OpenAI, Anthropic, Ollama, vLLM, Groq, Together, Fireworks — anything that speaks `/chat/completions`. Per-model profiles for thinking depth and context windows. [docs/PROVIDERS.md](docs/PROVIDERS.md)
@@ -57,7 +57,7 @@ Any OpenAI-compatible endpoint: Deepseek, OpenAI, Anthropic, Ollama, vLLM, Groq,
 `odek serve` — browser-based agent with `@` resource completion (`@file.go`, `@sess:abc123`), WebSocket streaming, and a full IDE-style console. [docs/WEBUI.md](docs/WEBUI.md)
 
 ### 🔗 MCP (Two-Way)
-**Server** (`odek mcp`) — expose kode's native tools (shell, read/write/search files, patch, browser) to Claude Code, Cursor, and any MCP client. **Client** (`mcp_servers` config) — kode connects to external MCP servers (Playwright, Fetch, GitHub, SQLite, etc.) and makes their tools available to the agent as `<server>__<tool>`. Both directions in one binary. [docs/MCP.md](docs/MCP.md)
+**Server** (`odek mcp`) — expose odek's native tools (shell, read/write/search files, patch, browser) to Claude Code, Cursor, and any MCP client. **Client** (`mcp_servers` config) — odek connects to external MCP servers (Playwright, Fetch, GitHub, SQLite, etc.) and makes their tools available to the agent as `<server>__<tool>`. Both directions in one binary. [docs/MCP.md](docs/MCP.md)
 
 ### 🔍 Native Tools
 Built-in `read_file`, `write_file`, `search_files`, `patch`, `shell`, and `browser` tools. All gated by a unified security layer (`dangerous` config) — classify operations as `allow` / `deny` / `prompt` per risk class. No third-party dependencies. [docs/SECURITY.md](docs/SECURITY.md)
@@ -156,11 +156,11 @@ odek repl
 ```go
 import "github.com/BackendStack21/kode"
 
-agent, err := kode.New(kode.Config{
+agent, err := odek.New(odek.Config{
     Model:          "deepseek-chat",
     APIKey:         os.Getenv("DEEPSEEK_API_KEY"),
     MaxIterations:  30,
-    Tools:          []kode.Tool{&myCustomTool{}},
+    Tools:          []odek.Tool{&myCustomTool{}},
     SystemMessage:  "You are an expert at refactoring Go code.",
 })
 defer agent.Close()

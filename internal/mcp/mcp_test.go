@@ -53,8 +53,8 @@ func TestServer_Initialize(t *testing.T) {
 	if resp.Result.ProtocolVersion != "2025-03-26" {
 		t.Errorf("protocol version = %q, want %q", resp.Result.ProtocolVersion, "2025-03-26")
 	}
-	if resp.Result.ServerInfo.Name != "kode" {
-		t.Errorf("server name = %q, want %q", resp.Result.ServerInfo.Name, "kode")
+	if resp.Result.ServerInfo.Name != "odek" {
+		t.Errorf("server name = %q, want %q", resp.Result.ServerInfo.Name, "odek")
 	}
 }
 

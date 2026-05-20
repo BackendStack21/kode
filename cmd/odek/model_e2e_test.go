@@ -1,15 +1,15 @@
 //go:build integration
 
-// E2E tests that exercise the full kode agent loop against real LLM APIs.
+// E2E tests that exercise the full odek agent loop against real LLM APIs.
 //
 // These tests are gated by the "integration" build tag and require API keys
 // to be set via environment variables:
 //
-//	export KODE_API_KEY_DEEPSEEK="sk-..."   # required for DeepSeek models
-//	export KODE_API_KEY_OPENAI="sk-..."     # required for OpenAI models
-//	go test -tags=integration -v -count=1 -run 'TestModelE2E' ./cmd/kode/
+//	export ODEK_API_KEY_DEEPSEEK="sk-..."   # required for DeepSeek models
+//	export ODEK_API_KEY_OPENAI="sk-..."     # required for OpenAI models
+//	go test -tags=integration -v -count=1 -run 'TestModelE2E' ./cmd/odek/
 //
-// Each test case creates a real kode.Agent with the given model config,
+// Each test case creates a real odek.Agent with the given model config,
 // runs a simple task ("respond with ALIVE"), and verifies:
 //   - The agent loop completes without error
 //   - The response contains the expected substring
@@ -38,9 +38,9 @@ type modelCase struct {
 
 // ── DeepSeek models ────────────────────────────────────────────────────
 
-func TestModelE2E_DeepSeek_Chat(t *testing.T)   { testModel(t, modelCase{Name: "deepseek-chat", Model: "deepseek-chat", KeyEnv: "KODE_API_KEY_DEEPSEEK"}) }
-func TestModelE2E_DeepSeek_V4Flash(t *testing.T) { testModel(t, modelCase{Name: "deepseek-v4-flash", Model: "deepseek-v4-flash", KeyEnv: "KODE_API_KEY_DEEPSEEK"}) }
-func TestModelE2E_DeepSeek_V4Pro(t *testing.T)   { testModel(t, modelCase{Name: "deepseek-v4-pro", Model: "deepseek-v4-pro", KeyEnv: "KODE_API_KEY_DEEPSEEK"}) }
+func TestModelE2E_DeepSeek_Chat(t *testing.T)   { testModel(t, modelCase{Name: "deepseek-chat", Model: "deepseek-chat", KeyEnv: "ODEK_API_KEY_DEEPSEEK"}) }
+func TestModelE2E_DeepSeek_V4Flash(t *testing.T) { testModel(t, modelCase{Name: "deepseek-v4-flash", Model: "deepseek-v4-flash", KeyEnv: "ODEK_API_KEY_DEEPSEEK"}) }
+func TestModelE2E_DeepSeek_V4Pro(t *testing.T)   { testModel(t, modelCase{Name: "deepseek-v4-pro", Model: "deepseek-v4-pro", KeyEnv: "ODEK_API_KEY_DEEPSEEK"}) }
 
 // ── OpenAI models ──────────────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ func TestModelE2E_OpenAI_GPT4oMini(t *testing.T) {
 		Name:    "gpt-4o-mini",
 		Model:   "gpt-4o-mini",
 		BaseURL: "https://api.openai.com/v1",
-		KeyEnv:  "KODE_API_KEY_OPENAI",
+		KeyEnv:  "ODEK_API_KEY_OPENAI",
 	})
 }
 
@@ -72,7 +72,7 @@ func testModel(t *testing.T, mc modelCase) {
 		baseURL = "https://api.deepseek.com/v1"
 	}
 
-	agent, err := kode.New(kode.Config{
+	agent, err := odek.New(odek.Config{
 		Model:         mc.Model,
 		BaseURL:       baseURL,
 		APIKey:        apiKey,
@@ -82,7 +82,7 @@ func testModel(t *testing.T, mc modelCase) {
 		Renderer:      render.New(os.Stderr, false),
 	})
 	if err != nil {
-		t.Fatalf("kode.New: %v", err)
+		t.Fatalf("odek.New: %v", err)
 	}
 	defer agent.Close()
 

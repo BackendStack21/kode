@@ -1,9 +1,9 @@
-// Package config loads and merges kode configuration from multiple sources.
+// Package config loads and merges odek configuration from multiple sources.
 //
 // Priority (lowest to highest):
-//  1. ~/kode/config.json   — global defaults (shared across projects)
-//  2. ./kode.json          — project-specific overrides
-//  3. KODE_* env vars      — runtime/environment overrides
+//  1. ~/.odek/config.json   — global defaults (shared across projects)
+//  2. ./odek.json          — project-specific overrides
+//  3. ODEK_* env vars      — runtime/environment overrides
 //  4. CLI flags            — explicit invocation overrides (highest)
 //
 // Both config files are optional. Missing files are silently ignored.
@@ -31,7 +31,7 @@ import (
 // priority layers for these fields.
 //
 // Fields prefixed with Sandbox are sandbox-specific overrides. They follow
-// the same merge chain: global file → project file → KODE_* env → CLI.
+// the same merge chain: global file → project file → ODEK_* env → CLI.
 // Fields typed as *bool distinguish "explicitly set to false" from "not set",
 // which matters when the config file says "sandbox_readonly: false" (user
 // explicitly wants writable) vs the field being absent (inherit from lower
@@ -67,7 +67,7 @@ type SkillsConfig struct {
 	Curation     *skills.CurationConfig      `json:"curation,omitempty"`
 }
 
-// FileConfig is the JSON schema used by ~/kode/config.json and ./kode.json.
+// FileConfig is the JSON schema used by ~/.odek/config.json and ./odek.json.
 // Pointer booleans distinguish "explicitly set to false" from "not set".
 type FileConfig struct {
 	Model   string `json:"model,omitempty"`
@@ -131,33 +131,33 @@ type ResolvedConfig struct {
 
 	// SandboxImage is the Docker image for the sandbox container.
 	// Default: "alpine:latest" (applied at call site, not here —
-	// set to "alpine:latest" only if Dockerfile.kode doesn't exist).
-	// Config: sandbox_image, KODE_SANDBOX_IMAGE, --sandbox-image.
+	// set to "alpine:latest" only if Dockerfile.odek doesn't exist).
+	// Config: sandbox_image, ODEK_SANDBOX_IMAGE, --sandbox-image.
 	SandboxImage string
 
 	// SandboxNetwork is the Docker network mode.
 	// Default: "bridge" (internet access by default).
-	// Config: sandbox_network, KODE_SANDBOX_NETWORK, --sandbox-network.
+	// Config: sandbox_network, ODEK_SANDBOX_NETWORK, --sandbox-network.
 	SandboxNetwork string
 
 	// SandboxReadonly, when true, mounts the working directory read-only
 	// in the container. The agent can read /workspace but cannot write to it.
-	// Config: sandbox_readonly, KODE_SANDBOX_READONLY, --sandbox-readonly.
+	// Config: sandbox_readonly, ODEK_SANDBOX_READONLY, --sandbox-readonly.
 	SandboxReadonly bool
 
 	// SandboxMemory is the container memory limit (e.g. "512m", "2g").
 	// Empty string means no limit.
-	// Config: sandbox_memory, KODE_SANDBOX_MEMORY, --sandbox-memory.
+	// Config: sandbox_memory, ODEK_SANDBOX_MEMORY, --sandbox-memory.
 	SandboxMemory string
 
 	// SandboxCPUs is the container CPU limit (e.g. "0.5", "2", "4").
 	// Empty string means no limit.
-	// Config: sandbox_cpus, KODE_SANDBOX_CPUS, --sandbox-cpus.
+	// Config: sandbox_cpus, ODEK_SANDBOX_CPUS, --sandbox-cpus.
 	SandboxCPUs string
 
 	// SandboxUser sets the container user (e.g. "1000:1000" or "node").
 	// Empty string means root (default Docker behavior).
-	// Config: sandbox_user, KODE_SANDBOX_USER, --sandbox-user.
+	// Config: sandbox_user, ODEK_SANDBOX_USER, --sandbox-user.
 	SandboxUser string
 
 	// SandboxEnv holds extra environment variables injected into the
@@ -181,7 +181,7 @@ type ResolvedConfig struct {
 	Memory memory.MemoryConfig
 
 	// MCPServers maps server names to external MCP server configurations.
-	// Populated from the mcp_servers section of kode.json.
+	// Populated from the mcp_servers section of odek.json.
 	MCPServers map[string]mcpclient.ServerConfig
 }
 
@@ -194,23 +194,23 @@ const (
 // ── Paths ──────────────────────────────────────────────────────────────
 
 // GlobalConfigPath returns the path to the global config file.
-// Uses $HOME/kode/config.json.
+// Uses $HOME/.odek/config.json.
 func GlobalConfigPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, "kode", "config.json")
+	return filepath.Join(home, ".odek", "config.json")
 }
 
 // ProjectConfigPath returns the path to the project-level config file.
-// Uses ./kode.json relative to the current working directory.
+// Uses ./odek.json relative to the current working directory.
 func ProjectConfigPath() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(wd, "kode.json")
+	return filepath.Join(wd, "odek.json")
 }
 
 // ── File Loading ───────────────────────────────────────────────────────
@@ -228,7 +228,7 @@ func loadFile(path string) FileConfig {
 	}
 	var cfg FileConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "kode: warning: config %s: invalid JSON — ignoring file: %v\n", path, err)
+		fmt.Fprintf(os.Stderr, "odek: warning: config %s: invalid JSON — ignoring file: %v\n", path, err)
 		return FileConfig{} // invalid JSON = empty
 	}
 	// Expand environment variables in all string fields
@@ -252,15 +252,15 @@ func expandEnv(s string) string {
 
 // ── Environment Variable Loading ───────────────────────────────────────
 
-// envString returns the value of a KODE_* env var, or empty string if unset.
+// envString returns the value of a ODEK_* env var, or empty string if unset.
 func envString(key string) string {
-	return os.Getenv("KODE_" + key)
+	return os.Getenv("ODEK_" + key)
 }
 
-// envBool parses a KODE_* env var as a boolean. Returns nil if the env var
+// envBool parses a ODEK_* env var as a boolean. Returns nil if the env var
 // is empty or not set, or if the value can't be parsed.
 func envBool(key string) *bool {
-	v := os.Getenv("KODE_" + key)
+	v := os.Getenv("ODEK_" + key)
 	if v == "" {
 		return nil
 	}
@@ -271,9 +271,9 @@ func envBool(key string) *bool {
 	return &b
 }
 
-// envInt parses a KODE_* env var as an integer. Returns 0 if unset/unparseable.
+// envInt parses a ODEK_* env var as an integer. Returns 0 if unset/unparseable.
 func envInt(key string) int {
-	v := os.Getenv("KODE_" + key)
+	v := os.Getenv("ODEK_" + key)
 	if v == "" {
 		return 0
 	}
@@ -291,23 +291,23 @@ func envInt(key string) int {
 //
 // Priority (lowest → highest):
 //
-//	global file → project file → KODE_* env → CLI flags
+//	global file → project file → ODEK_* env → CLI flags
 //
 // For each field, the highest-priority layer that provides a value wins.
 // API key has an additional fallback: if none of the four layers provides
 // one, it falls back to DEEPSEEK_API_KEY → OPENAI_API_KEY (legacy env vars).
 func LoadConfig(cli CLIFlags) ResolvedConfig {
-	// Layer 1: global (~/kode/config.json)
+	// Layer 1: global (~/.odek/config.json)
 	global := loadFile(GlobalConfigPath())
 
-	// Layer 2: project (./kode.json)
+	// Layer 2: project (./odek.json)
 	project := loadFile(ProjectConfigPath())
 
 	// Start with global, overlay project
 	cfg := overlayFile(FileConfig{}, global)
 	cfg = overlayFile(cfg, project)
 
-	// Layer 3: KODE_* env vars
+	// Layer 3: ODEK_* env vars
 	if v := envString("MODEL"); v != "" {
 		cfg.Model = v
 	}
@@ -422,7 +422,7 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		MaxIter:  cfg.MaxIter,
 		System:   cfg.System,
 
-		SandboxImage:   cfg.SandboxImage, // empty = resolve at call site (Dockerfile.kode or alpine:latest)
+		SandboxImage:   cfg.SandboxImage, // empty = resolve at call site (Dockerfile.odek or alpine:latest)
 		SandboxNetwork: ifZero(cfg.SandboxNetwork, DefaultSandboxNetwork),
 		SandboxMemory:  cfg.SandboxMemory,
 		SandboxCPUs:    cfg.SandboxCPUs,

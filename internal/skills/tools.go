@@ -12,7 +12,7 @@ import (
 
 // ── Agent Tools ────────────────────────────────────────────────────────
 //
-// These are the tools exposed to the kode agent for skill management.
+// These are the tools exposed to the odek agent for skill management.
 // Each tool implements a Name/Description/Schema/Call contract.
 
 // MaxSkillBodySize is the maximum allowed body size for a skill, in bytes.
@@ -329,7 +329,7 @@ func (t *SkillSaveTool) Call(args string) (string, error) {
 		Name:        input.Name,
 		Description: input.Description,
 		Version:     "1.0.0",
-		Author:      "kode",
+		Author:      "odek",
 		AutoLoad:    false,
 		Quality:     QualityDraft,
 		Trigger: SkillTrigger{
@@ -365,7 +365,7 @@ func (t *SkillSaveTool) Call(args string) (string, error) {
 	result := fmt.Sprintf("✓ Saved skill %q to %s\n", skill.Name, t.Manager.UserDir)
 	if len(warnings) > 0 {
 		result += fmt.Sprintf("⚠  Quality warnings:\n  - %s\n", strings.Join(warnings, "\n  - "))
-		result += "  Run `kode skill curate` to improve quality."
+		result += "  Run `odek skill curate` to improve quality."
 	}
 	return result, nil
 }

@@ -60,14 +60,14 @@ func TestDefaultSkillsConfig(t *testing.T) {
 
 func TestUserSkillsDir(t *testing.T) {
 	dir := UserSkillsDir()
-	if dir != "~/.kode/skills" {
+	if dir != "~/.odek/skills" {
 		t.Errorf("UserSkillsDir = %q", dir)
 	}
 }
 
 func TestProjectSkillsDir(t *testing.T) {
 	dir := ProjectSkillsDir()
-	if dir != "./.kode/skills" {
+	if dir != "./.odek/skills" {
 		t.Errorf("ProjectSkillsDir = %q", dir)
 	}
 }

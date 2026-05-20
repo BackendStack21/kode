@@ -17,12 +17,12 @@ import (
 // to work on focused sub-tasks in parallel. Each sub-agent gets its own
 // process, config, and context window.
 //
-// The tool serializes tasks to temp files and calls kode subagent for each.
+// The tool serializes tasks to temp files and calls odek subagent for each.
 // Sub-agents run in parallel up to maxConcurrency. Results are collated
 // and returned to the calling agent as a formatted summary.
 type delegateTasksTool struct {
 	maxConcurrency int
-	kodePath       string // path to the kode binary
+	odekPath       string // path to the odek binary
 	timeout        time.Duration
 }
 
@@ -140,7 +140,7 @@ func (t *delegateTasksTool) runTask(goal, taskContext, system string) string {
 	defer cancel()
 
 	// Write task to temp file (avoids CLI arg length limits)
-	taskFile, err := os.CreateTemp("", "kode-task-*.json")
+	taskFile, err := os.CreateTemp("", "odek-task-*.json")
 	if err != nil {
 		return fmt.Sprintf(`{"error":"temp file: %v"}`, err)
 	}
@@ -159,7 +159,7 @@ func (t *delegateTasksTool) runTask(goal, taskContext, system string) string {
 	taskFile.Close()
 	defer os.Remove(taskPath)
 
-	cmd := exec.CommandContext(ctx, t.kodePath,
+	cmd := exec.CommandContext(ctx, t.odekPath,
 		"subagent",
 		"--task", taskPath,
 		"--quiet",
@@ -204,5 +204,5 @@ func (t *delegateTasksTool) runTask(goal, taskContext, system string) string {
 	return string(summary)
 }
 
-// Ensure delegateTasksTool implements kode.Tool
-var _ kode.Tool = (*delegateTasksTool)(nil)
+// Ensure delegateTasksTool implements odek.Tool
+var _ odek.Tool = (*delegateTasksTool)(nil)

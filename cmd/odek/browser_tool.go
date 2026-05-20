@@ -171,7 +171,7 @@ func (t *browserTool) doNavigate(rawURL string) (string, error) {
 	if err != nil {
 		return jsonError(fmt.Sprintf("cannot create request: %v", err))
 	}
-	req.Header.Set("User-Agent", "kode-browser/0.1")
+	req.Header.Set("User-Agent", "odek-browser/0.1")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 
 	// Security: classify and check browser operation

@@ -25,13 +25,13 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          go build -ldflags "-s -w -X main.version=${TAG}" -o kode-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/kode
+          go build -ldflags "-s -w -X main.version=${TAG}" -o odek-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/odek
 
       - name: upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kode-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: kode-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: odek-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: odek-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     needs: build
@@ -41,19 +41,19 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: kode-*
+          pattern: odek-*
           merge-multiple: true
 
       - name: checksums
-        run: sha256sum kode-* > checksums.txt
+        run: sha256sum odek-* > checksums.txt
 
       - name: release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            kode-linux-amd64
-            kode-linux-arm64
-            kode-darwin-amd64
-            kode-darwin-arm64
+            odek-linux-amd64
+            odek-linux-arm64
+            odek-darwin-amd64
+            odek-darwin-arm64
             checksums.txt
           generate_release_notes: true

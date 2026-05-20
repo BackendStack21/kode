@@ -1,6 +1,6 @@
-// Package kode is a minimal, zero-dependency Go agent loop runtime.
+// Package odek is a minimal, zero-dependency Go agent loop runtime.
 //
-// kode implements the ReAct (Reasoning + Acting) pattern — the "think,
+// odek implements the ReAct (Reasoning + Acting) pattern — the "think,
 // therefore act" loop that powers autonomous AI agents. It is not a
 // framework or an SDK. It is a runtime: one loop, one binary, zero deps.
 //
@@ -17,7 +17,7 @@
 // container. The container has no network access, no host mounts beyond
 // the working directory, and is destroyed on exit. The agent can never
 // access files outside its working directory.
-package kode
+package odek
 
 import (
 	"context"
@@ -76,7 +76,7 @@ type Config struct {
 	SystemMessage string
 
 	// NoProjectFile disables automatic loading of AGENTS.md from the
-	// working directory. By default, kode reads AGENTS.md and appends
+	// working directory. By default, odek reads AGENTS.md and appends
 	// its content to the system message with a "Project Instructions" header.
 	NoProjectFile bool
 
@@ -99,7 +99,7 @@ type Config struct {
 	SkillManager *skills.SkillManager
 
 	// MemoryDir sets the directory for persistent memory storage.
-	// Default: ~/.kode/memory/
+	// Default: ~/.odek/memory/
 	MemoryDir string
 
 	// MemoryConfig controls the memory system (facts, buffer, episodes).
@@ -124,7 +124,7 @@ type Agent struct {
 //
 // To add support for a new model, append an entry to KnownProfiles with
 // the model prefix, a human-readable label, and any defaults (thinking,
-// timeout). The rest of kode picks it up automatically — no changes to
+// timeout). The rest of odek picks it up automatically — no changes to
 // the LLM client, loop engine, or CLI parsing needed.
 
 // ModelProfile holds per-model defaults applied when the user hasn't
@@ -151,7 +151,7 @@ type ModelProfile struct {
 
 // KnownProfiles lists all built-in model profiles. Each entry is matched
 // by longest prefix — "deepseek-v4-flash" matches before "deepseek-" would.
-// Add new profiles here; the rest of kode consumes them automatically.
+// Add new profiles here; the rest of odek consumes them automatically.
 var KnownProfiles = []struct {
 	Prefix  string
 	Profile ModelProfile
@@ -211,7 +211,7 @@ func ProfileLabel(model string) string {
 // ── Project File (AGENTS.md) ─────────────────────────────────────────
 
 // ProjectFileName is the name of the project-level instructions file
-// that kode automatically loads from the working directory.
+// that odek automatically loads from the working directory.
 const ProjectFileName = "AGENTS.md"
 
 // LoadProjectFile reads ProjectFileName from the current working directory.
@@ -257,7 +257,7 @@ func New(cfg Config) (*Agent, error) {
 		}
 	}
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("kode: no API key provided (set DEEPSEEK_API_KEY or OPENAI_API_KEY)")
+		return nil, fmt.Errorf("odek: no API key provided (set DEEPSEEK_API_KEY or OPENAI_API_KEY)")
 	}
 	if cfg.Model == "" {
 		cfg.Model = defaultModel
@@ -307,8 +307,8 @@ func New(cfg Config) (*Agent, error) {
 		sm = cfg.SkillManager
 		if sm == nil {
 			sm = skills.NewSkillManager(
-				expandHome("~/.kode/skills"),
-				"./.kode/skills",
+				expandHome("~/.odek/skills"),
+				"./.odek/skills",
 			)
 		}
 
@@ -330,7 +330,7 @@ func New(cfg Config) (*Agent, error) {
 	// Create memory manager
 	memoryDir := cfg.MemoryDir
 	if memoryDir == "" {
-		memoryDir = expandHome("~/.kode/memory")
+		memoryDir = expandHome("~/.odek/memory")
 	}
 	memoryManager := memory.NewMemoryManager(memoryDir, client, cfg.MemoryConfig)
 	agent := &Agent{
@@ -433,7 +433,7 @@ func expandHome(path string) string {
 	return path
 }
 
-// toolAdapter bridges kode.Tool to internal/tool.Tool.
+// toolAdapter bridges odek.Tool to internal/tool.Tool.
 type toolAdapter struct {
 	t Tool
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Default memory dir relative to ~/.kode/
+// Default memory dir relative to ~/.odek/
 const defaultMemoryDir = "memory"
 
 // Default buffer size (lines).

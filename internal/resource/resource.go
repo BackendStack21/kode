@@ -333,7 +333,7 @@ func describeFile(info os.FileInfo) string {
 
 // SessionResolver resolves @sess:id references from a session store.
 type SessionResolver struct {
-	dir string // ~/.kode/sessions/
+	dir string // ~/.odek/sessions/
 }
 
 // NewSessionResolver creates a session resolver.

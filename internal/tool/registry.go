@@ -2,7 +2,7 @@
 package tool
 
 // Tool is the interface the agent uses to discover and invoke capabilities.
-// It's identical to the top-level kode.Tool — re-exported here for internal use.
+// It's identical to the top-level odek.Tool — re-exported here for internal use.
 type Tool interface {
 	Name() string
 	Description() string

@@ -223,8 +223,8 @@ func FormatCurationReport(r *CurationReport) string {
 		b.WriteString(fmt.Sprintf("🔍  Deduplicated: %d skills share body hashes\n", r.Deduplicated))
 	}
 
-	b.WriteString("\nRun `kode skill curate --apply` to apply all suggestions\n")
-	b.WriteString("Run `kode skill curate --interactive` to review one-by-one")
+	b.WriteString("\nRun `odek skill curate --apply` to apply all suggestions\n")
+	b.WriteString("Run `odek skill curate --interactive` to review one-by-one")
 
 	return b.String()
 }

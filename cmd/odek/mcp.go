@@ -12,15 +12,15 @@ import (
 
 // ── MCP Command ────────────────────────────────────────────────────────
 
-// mcpCmd starts kode as an MCP server over stdio.
-// This allows MCP clients (Claude Code, Cursor, etc.) to use kode's tools.
+// mcpCmd starts odek as an MCP server over stdio.
+// This allows MCP clients (Claude Code, Cursor, etc.) to use odek's tools.
 //
 // Usage:
 //
-//	kode mcp [--sandbox]
+//	odek mcp [--sandbox]
 //
 // The server reads JSON-RPC 2.0 requests from stdin and writes responses
-// to stdout. Stderr is used for logging. The server exposes all kode
+// to stdout. Stderr is used for logging. The server exposes all odek
 // built-in tools (shell, read_file, write_file, search_files, patch,
 // browser) via the tools/list and tools/call MCP methods.
 func mcpCmd(args []string) error {
@@ -73,8 +73,8 @@ Flags:
 	var sm *skills.SkillManager
 	if resolved.Skills.Learn {
 		sm = skills.NewSkillManager(
-			expandHome("~/.kode/skills"),
-			"./.kode/skills",
+			expandHome("~/.odek/skills"),
+			"./.odek/skills",
 		)
 	}
 

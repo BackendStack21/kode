@@ -15,7 +15,7 @@ Open `http://localhost:8080` in your browser. The UI auto-reconnects if the serv
 
 ```
 ┌─────────────┐       WebSocket (RFC 6455)      ┌──────────────┐
-│   Browser    │ ◄─────────────────────────────► │   kode serve  │
+│   Browser    │ ◄─────────────────────────────► │   odek serve  │
 │  index.html  │   JSON messages (see protocol)  │  (Go binary)  │
 └─────────────┘                                  └──────┬───────┘
                                                         │
@@ -65,7 +65,7 @@ The chat **only auto-scrolls when you're near the bottom** (within 60px). If you
 
 This uses `requestAnimationFrame` batching to avoid layout thrashing during high-frequency token updates.
 
-Type `@` followed by a filename to see an autocomplete dropdown. kode resolves matching files and sessions:
+Type `@` followed by a filename to see an autocomplete dropdown. odek resolves matching files and sessions:
 
 | Prefix | Source | Example |
 |--------|--------|---------|
@@ -80,7 +80,7 @@ The dropdown fetches from `GET /api/resources?q=<query>&limit=8`. Results includ
 
 - **Auto-save**: every prompt creates a new session if none is active, or appends to the current one
 - **Sidebar**: lists all saved sessions (max 50), highlights the active one
-- **Session data**: stored in `~/.kode/sessions/` as JSON files, same format used by `kode session`
+- **Session data**: stored in `~/.odek/sessions/` as JSON files, same format used by `odek session`
 
 ## Flags
 
@@ -137,7 +137,7 @@ Example event sequence:
 
 ## Implementation details
 
-### Server stack (`cmd/kode/serve.go`)
+### Server stack (`cmd/odek/serve.go`)
 
 | Component | File | Purpose |
 |-----------|------|---------|
@@ -156,7 +156,7 @@ Example event sequence:
 - Thread-safe writes via `sync.Mutex`
 - Error handling: returns `io.EOF` on clean close, raw `net.Error` on broken connection
 
-### Frontend (`cmd/kode/ui/index.html`)
+### Frontend (`cmd/odek/ui/index.html`)
 
 - ~1,200 lines: single file with embedded CSS and vanilla JS (no frameworks)
 - **Design system**: loaded from `https://assets.21no.de/css/tokens.css` — dark theme with CSS custom properties (`--bg-primary`, `--accent`, `--text-primary`, etc.)
@@ -167,6 +167,6 @@ Example event sequence:
 
 ## Tips
 
-- **Security sandbox**: `kode serve --addr localhost:8080` restricts to localhost. Use a reverse proxy (Caddy, nginx) for remote access.
-- **Config inheritance**: `kode serve` reads the same config chain (`~/kode/config.json` → `./kode.json` → env vars) as `kode run`. Set your model, API key, and sandbox settings there.
+- **Security sandbox**: `odek serve --addr localhost:8080` restricts to localhost. Use a reverse proxy (Caddy, nginx) for remote access.
+- **Config inheritance**: `odek serve` reads the same config chain (`~/.odek/config.json` → `./kode.json` → env vars) as `odek run`. Set your model, API key, and sandbox settings there.
 - **Session discovery**: reference any saved session via `@sess:ID` in your prompt to give the agent full context from previous conversations.

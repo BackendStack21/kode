@@ -160,16 +160,16 @@ func TestDirPriority(t *testing.T) {
 		dir  string
 		want int
 	}{
-		{"./.kode/skills", 0},
-		{"/project/.kode/skills", 1}, // can't distinguish from user without home dir
-		{"~/.kode/skills", 1},
-		{"/home/user/.kode/skills", 1},
+		{"./.odek/skills", 0},
+		{"/project/.odek/skills", 1}, // can't distinguish from user without home dir
+		{"~/.odek/skills", 1},
+		{"/home/user/.odek/skills", 1},
 		{"/custom/path", 2},
 	}
 	for _, tt := range tests {
 		got := dirPriority(tt.dir)
 		if got != tt.want {
-			// ~/.kode/skills now matches priority 1 correctly
+			// ~/.odek/skills now matches priority 1 correctly
 			t.Errorf("dirPriority(%q) = %d, want %d", tt.dir, got, tt.want)
 		}
 	}

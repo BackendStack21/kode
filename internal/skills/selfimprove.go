@@ -482,7 +482,7 @@ func SaveSuggestion(dir string, s SkillSuggestion) error {
 		Name:        s.Name,
 		Description: s.Description,
 		Version:     "1.0.0",
-		Author:      "kode",
+		Author:      "odek",
 		Quality:     QualityDraft,
 		AutoLoad:    false,
 		Body:        s.Body,

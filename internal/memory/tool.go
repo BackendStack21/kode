@@ -37,7 +37,7 @@ var memoryToolSchema = map[string]any{
 	"required": []string{"action"},
 }
 
-// MemoryTool wraps a MemoryManager as a kode-compatible Tool.
+// MemoryTool wraps a MemoryManager as a odek-compatible Tool.
 type MemoryTool struct {
 	manager *MemoryManager
 }

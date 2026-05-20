@@ -1,4 +1,4 @@
-package kode
+package odek
 
 import (
 	"context"
@@ -302,7 +302,7 @@ func TestToolAdapter(t *testing.T) {
 	}
 }
 
-// fakeKodeTool implements kode.Tool for testing.
+// fakeKodeTool implements odek.Tool for testing.
 type fakeKodeTool struct {
 	name        string
 	description string
@@ -316,7 +316,7 @@ func (f *fakeKodeTool) Description() string              { return f.description 
 func (f *fakeKodeTool) Schema() any                      { return f.schema }
 func (f *fakeKodeTool) Call(args string) (string, error) { return f.callResult, f.callError }
 
-// Test that New() works with tools, covering the tool adapter loop (lines 109-112 in kode.go).
+// Test that New() works with tools, covering the tool adapter loop (lines 109-112 in odek.go).
 func TestNew_WithTools(t *testing.T) {
 	fake := &fakeKodeTool{
 		name:        "test_tool",

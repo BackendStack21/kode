@@ -18,10 +18,10 @@ import (
 
 // ── REPL ──────────────────────────────────────────────────────────────
 
-// replCmd handles `kode repl [flags]`.
+// replCmd handles `odek repl [flags]`.
 // It starts (or resumes) an interactive multi-turn session.
 // Accepts --model, --thinking, --sandbox, and --sandbox-* flags
-// just like `kode run`, plus --id to resume a specific session.
+// just like `odek run`, plus --id to resume a specific session.
 func replCmd(args []string) error {
 	f, err := parseReplFlags(args)
 	if err != nil {
@@ -71,8 +71,8 @@ func replCmd(args []string) error {
 	var sm *skills.SkillManager
 	if resolved.Skills.Learn {
 		sm = skills.NewSkillManager(
-			expandHome("~/.kode/skills"),
-			"./.kode/skills",
+			expandHome("~/.odek/skills"),
+			"./.odek/skills",
 		)
 	}
 	tools := builtinTools(resolved.Dangerous, sm, nil)
@@ -108,7 +108,7 @@ func replCmd(args []string) error {
 	}
 
 	// Renderer
-	modelLabel := kode.ProfileLabel(resolved.Model)
+	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {
 		modelLabel = "deepseek-chat"
 	}
@@ -121,7 +121,7 @@ func replCmd(args []string) error {
 		skillsCfg = &resolved.Skills
 	}
 
-	agent, err := kode.New(kode.Config{
+	agent, err := odek.New(odek.Config{
 		Model:          resolved.Model,
 		BaseURL:        resolved.BaseURL,
 		APIKey:         resolved.APIKey,

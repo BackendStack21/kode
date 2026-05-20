@@ -176,16 +176,16 @@ func TestRun_NoAPIKey(t *testing.T) {
 	// Save env
 	origDS := os.Getenv("DEEPSEEK_API_KEY")
 	origOAI := os.Getenv("OPENAI_API_KEY")
-	origKODE := os.Getenv("KODE_API_KEY")
+	origKODE := os.Getenv("ODEK_API_KEY")
 	origHome := os.Getenv("HOME")
 	os.Unsetenv("DEEPSEEK_API_KEY")
 	os.Unsetenv("OPENAI_API_KEY")
-	os.Unsetenv("KODE_API_KEY")
-	os.Setenv("HOME", t.TempDir()) // isolate from any ~/kode/config.json
+	os.Unsetenv("ODEK_API_KEY")
+	os.Setenv("HOME", t.TempDir()) // isolate from any ~/.odek/config.json
 	defer func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
-		os.Setenv("KODE_API_KEY", origKODE)
+		os.Setenv("ODEK_API_KEY", origKODE)
 		os.Setenv("HOME", origHome)
 	}()
 
@@ -206,7 +206,7 @@ func TestBuiltinTools(t *testing.T) {
 }
 
 func TestDefaultSystemPrompt(t *testing.T) {
-	if !strings.Contains(defaultSystem, "kode") {
+	if !strings.Contains(defaultSystem, "odek") {
 		t.Error("defaultSystem should contain agent instructions")
 	}
 }
@@ -249,10 +249,10 @@ func TestPrintUsage(t *testing.T) {
 		"--system",
 		"--global",
 		"--force",
-		"~/kode/config.json",
-		"KODE_MODEL",
-		"KODE_API_KEY",
-		"KODE_SANDBOX",
+		"~/.odek/config.json",
+		"ODEK_MODEL",
+		"ODEK_API_KEY",
+		"ODEK_SANDBOX",
 		"SANDBOX_IMAGE",
 		"SANDBOX_NETWORK",
 		"SANDBOX_READONLY",
@@ -278,7 +278,7 @@ func TestSetupSandbox_CommandFlags(t *testing.T) {
 		t.Skip("docker not available")
 	}
 
-	containerName := "kode-test-setup"
+	containerName := "odek-test-setup"
 	wd := "/tmp"
 
 	cmd := exec.Command("docker", "run",
@@ -315,7 +315,7 @@ func TestSetupSandbox_ExecWorks(t *testing.T) {
 		t.Skip("docker not available")
 	}
 
-	containerName := "kode-test-exec"
+	containerName := "odek-test-exec"
 	wd := "/tmp"
 
 	cmd := exec.Command("docker", "run",
@@ -347,7 +347,7 @@ func TestSetupSandbox_NetworkBlocked(t *testing.T) {
 		t.Skip("docker not available")
 	}
 
-	containerName := "kode-test-net"
+	containerName := "odek-test-net"
 	wd := "/tmp"
 
 	cmd := exec.Command("docker", "run",
@@ -583,7 +583,7 @@ func TestParseRunFlags_EdgeCases(t *testing.T) {
 	}
 }
 
-// Test that KODE_* env vars flow through run() to kode.New().
+// Test that ODEK_* env vars flow through run() to odek.New().
 func TestRun_WithKODEEnvVars(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -597,26 +597,26 @@ func TestRun_WithKODEEnvVars(t *testing.T) {
 	os.Unsetenv("DEEPSEEK_API_KEY")
 	os.Unsetenv("OPENAI_API_KEY")
 	os.Setenv("HOME", t.TempDir())
-	// Also isolate KODE_API_KEY (should not be set)
-	origKODE := os.Getenv("KODE_API_KEY")
-	os.Unsetenv("KODE_API_KEY")
+	// Also isolate ODEK_API_KEY (should not be set)
+	origKODE := os.Getenv("ODEK_API_KEY")
+	os.Unsetenv("ODEK_API_KEY")
 	defer func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
 		os.Setenv("HOME", origHome)
-		os.Setenv("KODE_API_KEY", origKODE)
+		os.Setenv("ODEK_API_KEY", origKODE)
 	}()
 
-	// Set KODE_API_KEY so run() can find it (no env is set otherwise)
-	os.Setenv("KODE_API_KEY", "sk-kode-env")
+	// Set ODEK_API_KEY so run() can find it (no env is set otherwise)
+	os.Setenv("ODEK_API_KEY", "sk-odek-env")
 
 	err := run([]string{"--base-url", server.URL, "test task"})
 	if err != nil {
-		t.Fatalf("run() with KODE_API_KEY should succeed, got: %v", err)
+		t.Fatalf("run() with ODEK_API_KEY should succeed, got: %v", err)
 	}
 }
 
-// Test that ~/kode/config.json flows through run().
+// Test that ~/.odek/config.json flows through run().
 func TestRun_WithGlobalConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -629,7 +629,7 @@ func TestRun_WithGlobalConfig(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	os.Unsetenv("DEEPSEEK_API_KEY")
 	os.Unsetenv("OPENAI_API_KEY")
-	os.Unsetenv("KODE_API_KEY")
+	os.Unsetenv("ODEK_API_KEY")
 	defer func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
@@ -639,8 +639,8 @@ func TestRun_WithGlobalConfig(t *testing.T) {
 	// Create a global config with an API key
 	homeDir := t.TempDir()
 	os.Setenv("HOME", homeDir)
-	os.MkdirAll(homeDir+"/kode", 0755)
-	if err := os.WriteFile(homeDir+"/kode/config.json", []byte(`{
+	os.MkdirAll(homeDir+"/.odek", 0755)
+	if err := os.WriteFile(homeDir+"/.odek/config.json", []byte(`{
 		"api_key": "sk-global-config"
 	}`), 0644); err != nil {
 		t.Fatal(err)
@@ -652,7 +652,7 @@ func TestRun_WithGlobalConfig(t *testing.T) {
 	}
 }
 
-// Test that ./kode.json flows through run().
+// Test that ./odek.json flows through run().
 func TestRun_WithProjectConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -666,7 +666,7 @@ func TestRun_WithProjectConfig(t *testing.T) {
 	origCwd, _ := os.Getwd()
 	os.Unsetenv("DEEPSEEK_API_KEY")
 	os.Unsetenv("OPENAI_API_KEY")
-	os.Unsetenv("KODE_API_KEY")
+	os.Unsetenv("ODEK_API_KEY")
 	defer func() {
 		os.Setenv("DEEPSEEK_API_KEY", origDS)
 		os.Setenv("OPENAI_API_KEY", origOAI)
@@ -680,7 +680,7 @@ func TestRun_WithProjectConfig(t *testing.T) {
 	// Create project-level config in a temp directory
 	projectDir := t.TempDir()
 	os.Chdir(projectDir)
-	if err := os.WriteFile(projectDir+"/kode.json", []byte(`{
+	if err := os.WriteFile(projectDir+"/odek.json", []byte(`{
 		"api_key": "sk-project-config"
 	}`), 0644); err != nil {
 		t.Fatal(err)
@@ -715,9 +715,9 @@ func TestInitConfig_Local(t *testing.T) {
 	}
 
 	// Verify the file was created
-	data, err := os.ReadFile("kode.json")
+	data, err := os.ReadFile("odek.json")
 	if err != nil {
-		t.Fatalf("kode.json not created: %v", err)
+		t.Fatalf("odek.json not created: %v", err)
 	}
 	content := string(data)
 	if !strings.Contains(content, "deepseek-v4-flash") {
@@ -739,7 +739,7 @@ func TestInitConfig_Global(t *testing.T) {
 	}
 
 	// Verify the file was created
-	data, err := os.ReadFile(dir + "/kode/config.json")
+	data, err := os.ReadFile(dir + "/.odek/config.json")
 	if err != nil {
 		t.Fatalf("global config not created: %v", err)
 	}
@@ -760,7 +760,7 @@ func TestInitConfig_LocalExists(t *testing.T) {
 	defer os.Setenv("HOME", origHome)
 
 	// Create existing config
-	os.WriteFile("kode.json", []byte(`{"model": "existing"}`), 0644)
+	os.WriteFile("odek.json", []byte(`{"model": "existing"}`), 0644)
 
 	// Should warn, not overwrite
 	if err := initConfig([]string{}); err != nil {
@@ -768,7 +768,7 @@ func TestInitConfig_LocalExists(t *testing.T) {
 	}
 
 	// Content should be unchanged
-	data, _ := os.ReadFile("kode.json")
+	data, _ := os.ReadFile("odek.json")
 	if !strings.Contains(string(data), "existing") {
 		t.Error("config should not have been overwritten")
 	}
@@ -785,7 +785,7 @@ func TestInitConfig_LocalForce(t *testing.T) {
 	defer os.Setenv("HOME", origHome)
 
 	// Create existing config
-	os.WriteFile("kode.json", []byte(`{"model": "old"}`), 0644)
+	os.WriteFile("odek.json", []byte(`{"model": "old"}`), 0644)
 
 	// Force overwrite
 	if err := initConfig([]string{"--force"}); err != nil {
@@ -793,7 +793,7 @@ func TestInitConfig_LocalForce(t *testing.T) {
 	}
 
 	// Content should be the template
-	data, _ := os.ReadFile("kode.json")
+	data, _ := os.ReadFile("odek.json")
 	if strings.Contains(string(data), "old") {
 		t.Error("config should have been overwritten")
 	}
@@ -824,7 +824,7 @@ func TestInitConfig_ShortFlags(t *testing.T) {
 	}
 
 	// Verify
-	if _, err := os.Stat(dir + "/kode/config.json"); err != nil {
+	if _, err := os.Stat(dir + "/.odek/config.json"); err != nil {
 		t.Errorf("global config should exist after -g -f: %v", err)
 	}
 }
@@ -847,9 +847,9 @@ func TestInitConfig_RestrictivePermissions(t *testing.T) {
 	}
 
 	// Check file permissions
-	info, err := os.Stat("kode.json")
+	info, err := os.Stat("odek.json")
 	if err != nil {
-		t.Fatalf("kode.json not found: %v", err)
+		t.Fatalf("odek.json not found: %v", err)
 	}
 	perm := info.Mode().Perm()
 	if perm != 0600 {
@@ -859,7 +859,7 @@ func TestInitConfig_RestrictivePermissions(t *testing.T) {
 
 // TestJsonMarshalName verifies that skill names with special characters
 // (quotes, backslashes) are properly escaped in JSON output, preventing
-// JSON injection in kode skill view/delete commands.
+// JSON injection in odek skill view/delete commands.
 func TestJsonMarshalName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -888,7 +888,7 @@ func TestJsonMarshalName(t *testing.T) {
 // ── Sandbox Tests ────────────────────────────────────────────────────
 
 func TestResolveSandboxImage_Default(t *testing.T) {
-	// No image configured, no Dockerfile.kode → alpine:latest
+	// No image configured, no Dockerfile.odek → alpine:latest
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	os.Chdir(dir)
@@ -904,14 +904,14 @@ func TestResolveSandboxImage_Default(t *testing.T) {
 }
 
 func TestResolveSandboxImage_Explicit(t *testing.T) {
-	// Explicit image set → use it directly, ignore any Dockerfile.kode
+	// Explicit image set → use it directly, ignore any Dockerfile.odek
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(cwd)
 
-	// Even with a Dockerfile.kode, explicit should win
-	os.WriteFile("Dockerfile.kode", []byte("FROM alpine"), 0644)
+	// Even with a Dockerfile.odek, explicit should win
+	os.WriteFile("Dockerfile.odek", []byte("FROM alpine"), 0644)
 
 	image, err := resolveSandboxImage(sandboxConfig{Image: "node:20-alpine"})
 	if err != nil {
@@ -927,14 +927,14 @@ func TestResolveSandboxImage_DockerfileKode(t *testing.T) {
 		t.Skip("docker not available")
 	}
 
-	// No explicit image, Dockerfile.kode exists → build it
+	// No explicit image, Dockerfile.odek exists → build it
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(cwd)
 
-	// Create a minimal Dockerfile.kode that doesn't need to pull
-	if err := os.WriteFile("Dockerfile.kode", []byte("FROM scratch\nCMD []"), 0644); err != nil {
+	// Create a minimal Dockerfile.odek that doesn't need to pull
+	if err := os.WriteFile("Dockerfile.odek", []byte("FROM scratch\nCMD []"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -943,9 +943,9 @@ func TestResolveSandboxImage_DockerfileKode(t *testing.T) {
 		t.Fatalf("resolveSandboxImage error: %v", err)
 	}
 
-	// Should return a kode-sandbox:<hash> tag
-	if !strings.HasPrefix(image, "kode-sandbox:") {
-		t.Errorf("image = %q, want prefix 'kode-sandbox:'", image)
+	// Should return a odek-sandbox:<hash> tag
+	if !strings.HasPrefix(image, "odek-sandbox:") {
+		t.Errorf("image = %q, want prefix 'odek-sandbox:'", image)
 	}
 }
 
@@ -961,7 +961,7 @@ func TestResolveSandboxImage_DockerfileKodeCached(t *testing.T) {
 	defer os.Chdir(cwd)
 
 	content := "FROM scratch\nCMD []"
-	os.WriteFile("Dockerfile.kode", []byte(content), 0644)
+	os.WriteFile("Dockerfile.odek", []byte(content), 0644)
 
 	img1, err := resolveSandboxImage(sandboxConfig{})
 	if err != nil {
@@ -969,8 +969,8 @@ func TestResolveSandboxImage_DockerfileKodeCached(t *testing.T) {
 	}
 
 	// Recreate with same content
-	os.Remove("Dockerfile.kode")
-	os.WriteFile("Dockerfile.kode", []byte(content), 0644)
+	os.Remove("Dockerfile.odek")
+	os.WriteFile("Dockerfile.odek", []byte(content), 0644)
 
 	img2, err := resolveSandboxImage(sandboxConfig{})
 	if err != nil {
@@ -980,25 +980,25 @@ func TestResolveSandboxImage_DockerfileKodeCached(t *testing.T) {
 	// Provided docker is available, the image was built and cached.
 	// The hash is deterministic based on content.
 	if img1 != img2 {
-		t.Errorf("same Dockerfile.kode content should produce same hash, got %q vs %q", img1, img2)
+		t.Errorf("same Dockerfile.odek content should produce same hash, got %q vs %q", img1, img2)
 	}
 }
 
 // Test that sandbox env vars flow through config.LoadConfig
 func TestLoadConfig_SandboxEnvVars(t *testing.T) {
-	os.Setenv("KODE_SANDBOX_IMAGE", "python:3.12-slim")
-	os.Setenv("KODE_SANDBOX_NETWORK", "bridge")
-	os.Setenv("KODE_SANDBOX_READONLY", "true")
-	os.Setenv("KODE_SANDBOX_MEMORY", "1g")
-	os.Setenv("KODE_SANDBOX_CPUS", "4")
-	os.Setenv("KODE_SANDBOX_USER", "1000:1000")
+	os.Setenv("ODEK_SANDBOX_IMAGE", "python:3.12-slim")
+	os.Setenv("ODEK_SANDBOX_NETWORK", "bridge")
+	os.Setenv("ODEK_SANDBOX_READONLY", "true")
+	os.Setenv("ODEK_SANDBOX_MEMORY", "1g")
+	os.Setenv("ODEK_SANDBOX_CPUS", "4")
+	os.Setenv("ODEK_SANDBOX_USER", "1000:1000")
 	defer func() {
-		os.Unsetenv("KODE_SANDBOX_IMAGE")
-		os.Unsetenv("KODE_SANDBOX_NETWORK")
-		os.Unsetenv("KODE_SANDBOX_READONLY")
-		os.Unsetenv("KODE_SANDBOX_MEMORY")
-		os.Unsetenv("KODE_SANDBOX_CPUS")
-		os.Unsetenv("KODE_SANDBOX_USER")
+		os.Unsetenv("ODEK_SANDBOX_IMAGE")
+		os.Unsetenv("ODEK_SANDBOX_NETWORK")
+		os.Unsetenv("ODEK_SANDBOX_READONLY")
+		os.Unsetenv("ODEK_SANDBOX_MEMORY")
+		os.Unsetenv("ODEK_SANDBOX_CPUS")
+		os.Unsetenv("ODEK_SANDBOX_USER")
 	}()
 
 	cfg := config.LoadConfig(config.CLIFlags{})
@@ -1029,8 +1029,8 @@ func TestLoadConfig_SandboxFileConfig(t *testing.T) {
 	os.Setenv("HOME", dir)
 	defer os.Setenv("HOME", prevHome)
 
-	// Create ~/kode/config.json with sandbox settings
-	cfgDir := filepath.Join(dir, "kode")
+	// Create ~/.odek/config.json with sandbox settings
+	cfgDir := filepath.Join(dir, ".odek")
 	os.MkdirAll(cfgDir, 0755)
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(`{
 		"sandbox_image": "golang:1.24-alpine",
@@ -1085,7 +1085,7 @@ func TestBuildSandboxArgs_EnvAndVolumes(t *testing.T) {
 		},
 		Volumes: []string{"/host/cache:/container/cache", "/host/data:/data:ro"},
 	}
-	args := buildSandboxArgs(cfg, "kode-test", "/tmp/workdir", cfg.Image)
+	args := buildSandboxArgs(cfg, "odek-test", "/tmp/workdir", cfg.Image)
 
 	// Must contain env vars as "-e KEY=VALUE" pairs
 	if !hasArgPair(args, "-e", "GOCACHE=/tmp/gocache") {
@@ -1110,7 +1110,7 @@ func TestBuildSandboxArgs_EmptyEnvAndVolumes(t *testing.T) {
 		Image:   "alpine:latest",
 		Network: "bridge",
 	}
-	args := buildSandboxArgs(cfg, "kode-test", "/tmp/workdir", cfg.Image)
+	args := buildSandboxArgs(cfg, "odek-test", "/tmp/workdir", cfg.Image)
 
 	// Should not contain any -e or extra -v beyond the workspace mount
 	for i, a := range args {
@@ -1352,7 +1352,7 @@ func TestRunLearn_MultiStepProcedure(t *testing.T) {
 	}
 
 	// Skill file written to disk
-	skillDir := filepath.Join(homeDir, ".kode", "skills", "procedure-echo")
+	skillDir := filepath.Join(homeDir, ".odek", "skills", "procedure-echo")
 	skillFile := filepath.Join(skillDir, "SKILL.md")
 	if _, err := os.Stat(skillFile); os.IsNotExist(err) {
 		t.Errorf("expected skill file at %s", skillFile)
@@ -1413,7 +1413,7 @@ func TestRunLearn_RejectSuggestion(t *testing.T) {
 	}
 
 	// Verify no skill file written
-	skillDir := filepath.Join(homeDir, ".kode", "skills", "procedure-echo")
+	skillDir := filepath.Join(homeDir, ".odek", "skills", "procedure-echo")
 	skillFile := filepath.Join(skillDir, "SKILL.md")
 	if _, err := os.Stat(skillFile); !os.IsNotExist(err) {
 		t.Errorf("skill file should NOT exist after rejection: %s", skillFile)

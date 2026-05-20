@@ -24,7 +24,7 @@ import (
 // one dynamically by analyzing the goal text — embedding the actual task
 // so every prompt is unique.
 
-const subagentSystem = `You are kode working on a single focused sub-task.
+const subagentSystem = `You are odek working on a single focused sub-task.
 Complete the assigned goal and report what you did.
 Do not expand scope. Do not ask questions.
 Use the shell tool when you need information or to make changes.
@@ -86,7 +86,7 @@ func buildSubagentPrompt(goal, context string) string {
 	}
 
 	// Build the prompt with the actual goal embedded
-	prompt := fmt.Sprintf("You are kode — %s.\n%s\n%s\nGoal: %s.",
+	prompt := fmt.Sprintf("You are odek — %s.\n%s\n%s\nGoal: %s.",
 		persona, methodology, focus, goal)
 
 	if context != "" {
@@ -155,7 +155,7 @@ func parseSubagentConfig(data string) subagentConfig {
 
 // ── Subagent Command ─────────────────────────────────────────────────
 
-// subagentCmd handles `kode subagent [flags]`.
+// subagentCmd handles `odek subagent [flags]`.
 // It runs a focused agent with a minimal system prompt and outputs
 // a JSON result to stdout. Stderr carries human-readable progress.
 //
@@ -281,8 +281,8 @@ func subagentCmd(args []string) error {
 	var sm *skills.SkillManager
 	if resolved.Skills.Learn {
 		sm = skills.NewSkillManager(
-			expandHome("~/.kode/skills"),
-			"./.kode/skills",
+			expandHome("~/.odek/skills"),
+			"./.odek/skills",
 		)
 	}
 	tools := builtinTools(resolved.Dangerous, sm, nil)
@@ -333,7 +333,7 @@ func subagentCmd(args []string) error {
 	// Create agent — silent renderer for stderr
 	rend := render.New(os.Stderr, !cfg.quiet)
 
-	agent, err := kode.New(kode.Config{
+	agent, err := odek.New(odek.Config{
 		Model:          resolved.Model,
 		BaseURL:        resolved.BaseURL,
 		APIKey:         resolved.APIKey,

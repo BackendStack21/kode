@@ -15,8 +15,8 @@ func TestRenderer_Start(t *testing.T) {
 	r.Start("list all files in this directory")
 
 	out := buf.String()
-	if !strings.Contains(out, "kode") {
-		t.Errorf("Start() missing kode brand: %q", out)
+	if !strings.Contains(out, "odek") {
+		t.Errorf("Start() missing odek brand: %q", out)
 	}
 	if !strings.Contains(out, "deepseek-chat") {
 		t.Errorf("Start() missing model name: %q", out)

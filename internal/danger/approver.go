@@ -28,7 +28,7 @@ type Approver interface {
 }
 
 // TTYApprover implements Approver by reading from /dev/tty.
-// This is the default approver used in CLI mode (kode run, kode repl).
+// This is the default approver used in CLI mode (odek run, odek repl).
 // When /dev/tty is not available (piped stdin, CI), it falls back to
 // the configured NonInteractiveAction.
 type TTYApprover struct {

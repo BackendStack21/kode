@@ -66,13 +66,13 @@ func parseSkillContent(content, sourcePath string) *Skill {
 	version, _ := fm["version"].(string)
 	author, _ := fm["author"].(string)
 
-	// Parse kode section
+	// Parse odek section
 	var trigger SkillTrigger
 	autoLoad := false
 	quality := QualityManual
 
-	if kode, ok := fm["kode"].(map[string]any); ok {
-		if t, ok := kode["trigger"].(map[string]any); ok {
+	if odek, ok := fm["odek"].(map[string]any); ok {
+		if t, ok := odek["trigger"].(map[string]any); ok {
 			topic, _ := t["topic"].(string)
 			action, _ := t["action"].(string)
 			trigger = SkillTrigger{
@@ -80,10 +80,10 @@ func parseSkillContent(content, sourcePath string) *Skill {
 				ActionKeywords: splitKeywords(action),
 			}
 		}
-		if al, ok := kode["auto_load"].(bool); ok {
+		if al, ok := odek["auto_load"].(bool); ok {
 			autoLoad = al
 		}
-		if q, ok := kode["quality"].(string); ok {
+		if q, ok := odek["quality"].(string); ok {
 			quality = parseQualityFlag(q)
 		}
 	} else {
@@ -343,7 +343,7 @@ func MarshalSkill(s Skill) string {
 	if s.Author != "" {
 		b.WriteString(fmt.Sprintf("author: %s\n", s.Author))
 	}
-	b.WriteString("kode:\n")
+	b.WriteString("odek:\n")
 	if len(s.Trigger.TopicKeywords) > 0 || len(s.Trigger.ActionKeywords) > 0 {
 		b.WriteString("  trigger:\n")
 		if len(s.Trigger.TopicKeywords) > 0 {

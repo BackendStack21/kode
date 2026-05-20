@@ -1,21 +1,21 @@
 # Configuration
 
-kode uses a **layered configuration system** with convention over configuration — opt-in files and environment variables, no mandatory setup.
+`odek uses a **layered configuration system** with convention over configuration — opt-in files and environment variables, no mandatory setup.
 
 ## Priority chain
 
 Each layer overrides the one below it. Unset fields inherit from the layer below:
 
 ```
-1.  ~/kode/config.json    ← Global defaults (shared across projects)
+1.  ~/.odek/config.json    ← Global defaults (shared across projects)
 2.  ./odek.json           ← Project-specific overrides
-3.  KODE_* env vars       ← Runtime/environment overrides
+3.  ODEK_* env vars       ← Runtime/environment overrides
 4.  CLI flags             ← Explicit invocation (highest priority)
 ```
 
 ## Config files
 
-### Global defaults (`~/kode/config.json`)
+### Global defaults (`~/.odek/config.json`)
 
 Shared across all projects:
 
@@ -49,30 +49,30 @@ Both files are optional. Missing files are silently ignored. String values suppo
 
 ## Environment variables
 
-Every config knob has a `KODE_*` counterpart:
+Every config knob has a `ODEK_*` counterpart:
 
 | Variable | Maps to | Type |
 |----------|---------|------|
-| `KODE_MODEL` | `--model` | string |
-| `KODE_BASE_URL` | `--base-url` | string |
-| `KODE_API_KEY` | config files only | string |
-| `KODE_THINKING` | `--thinking` | string |
-| `KODE_MAX_ITER` | `--max-iter` | int |
-| `KODE_SANDBOX` | `--sandbox` | bool |
-| `KODE_NO_COLOR` | `--no-color` | bool |
-| `KODE_NO_AGENTS` | `--no-agents` | bool |
-| `KODE_SYSTEM` | `--system` | string |
-| `KODE_SKILLS_LEARN` | `skills.learn` | bool |
-| `KODE_SANDBOX_IMAGE` | `--sandbox-image` | string |
-| `KODE_SANDBOX_NETWORK` | `--sandbox-network` | string |
-| `KODE_SANDBOX_READONLY` | `--sandbox-readonly` | bool |
-| `KODE_SANDBOX_MEMORY` | `--sandbox-memory` | string |
-| `KODE_SANDBOX_CPUS` | `--sandbox-cpus` | string |
-| `KODE_SANDBOX_USER` | `--sandbox-user` | string |
+| `ODEK_MODEL` | `--model` | string |
+| `ODEK_BASE_URL` | `--base-url` | string |
+| `ODEK_API_KEY` | config files only | string |
+| `ODEK_THINKING` | `--thinking` | string |
+| `ODEK_MAX_ITER` | `--max-iter` | int |
+| `ODEK_SANDBOX` | `--sandbox` | bool |
+| `ODEK_NO_COLOR` | `--no-color` | bool |
+| `ODEK_NO_AGENTS` | `--no-agents` | bool |
+| `ODEK_SYSTEM` | `--system` | string |
+| `ODEK_SKILLS_LEARN` | `skills.learn` | bool |
+| `ODEK_SANDBOX_IMAGE` | `--sandbox-image` | string |
+| `ODEK_SANDBOX_NETWORK` | `--sandbox-network` | string |
+| `ODEK_SANDBOX_READONLY` | `--sandbox-readonly` | bool |
+| `ODEK_SANDBOX_MEMORY` | `--sandbox-memory` | string |
+| `ODEK_SANDBOX_CPUS` | `--sandbox-cpus` | string |
+| `ODEK_SANDBOX_USER` | `--sandbox-user` | string |
 
 ## API key fallback order
 
-`KODE_API_KEY` → `DEEPSEEK_API_KEY` → `OPENAI_API_KEY`
+`ODEK_API_KEY` → `DEEPSEEK_API_KEY` → `OPENAI_API_KEY`
 
 ## Skills configuration
 
@@ -103,10 +103,10 @@ The `skills` section controls the skill system:
 |-------|---------|---------|-------------|
 | `max_auto_load` | — | 3 | Max skills injected into system prompt on start |
 | `max_lazy_slots` | — | 5 | Max skills loaded per user input via trigger matching |
-| `learn` | `KODE_SKILLS_LEARN` | `true` | Enable skill learning mode (detects patterns, suggests skills). On by default |
-| `llm_learn` | — | `true` | Use LLM to enrich detected patterns. **Template-only** — set via `kode init`, not parsed from JSON at runtime |
-| `llm_curate` | — | `true` | Use LLM for curation quality assessment. **Template-only** — set via `kode init`, not parsed from JSON at runtime |
-| `dirs` | — | [] | Extra skill directories beyond `~/.kode/skills` and `./.kode/skills` |
+| `learn` | `ODEK_SKILLS_LEARN` | `true` | Enable skill learning mode (detects patterns, suggests skills). On by default |
+| `llm_learn` | — | `true` | Use LLM to enrich detected patterns. **Template-only** — set via `odek init`, not parsed from JSON at runtime |
+| `llm_curate` | — | `true` | Use LLM for curation quality assessment. **Template-only** — set via `odek init`, not parsed from JSON at runtime |
+| `dirs` | — | [] | Extra skill directories beyond `~/.odek/skills` and `./.odek/skills` |
 | `import.max_size_bytes` | — | 1048576 (1MB) | Max size for fetched skill content |
 | `import.timeout_seconds` | — | 5 | HTTP timeout for skill URI fetch |
 | `import.require_https` | — | false | Reject http:// URIs when true |
@@ -178,7 +178,7 @@ This section is optional. Omitted fields inherit sensible defaults.
 ## MCP server configuration
 
 Connect to **external MCP servers** and expose their tools to the agent.
-Any MCP server that works with Claude Code works with kode — same config format.
+Any MCP server that works with Claude Code works with odek — same config format.
 
 ```json
 {
@@ -202,9 +202,9 @@ Any MCP server that works with Claude Code works with kode — same config forma
 | `env` | Optional environment variable overrides (empty string removes from env) |
 
 Tools are registered as `<server_name>__<tool_name>` (e.g., `playwright__navigate`)
-and are available in `kode run`, `kode repl`, `kode continue`, and `kode serve`.
+and are available in `odek run`, `odek repl`, `odek continue`, and `odek serve`.
 
-See [docs/MCP.md](docs/MCP.md#kode-as-mcp-client) for detailed instructions.
+See [docs/MCP.md](docs/MCP.md#odek-as-mcp-client) for detailed instructions.
 
 ## odek init
 
@@ -214,7 +214,7 @@ Create a config file template:
 # Local project config (./odek.json)
 odek init
 
-# Global config (~/kode/config.json)
+# Global config (~/.odek/config.json)
 odek init --global
 
 # Overwrite existing file
@@ -225,7 +225,7 @@ odek init --force
 
 ```bash
 # Global config
-echo '{"api_key": "${DEEPSEEK_API_KEY}", "model": "deepseek-v4-flash"}' > ~/kode/config.json
+echo '{"api_key": "${DEEPSEEK_API_KEY}", "model": "deepseek-v4-flash"}' > ~/.odek/config.json
 odek run "list files"
 
 # Per-project override
@@ -233,10 +233,10 @@ echo '{"max_iterations": 30}' > ./odek.json
 odek run "quick status"
 
 # Env var override for one-off
-KODE_SANDBOX=true odek run "run untrusted script"
+ODEK_SANDBOX=true odek run "run untrusted script"
 
 # Enable skill learning via env var
-KODE_SKILLS_LEARN=true odek run "set up CI"
+ODEK_SKILLS_LEARN=true odek run "set up CI"
 
 # Sub-agent config (project-level)
 echo '{"subagent": {"max_concurrency": 5, "timeout_seconds": 300}}' > ./odek.json

@@ -4,7 +4,7 @@ odek supports **multi-turn conversations** — save a session, continue it later
 
 ## Session basics
 
-Each session is stored as a JSON file in `~/.kode/sessions/<id>.json` with the full conversation transcript including system message, user turns, assistant responses, tool calls, and tool results.
+Each session is stored as a JSON file in `~/.odek/sessions/<id>.json` with the full conversation transcript including system message, user turns, assistant responses, tool calls, and tool results.
 
 ### Creating a session
 
@@ -80,7 +80,7 @@ odek session cleanup 0
 ## Programmatic API
 
 ```go
-agent, err := kode.New(kode.Config{...})
+agent, err := odek.New(odek.Config{...})
 
 // Multi-turn with explicit message history
 messages := []llm.Message{
@@ -97,7 +97,7 @@ fmt.Printf("Session %s saved\n", sess.ID)
 
 ## Storage format
 
-Sessions are stored as JSON at `~/.kode/sessions/<id>.json`:
+Sessions are stored as JSON at `~/.odek/sessions/<id>.json`:
 
 ```json
 {
@@ -126,7 +126,7 @@ odek run --session --sandbox "Install deps and build"
 
 # Later, in a different terminal without sandbox config:
 odek continue "Run the test suite"
-# → kode: session was sandboxed — enabling sandbox for this continuation
+# → odek: session was sandboxed — enabling sandbox for this continuation
 ```
 
 This prevents accidentally escaping the sandbox on resume. The sandbox image/network/memory still come from the **current** config — only the toggle bit is persisted. To force-disable sandbox on resume, pass `odek continue` in a project with `"sandbox": false` in `./odek.json` and the session flag will be overridden by the explicit config.
