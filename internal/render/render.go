@@ -207,6 +207,7 @@ func (r *Renderer) FinalAnswer(text string) {
 // Summary prints a run summary line with total token and cache statistics.
 // Emitted after the final answer when at least one stat is non-zero.
 // Shows: total input/output tokens, cache creation/read/cached tokens.
+// Uses plain text labels (no symbols) for cross-terminal compatibility.
 func (r *Renderer) Summary(inTokens, outTokens, cacheCreate, cacheRead, cached int) {
 	if r.disable() {
 		return
@@ -215,17 +216,17 @@ func (r *Renderer) Summary(inTokens, outTokens, cacheCreate, cacheRead, cached i
 		return
 	}
 	parts := []string{
-		fmt.Sprintf("⌂ %d in", inTokens),
-		fmt.Sprintf("⎇ %d out", outTokens),
+		fmt.Sprintf("%d in", inTokens),
+		fmt.Sprintf("%d out", outTokens),
 	}
 	if cacheCreate > 0 {
-		parts = append(parts, fmt.Sprintf("⊕ %d created", cacheCreate))
+		parts = append(parts, fmt.Sprintf("%d created", cacheCreate))
 	}
 	if cacheRead > 0 {
-		parts = append(parts, fmt.Sprintf("⊙ %d read", cacheRead))
+		parts = append(parts, fmt.Sprintf("%d read", cacheRead))
 	}
 	if cached > 0 {
-		parts = append(parts, fmt.Sprintf("⊡ %d cached", cached))
+		parts = append(parts, fmt.Sprintf("%d cached", cached))
 	}
 	fmt.Fprintln(r.w, r.style(gray, "── "+strings.Join(parts, " · ")))
 	fmt.Fprintln(r.w)
