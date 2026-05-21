@@ -54,6 +54,21 @@ func init() {
 			Description: "Restart the bot process gracefully",
 			Handler:     restartHandler,
 		},
+		{
+			Command:     "sessions",
+			Description: "List recent conversation sessions",
+			Handler:     sessionsHandler,
+		},
+		{
+			Command:     "resume",
+			Description: "Resume a previous session by ID",
+			Handler:     resumeHandler,
+		},
+		{
+			Command:     "prune",
+			Description: "Clean up old sessions (default: 30 days)",
+			Handler:     pruneHandler,
+		},
 	}
 }
 
@@ -64,6 +79,9 @@ func startHandler(args string) (string, error) {
 		"/help — Show available commands\n" +
 		"/new — Reset conversation\n" +
 		"/stats — Show session statistics\n" +
+		"/sessions — List recent sessions\n" +
+		"/resume <id> — Resume a previous session\n" +
+		"/prune [days] — Clean up old sessions\n" +
 		"/stop — Cancel running task\n\n" +
 		"Send me a message and I will help!", nil
 }
@@ -102,6 +120,18 @@ func modeHandler(args string) (string, error) {
 // a confirmation message — the caller sends SIGHUP to trigger restart.
 func restartHandler(args string) (string, error) {
 	return "🔄 *Restarting...*\n\nThe bot will restart momentarily. This may take a few seconds.", nil
+}
+
+func sessionsHandler(args string) (string, error) {
+	return "📋 *Sessions* — Listing sessions is handled inline.", nil
+}
+
+func resumeHandler(args string) (string, error) {
+	return "✅ *Resume* — Session resume is handled inline.", nil
+}
+
+func pruneHandler(args string) (string, error) {
+	return "🧹 *Prune* — Session cleanup is handled inline.", nil
 }
 
 // FindCommand returns the command descriptor with the matching name, or nil.

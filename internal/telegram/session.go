@@ -3,6 +3,7 @@ package telegram
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,9 +54,10 @@ func NewSessionManager(store *session.Store, ttl time.Duration) *SessionManager 
 // ── Methods ────────────────────────────────────────────────────────────
 
 // GetOrCreate returns the ChatSession for the given chatID.
-// It checks the in-memory cache first; if the entry exists and hasn't
-// expired (24h), it is returned directly. Otherwise a new ChatSession
-// is created with a "tg-<chatID>" session ID, cached, and returned.
+// Checks the in-memory cache first, then the backing session store,
+// and only creates a new empty session as a last resort. This ensures
+// conversations survive bot restarts without the user needing to ask
+// for resume explicitly.
 func (sm *SessionManager) GetOrCreate(chatID int64) (*ChatSession, error) {
 	sm.Mu.RLock()
 	cs, ok := sm.Cache[chatID]
@@ -63,6 +65,11 @@ func (sm *SessionManager) GetOrCreate(chatID int64) (*ChatSession, error) {
 
 	if ok && time.Since(cs.LastActive) < sm.SessionTTL {
 		return cs, nil
+	}
+
+	// Missed cache — try the backing store before creating fresh.
+	if loaded, _ := sm.Load(chatID); loaded != nil {
+		return loaded, nil
 	}
 
 	cs = &ChatSession{
@@ -176,4 +183,94 @@ func (sm *SessionManager) AppendMessage(chatID int64, role string, content strin
 
 	cs.Messages = append(cs.Messages, llm.Message{Role: role, Content: content})
 	return sm.Save(chatID, cs.Messages)
+}
+
+// ── Session Management ─────────────────────────────────────────────────
+
+// SessionInfo is a lightweight summary of a session for listing.
+type SessionInfo struct {
+	ID        string    // session ID (e.g. "tg-12345")
+	Task      string    // first user message or label
+	CreatedAt time.Time // when the session started
+	UpdatedAt time.Time // last activity
+	Turns     int       // number of user turns
+}
+
+// ListSessions returns metadata for all sessions in the backing store,
+// sorted by most-recent-first, limited to `limit` entries. If limit <= 0,
+// all sessions are returned.
+func (sm *SessionManager) ListSessions(limit int) ([]SessionInfo, error) {
+	sessions, err := sm.Store.List(limit)
+	if err != nil {
+		return nil, fmt.Errorf("list sessions: %w", err)
+	}
+	infos := make([]SessionInfo, len(sessions))
+	for i, s := range sessions {
+		infos[i] = SessionInfo{
+			ID:        s.ID,
+			Task:      s.Task,
+			CreatedAt: s.CreatedAt,
+			UpdatedAt: s.UpdatedAt,
+			Turns:     s.Turns,
+		}
+	}
+	return infos, nil
+}
+
+// ResumeSession loads a session from the backing store and binds it to
+// the given chatID. This replaces any existing session for that chat.
+// sessionID can be a partial prefix match — the first matching session
+// (by ID prefix or task contains) is used. Returns the new ChatSession
+// or an error if no matching session is found.
+func (sm *SessionManager) ResumeSession(chatID int64, sessionID string) (*ChatSession, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("session ID required — use /sessions to list")
+	}
+
+	// Try direct load first.
+	sess, err := sm.Store.Load(sessionID)
+	if err != nil || sess == nil {
+		// Prefix match: search all sessions for a match.
+		all, listErr := sm.Store.List(0)
+		if listErr != nil {
+			return nil, fmt.Errorf("list sessions: %w", listErr)
+		}
+		for _, s := range all {
+			if strings.HasPrefix(s.ID, sessionID) ||
+				strings.Contains(strings.ToLower(s.Task), strings.ToLower(sessionID)) {
+				sess = &s
+				break
+			}
+		}
+	}
+
+	if sess == nil {
+		return nil, fmt.Errorf("no session found matching %q", sessionID)
+	}
+
+	// Build ChatSession and cache it.
+	cs := &ChatSession{
+		ChatID:     chatID,
+		SessionID:  sess.ID,
+		Messages:   sess.Messages,
+		CreatedAt:  sess.CreatedAt,
+		LastActive: time.Now(),
+		TurnCount:  sess.Turns,
+	}
+
+	sm.Mu.Lock()
+	sm.Cache[chatID] = cs
+	sm.Mu.Unlock()
+
+	return cs, nil
+}
+
+// PruneSessions deletes sessions that haven't been updated in `days` days
+// or more. Returns the number of sessions removed.
+func (sm *SessionManager) PruneSessions(days int) (int, error) {
+	if days <= 0 {
+		days = 30
+	}
+	before := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	return sm.Store.Cleanup(before)
 }

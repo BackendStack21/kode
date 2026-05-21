@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -148,6 +149,72 @@ func telegramCmd(args []string) error {
 				return "📊 *Session Stats*\n\nNo active session yet. Send a message to start one.", nil
 			}
 			return formatStats(cs), nil
+		}
+
+		// Handle /sessions — list recent sessions from the store.
+		if cmdName == "sessions" {
+			infos, err := sessionManager.ListSessions(10)
+			if err != nil {
+				return fmt.Sprintf("❌ Failed to list sessions: %v", err), nil
+			}
+			if len(infos) == 0 {
+				return "📋 *Sessions*\n\nNo sessions found. Start a conversation first.", nil
+			}
+			var b strings.Builder
+			b.WriteString("📋 *Sessions*\n\n")
+			for _, s := range infos {
+				ago := time.Since(s.UpdatedAt).Round(time.Minute)
+				fmt.Fprintf(&b, "`%s` — %d turns, %s ago\n", s.ID, s.Turns, ago)
+				if s.Task != "" {
+					taskPreview := s.Task
+					if len(taskPreview) > 50 {
+						taskPreview = taskPreview[:50] + "…"
+					}
+					fmt.Fprintf(&b, "  _%s_\n", taskPreview)
+				}
+			}
+			b.WriteString("\nUse `/resume <id>` to continue a session.")
+			return b.String(), nil
+		}
+
+		// Handle /resume <id> — switch to a different session.
+		if cmdName == "resume" {
+			sessionID := strings.TrimSpace(argsStr)
+			if sessionID == "" {
+				return "❗ Usage: `/resume <session-id>`\n\nUse `/sessions` to see available sessions.", nil
+			}
+			cs, err := sessionManager.ResumeSession(chatID, sessionID)
+			if err != nil {
+				return fmt.Sprintf("❌ %v", err), nil
+			}
+			taskPreview := cs.Messages[0].Content
+			if len(taskPreview) > 80 {
+				taskPreview = taskPreview[:80] + "…"
+			}
+			return fmt.Sprintf(
+				"✅ *Session resumed*: `%s`\n\n%d turns • %d messages\n_%s_\n\nSend a message to continue.",
+				cs.SessionID, cs.TurnCount, len(cs.Messages), taskPreview,
+			), nil
+		}
+
+		// Handle /prune [days] — clean up old sessions.
+		if cmdName == "prune" {
+			days := 30
+			if strings.TrimSpace(argsStr) != "" {
+				if d, err := strconv.Atoi(strings.TrimSpace(argsStr)); err == nil && d > 0 {
+					days = d
+				} else {
+					return "❗ Usage: `/prune [days]`\n\nExample: `/prune 7` to remove sessions older than 7 days.", nil
+				}
+			}
+			removed, err := sessionManager.PruneSessions(days)
+			if err != nil {
+				return fmt.Sprintf("❌ Failed to prune sessions: %v", err), nil
+			}
+			if removed == 0 {
+				return fmt.Sprintf("📋 *Prune* — No sessions older than %d days found.", days), nil
+			}
+			return fmt.Sprintf("🧹 *Pruned* — Removed %d session(s) older than %d days.", removed, days), nil
 		}
 
 		return cmd.Handler(argsStr)

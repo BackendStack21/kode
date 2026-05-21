@@ -2,8 +2,10 @@
 package telegram
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -116,6 +118,55 @@ func TestGetOrCreate_new(t *testing.T) {
 	}
 	if cached != cs {
 		t.Errorf("cached pointer differs from returned pointer")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestGetOrCreate_restoresFromStoreAfterRestart — simulates a bot restart
+// by creating a fresh SessionManager backed by the same store. The new
+// GetOrCreate MUST load the persisted session, not create an empty one.
+// ---------------------------------------------------------------------------
+
+func TestGetOrCreate_restoresFromStoreAfterRestart(t *testing.T) {
+	sm, _ := setupTestSessionManager(t)
+
+	const chatID int64 = 777
+
+	// Save a session with history (simulates an active conversation).
+	err := sm.Save(chatID, []llm.Message{
+		{Role: "user", Content: "old question"},
+		{Role: "assistant", Content: "old answer"},
+	})
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	// Build a FRESH SessionManager backed by the SAME store (simulates restart).
+	st, err := session.NewStore()
+	if err != nil {
+		t.Fatalf("session.NewStore() failed: %v", err)
+	}
+	sm2 := NewSessionManager(st, 24*time.Hour)
+	if len(sm2.Cache) != 0 {
+		t.Fatalf("new SessionManager cache should be empty, got %d entries", len(sm2.Cache))
+	}
+
+	// GetOrCreate on the "restarted" manager MUST restore the session.
+	cs, err := sm2.GetOrCreate(chatID)
+	if err != nil {
+		t.Fatalf("GetOrCreate after restart failed: %v", err)
+	}
+	if len(cs.Messages) != 2 {
+		t.Errorf("Messages length = %d, want 2 (from persisted session)", len(cs.Messages))
+	}
+	if cs.Messages[0].Content != "old question" {
+		t.Errorf("Messages[0] = %q, want %q", cs.Messages[0].Content, "old question")
+	}
+	if cs.TurnCount != 1 {
+		t.Errorf("TurnCount = %d, want 1 (from persisted session)", cs.TurnCount)
+	}
+	if !strings.Contains(cs.SessionID, "tg-777") {
+		t.Errorf("SessionID = %q, want tg-777", cs.SessionID)
 	}
 }
 
@@ -656,5 +707,113 @@ func TestCacheMissAfterDelete(t *testing.T) {
 	}
 	if len(cs2.Messages) != 0 {
 		t.Errorf("new session Messages should be empty, got %d", len(cs2.Messages))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestListSessions — lists sessions from the backing store
+// ---------------------------------------------------------------------------
+
+func TestListSessions(t *testing.T) {
+	sm, _ := setupTestSessionManager(t)
+	for i := int64(1); i <= 3; i++ {
+		sm.Save(i, []llm.Message{{Role: "user", Content: fmt.Sprintf("msg %d", i)}}) //nolint:errcheck
+	}
+
+	infos, err := sm.ListSessions(0)
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(infos) < 3 {
+		t.Errorf("ListSessions returned %d, want >= 3", len(infos))
+	}
+}
+
+func TestListSessions_Limited(t *testing.T) {
+	sm, _ := setupTestSessionManager(t)
+	for i := int64(1); i <= 5; i++ {
+		sm.Save(i, []llm.Message{{Role: "user", Content: fmt.Sprintf("msg %d", i)}}) //nolint:errcheck
+	}
+
+	infos, err := sm.ListSessions(3)
+	if err != nil {
+		t.Fatalf("ListSessions(3) failed: %v", err)
+	}
+	if len(infos) > 3 {
+		t.Errorf("ListSessions(3) returned %d, want <= 3", len(infos))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestResumeSession — switches to a different session by ID
+// ---------------------------------------------------------------------------
+
+func TestResumeSession_DirectID(t *testing.T) {
+	sm, _ := setupTestSessionManager(t)
+
+	err := sm.Save(999, []llm.Message{
+		{Role: "user", Content: "resume test"},
+		{Role: "assistant", Content: "resume response"},
+	})
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	cs, err := sm.ResumeSession(100, "tg-999")
+	if err != nil {
+		t.Fatalf("ResumeSession failed: %v", err)
+	}
+	if cs.ChatID != 100 {
+		t.Errorf("ChatID = %d, want 100", cs.ChatID)
+	}
+	if cs.SessionID != "tg-999" {
+		t.Errorf("SessionID = %q, want tg-999", cs.SessionID)
+	}
+	if len(cs.Messages) != 2 {
+		t.Errorf("Messages length = %d, want 2", len(cs.Messages))
+	}
+	if cs.Messages[0].Content != "resume test" {
+		t.Errorf("Messages[0] = %q, want %q", cs.Messages[0].Content, "resume test")
+	}
+
+	cached, ok := sm.Cache[100]
+	if !ok {
+		t.Fatal("expected chat 100 to be cached after ResumeSession")
+	}
+	if cached != cs {
+		t.Errorf("cached pointer differs")
+	}
+}
+
+func TestResumeSession_NotFound(t *testing.T) {
+	sm, _ := setupTestSessionManager(t)
+
+	_, err := sm.ResumeSession(100, "nonexistent-session")
+	if err == nil {
+		t.Error("ResumeSession should fail for nonexistent session")
+	}
+	if !strings.Contains(err.Error(), "no session found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestPruneSessions — deletes old sessions
+// ---------------------------------------------------------------------------
+
+func TestPruneSessions(t *testing.T) {
+	sm, _ := setupTestSessionManager(t)
+
+	err := sm.Save(1, []llm.Message{{Role: "user", Content: "keep"}})
+	if err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	removed, err := sm.PruneSessions(0)
+	if err != nil {
+		t.Fatalf("PruneSessions failed: %v", err)
+	}
+	if removed != 0 {
+		t.Errorf("PruneSessions(0) removed %d, want 0 (no old sessions)", removed)
 	}
 }
