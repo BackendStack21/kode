@@ -148,6 +148,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "odek: %v\n", err)
 			os.Exit(1)
 		}
+	case "telegram":
+		if err := telegramCmd(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "odek: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "odek: unknown command %q\n", os.Args[1])
 		printUsage()
@@ -360,6 +365,7 @@ func printUsage() {
   odek init [--global | -g] [--force | -f]
   odek skill <list|view|save|delete|import|curate>
   odek mcp [--sandbox]
+  odek telegram
   odek version
 
 Commands:
@@ -380,6 +386,7 @@ Commands:
   skill               Manage skills: list, view, save, delete, import, curate
   mcp                 Start MCP server (Model Context Protocol) over stdio
                         Exposes all built-in tools for Claude Code, Cursor, etc.
+  telegram            Start Telegram bot (long-polling mode)
   init                Create a config file (default: ./odek.json)
   version             Print version and exit
 
