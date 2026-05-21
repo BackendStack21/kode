@@ -885,8 +885,8 @@ func handleChatMessage(
 						newSkills = append(newSkills, s)
 					}
 				}
-				mcResult := skills.MicroCuration(userDir, newSkills, allSkills, skillsCfg.Curation)
-				if msg := skills.FormatMicroCurationResult(mcResult); msg != "" {
+				msg := skills.RunAutoCurate(userDir, newSkills, allSkills, *skillsCfg, nil)
+				if msg != "" {
 					go bot.SendMessage(chatID, msg, nil)
 				}
 			}

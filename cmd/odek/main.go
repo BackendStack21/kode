@@ -1359,7 +1359,7 @@ func runLearnLoop(messages []llm.Message, task string, sm *skills.SkillManager, 
 			if len(result.Saved) > 0 {
 				sm.Reload()
 				// Run micro-curation after auto-save
-				runMicroCuration(userDir, sm, skillsCfg)
+				runAutoCurate(userDir, sm, skillsCfg, llmClient)
 			}
 			return
 		}
@@ -1394,8 +1394,8 @@ func runLearnLoop(messages []llm.Message, task string, sm *skills.SkillManager, 
 	}
 }
 
-// runMicroCuration triggers micro-curation after auto-save.
-func runMicroCuration(userDir string, sm *skills.SkillManager, cfg skills.SkillsConfig) {
+// runAutoCurate triggers automatic curation after auto-save.
+func runAutoCurate(userDir string, sm *skills.SkillManager, cfg skills.SkillsConfig, llmClient skills.LLMClient) {
 	allSkills := sm.AllSkills()
 	var newSkills []skills.Skill
 	for _, s := range allSkills {
@@ -1403,8 +1403,8 @@ func runMicroCuration(userDir string, sm *skills.SkillManager, cfg skills.Skills
 			newSkills = append(newSkills, s)
 		}
 	}
-	result := skills.MicroCuration(userDir, newSkills, allSkills, cfg.Curation)
-	if msg := skills.FormatMicroCurationResult(result); msg != "" {
+	msg := skills.RunAutoCurate(userDir, newSkills, allSkills, cfg, llmClient)
+	if msg != "" {
 		fmt.Fprint(os.Stderr, msg)
 	}
 }

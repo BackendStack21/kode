@@ -2,6 +2,8 @@ package skills
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -299,4 +301,165 @@ func FormatCurationReport(r *CurationReport) string {
 	b.WriteString("Run `odek skill curate --interactive` to review one-by-one")
 
 	return b.String()
+}
+
+// ── Skill Merging ──────────────────────────────────────────────────────
+
+// MergeSkills consolidates two overlapping skills into one.
+// The older skill (by name sort) is kept; the newer is merged into it.
+// Bodies are concatenated with a separator; keywords are unioned.
+func MergeSkills(keep, remove Skill) Skill {
+	merged := keep
+
+	// Combine bodies: keep first, then append the other (deduped)
+	merged.Body = keep.Body + "\n\n---\n\n## Merged from " + remove.Name + "\n\n" + remove.Body
+
+	// Union topic keywords
+	topicSet := make(map[string]bool)
+	for _, kw := range keep.Trigger.TopicKeywords {
+		topicSet[kw] = true
+	}
+	for _, kw := range remove.Trigger.TopicKeywords {
+		topicSet[kw] = true
+	}
+	merged.Trigger.TopicKeywords = keysFromSet(topicSet)
+	if len(merged.Trigger.TopicKeywords) > 10 {
+		merged.Trigger.TopicKeywords = merged.Trigger.TopicKeywords[:10]
+	}
+
+	// Union action keywords
+	actionSet := make(map[string]bool)
+	for _, kw := range keep.Trigger.ActionKeywords {
+		actionSet[kw] = true
+	}
+	for _, kw := range remove.Trigger.ActionKeywords {
+		actionSet[kw] = true
+	}
+	merged.Trigger.ActionKeywords = keysFromSet(actionSet)
+	if len(merged.Trigger.ActionKeywords) > 5 {
+		merged.Trigger.ActionKeywords = merged.Trigger.ActionKeywords[:5]
+	}
+
+	merged.BodyHash = HashBody(merged.Body)
+	merged.Description = keep.Description
+	if merged.Description == "" {
+		merged.Description = remove.Description
+	}
+	merged.Quality = QualityDraft // merged skills are always draft
+
+	return merged
+}
+
+func keysFromSet(set map[string]bool) []string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// ── Micro-Curation Execution ───────────────────────────────────────────
+
+// ExecuteMicroCuration runs a MicroCurationResult's merges and deletions.
+// It writes updated skill files and removes merged/deleted skill directories.
+func ExecuteMicroCuration(userDir string, result *MicroCurationResult, allSkills []Skill) error {
+	if result == nil || userDir == "" {
+		return nil
+	}
+
+	// Build a name→skill index
+	skillIndex := make(map[string]Skill)
+	for _, s := range allSkills {
+		skillIndex[s.Name] = s
+	}
+
+	// Execute merges: for each pair in Merged[2n], Merged[2n+1],
+	// keep the first alphabetically, merge, delete the second
+	mergedNames := make(map[string]bool)
+	for i := 0; i+1 < len(result.Merged); i += 2 {
+		keepName := result.Merged[i]
+		removeName := result.Merged[i+1]
+
+		keep, ok1 := skillIndex[keepName]
+		remove, ok2 := skillIndex[removeName]
+		if !ok1 || !ok2 {
+			continue
+		}
+
+		// Alphabetically sort: keep the "smaller" name
+		if keepName > removeName {
+			keep, remove = remove, keep
+			keepName, removeName = removeName, keepName
+		}
+
+		merged := MergeSkills(keep, remove)
+		if err := WriteSkill(userDir, merged); err != nil {
+			return fmt.Errorf("merge: write %s: %w", keepName, err)
+		}
+
+		// Remove the merged skill directory
+		removeDir := filepath.Join(userDir, removeName)
+		os.RemoveAll(removeDir)
+
+		mergedNames[keepName] = true
+		mergedNames[removeName] = true
+	}
+
+	// Execute deletions
+	for _, name := range result.Deleted {
+		if mergedNames[name] {
+			continue // already removed via merge
+		}
+		skillDir := filepath.Join(userDir, name)
+		os.RemoveAll(skillDir)
+	}
+
+	return nil
+}
+
+// ── Auto-Curate Pipeline ───────────────────────────────────────────────
+
+// RunAutoCurate runs the full automatic curation pipeline after a session.
+// It runs MicroCuration (with skip-list integration), executes merges/deletions,
+// optionally uses LLM for enhancement, and returns a formatted report.
+func RunAutoCurate(userDir string, newSkills, allSkills []Skill, cfg SkillsConfig, llmClient LLMClient) string {
+	// Build skip list to check skip-threshold deletions
+	skipList := LoadSkipList(userDir)
+
+	// Run micro-curation
+	result := MicroCuration(userDir, newSkills, allSkills, cfg.Curation)
+
+	// Delete skills skipped >= threshold times
+	for name, entry := range skipList.Skipped {
+		if entry.TimesSkipped >= cfg.Curation.SkipThreshold && cfg.Curation.SkipThreshold > 0 {
+			// Only delete if the skill actually exists
+			for _, s := range allSkills {
+				if s.Name == name && s.Quality == QualityDraft {
+					result.Deleted = append(result.Deleted, name)
+					result.Notes = append(result.Notes,
+						fmt.Sprintf("deleted %q (skipped %d times)", name, entry.TimesSkipped))
+					break
+				}
+			}
+		}
+	}
+
+	// Execute merges and deletions
+	if len(result.Merged) > 0 || len(result.Deleted) > 0 {
+		if err := ExecuteMicroCuration(userDir, result, allSkills); err != nil {
+			result.Notes = append(result.Notes, fmt.Sprintf("execution error: %v", err))
+		}
+	}
+
+	// LLM enhancement if configured
+	if cfg.LLMCurate && llmClient != nil && len(result.Merged) > 0 {
+		report := CurateSkills(allSkills, CurateOptions{
+			StalenessDays: cfg.Curation.StalenessDays,
+		})
+		if llmMsg := EnhanceCurationWithLLM(llmClient, report); llmMsg != "" {
+			result.Notes = append(result.Notes, fmt.Sprintf("LLM: %s", llmMsg))
+		}
+	}
+
+	return FormatMicroCurationResult(result)
 }
