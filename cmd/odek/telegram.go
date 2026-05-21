@@ -68,6 +68,12 @@ func telegramCmd(args []string) error {
 		bot.SetFallbackURLs(cfg.FallbackURLs)
 	}
 
+	// 4d. Configure daily token budget (0 = unlimited, the default).
+	if cfg.DailyTokenBudget > 0 {
+		bot.SetDailyTokenBudget(cfg.DailyTokenBudget)
+		botLog.Info("daily token budget set", "budget", cfg.DailyTokenBudget)
+	}
+
 	// 5. Create session store on disk (~/.odek/sessions/).
 	store, err := session.NewStore()
 	if err != nil {
@@ -434,6 +440,21 @@ func handleChatMessage(
 
 	rend := render.New(os.Stderr, false).WithModel(modelLabel)
 
+	// ── Pre-flight budget check ────────────────────────────────────
+	// Before running the agent, check if the daily budget is already
+	// exhausted — avoids burning an API call just to be rejected.
+	if resolved.Telegram.DailyTokenBudget > 0 {
+		if err := bot.CheckDailyBudget(1); err != nil {
+			reportError(bot, chatID, fmt.Sprintf(
+				"Daily token budget exhausted: %v. "+
+					"The budget resets at midnight UTC. "+
+					"Set daily_token_budget to 0 in config for unlimited usage.",
+				err,
+			))
+			return
+		}
+	}
+
 	// ── Typing Indicator ────────────────────────────────────────────
 	// Send "typing" action every 4s while the agent runs (Telegram shows
 	// it for ~5s). Fire-and-forget so a hanging HTTP call doesn't block
@@ -582,6 +603,22 @@ func handleChatMessage(
 	if err != nil {
 		reportError(bot, chatID, "Agent error: "+err.Error())
 		return
+	}
+
+	// Bill actual token usage against daily budget (if configured).
+	tokensUsed := int64(runInfo.InputTokens + runInfo.OutputTokens)
+	if tokensUsed > 0 {
+		if err := bot.CheckDailyBudget(tokensUsed); err != nil {
+			// Budget exceeded — report it but still deliver the response.
+			log.Warn("daily token budget exceeded",
+				"chat_id", chatID, "tokens", tokensUsed, "error", err)
+			bot.SendMessage(chatID, fmt.Sprintf(
+				"⚠️ *Token budget warning*\\n\\n%v\\n\\n"+
+					"Further agent runs may be blocked until the daily budget resets. "+
+					"Use `/stats` to check current usage.",
+				err,
+			), &telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
+		}
 	}
 
 	// Save the updated session messages.

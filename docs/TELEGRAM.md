@@ -87,8 +87,11 @@ The `Bot` struct is a lightweight Telegram Bot API client built on the standard 
 `SetDailyTokenBudget` and `CheckDailyBudget` implement a simple daily token usage tracker:
 - Usage is persisted to `~/.odek/telegram_token_usage_<YYYY-MM-DD>`
 - Budget resets automatically each calendar day
-- Returns an error if the total exceeds the configured budget
-- No-op when budget is 0 (unlimited)
+- **Pre-flight check**: before each agent run, a lightweight check verifies the budget isn't already exhausted, avoiding wasted API calls
+- **Post-run billing**: after each agent run, actual token usage (`input + output`) is deducted from the daily budget
+- Returns a warning message to the chat if the budget is exceeded, but still delivers the response
+- No-op when budget is 0 (unlimited, the default)
+- Configurable via `ODEK_TELEGRAM_DAILY_TOKEN_BUDGET` env var or `daily_token_budget` in `odek.json`
 
 ## Long-Polling (`poller.go`)
 
