@@ -489,7 +489,7 @@ Environment variables:
 const defaultConfigTemplate = `{
   "model": "deepseek-v4-flash",
   "base_url": "https://api.deepseek.com/v1",
-  "api_key": "${DEEPSEEK_API_KEY}",
+  "api_key": "${ODEK_API_KEY}",
   "thinking": "",
   "max_iterations": 90,
   "sandbox": false,

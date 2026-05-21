@@ -41,7 +41,7 @@ export ODEK_PROMPT_CACHING=true
 ```go
 agent, err := odek.New(odek.Config{
     Model:         "claude-sonnet-4",
-    APIKey:        os.Getenv("ANTHROPIC_API_KEY"),
+    APIKey:        os.Getenv("ODEK_API_KEY"),
     BaseURL:       "https://api.anthropic.com/v1",
     PromptCaching: true,
 })

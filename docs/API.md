@@ -26,7 +26,7 @@ import (
 func main() {
     agent, err := odek.New(odek.Config{
         Model:  "deepseek-v4-flash",
-        APIKey: os.Getenv("DEEPSEEK_API_KEY"),
+        APIKey: os.Getenv("ODEK_API_KEY"),
     })
     if err != nil {
         fmt.Fprintf(os.Stderr, "odek: %v\n", err)
@@ -46,7 +46,7 @@ func main() {
 Save, run:
 
 ```bash
-export DEEPSEEK_API_KEY=sk-...
+export ODEK_API_KEY=sk-...
 go mod init my-agent
 go mod tidy
 go run main.go
@@ -104,6 +104,7 @@ type Config struct {
 
     // API key for the LLM provider.
     // Falls back to DEEPSEEK_API_KEY, then OPENAI_API_KEY.
+    // Prefer ODEK_API_KEY for odek-specific configuration.
     APIKey string
 
     // Thinking depth — provider-specific semantics:
@@ -240,7 +241,7 @@ The agent loop:
 ```go
 agent, err := odek.New(odek.Config{
     Model:  "deepseek-chat",
-    APIKey: os.Getenv("DEEPSEEK_API_KEY"),
+    APIKey: os.Getenv("ODEK_API_KEY"),
     Tools:  []odek.Tool{&slackNotifier{}},
 })
 
@@ -252,7 +253,7 @@ result, err := agent.Run(ctx, "Send a Slack message saying 'Deploy complete'")
 ```go
 agent, err := odek.New(odek.Config{
     Model:         "deepseek-v4-flash",
-    APIKey:        os.Getenv("DEEPSEEK_API_KEY"),
+    APIKey:        os.Getenv("ODEK_API_KEY"),
     SystemMessage: "You are a Go code reviewer. Be concise and specific.",
     MaxIterations: 15,
 })
@@ -373,7 +374,7 @@ func (t *gitLogTool) Call(args string) (string, error) {
 ```go
 agent, _ := odek.New(odek.Config{
     Model: "deepseek-chat",
-    APIKey: os.Getenv("DEEPSEEK_API_KEY"),
+    APIKey: os.Getenv("ODEK_API_KEY"),
     Tools:  []odek.Tool{&gitLogTool{}},
 })
 
@@ -452,7 +453,7 @@ Memory is enabled by default when odek loads a config file with memory settings.
 ```go
 agent, _ := odek.New(odek.Config{
     Model:  "deepseek-chat",
-    APIKey: os.Getenv("DEEPSEEK_API_KEY"),
+    APIKey: os.Getenv("ODEK_API_KEY"),
     // Memory is enabled via config file (~/.odek/config.json or ./odek.json)
     // In CLI mode, the --memory flag enables it automatically
 })
@@ -571,7 +572,7 @@ agent, err := odek.New(odek.Config{
     Model:  "deepseek-chat",
     APIKey: "", // missing!
 })
-// err: "odek: no API key provided (set DEEPSEEK_API_KEY or OPENAI_API_KEY)"
+// err: "odek: no API key provided (set ODEK_API_KEY, DEEPSEEK_API_KEY, or OPENAI_API_KEY)"
 ```
 
 ### Run failures
@@ -722,7 +723,7 @@ func (t *slackNotifyTool) Call(args string) (string, error) {
 func main() {
     agent, err := odek.New(odek.Config{
         Model:         "deepseek-v4-flash",
-        APIKey:        os.Getenv("DEEPSEEK_API_KEY"),
+        APIKey:        os.Getenv("ODEK_API_KEY"),
         SystemMessage: "You are a build engineer analyzing Go projects. Use line_count to examine files and slack_notify to report results.",
         MaxIterations: 10,
         Tools: []odek.Tool{

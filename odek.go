@@ -297,7 +297,7 @@ func New(cfg Config) (*Agent, error) {
 		}
 	}
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("odek: no API key provided (set DEEPSEEK_API_KEY or OPENAI_API_KEY)")
+		return nil, fmt.Errorf("odek: no API key provided (set ODEK_API_KEY, DEEPSEEK_API_KEY, or OPENAI_API_KEY)")
 	}
 	if cfg.Model == "" {
 		cfg.Model = defaultModel

@@ -8,8 +8,8 @@ One binary. One loop. Zero frameworks. ReAct (Reasoning + Acting) — think, the
 # Install
 go install github.com/BackendStack21/kode/cmd/odek@latest
 
-# Use (set DEEPSEEK_API_KEY or OPENAI_API_KEY)
-export DEEPSEEK_API_KEY=sk-...
+# Use (set ODEK_API_KEY, DEEPSEEK_API_KEY, or OPENAI_API_KEY)
+export ODEK_API_KEY=sk-...
 odek run "How many lines in go.mod?"
 # → 3 lines
 ```
@@ -176,7 +176,7 @@ import "github.com/BackendStack21/kode"
 
 agent, err := odek.New(odek.Config{
     Model:          "deepseek-chat",
-    APIKey:         os.Getenv("DEEPSEEK_API_KEY"),
+    APIKey:         os.Getenv("ODEK_API_KEY"),
     MaxIterations:  30,
     Tools:          []odek.Tool{&myCustomTool{}},
     SystemMessage:  "You are an expert at refactoring Go code.",

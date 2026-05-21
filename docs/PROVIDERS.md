@@ -5,14 +5,16 @@ odek is provider-agnostic. Any endpoint that speaks the OpenAI `/chat/completion
 ## Deepseek
 
 ```bash
-export DEEPSEEK_API_KEY=sk-...
-odek run --model deepseek-chat "task"
+export ODEK_API_KEY=sk-...
+# Or use DEEPSEEK_API_KEY (fallback)
+odek run --model deepseek-v4-flash "task"
 ```
 
 ## OpenAI
 
 ```bash
-export OPENAI_API_KEY=sk-...
+export ODEK_API_KEY=sk-...
+# Or use OPENAI_API_KEY (final fallback)
 odek run --model gpt-4o --base-url https://api.openai.com/v1 "task"
 ```
 
@@ -21,7 +23,7 @@ odek run --model gpt-4o --base-url https://api.openai.com/v1 "task"
 Any endpoint that accepts `POST /chat/completions` with an OpenAI-compatible JSON body works — Ollama, vLLM, LiteLLM, etc. No provider-specific code in odek.
 
 ```bash
-export OPENAI_API_KEY=not-needed
+export ODEK_API_KEY=not-needed
 odek run --model llama3 --base-url http://localhost:11434/v1 "task"
 ```
 

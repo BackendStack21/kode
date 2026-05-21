@@ -199,6 +199,7 @@ odek mcp --sse-addr :8081                   # SSE transport
 | `ODEK_NO_AGENTS` | no_agents |
 | `ODEK_MAX_CONCURRENCY` | max_concurrency |
 | `ODEK_CTX` | ctx (comma-separated file paths) |
+| `ODEK_API_KEY` | api_key (preferred) |
 | `DEEPSEEK_API_KEY` | api_key (fallback) |
 | `OPENAI_API_KEY` | api_key (final fallback) |
 
