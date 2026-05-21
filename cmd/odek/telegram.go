@@ -51,7 +51,6 @@ func telegramCmd(args []string) error {
 
 	// 4. Create bot client.
 	bot := telegram.NewBot(cfg.Token)
-	bot.SetDailyTokenBudget(cfg.DailyTokenBudget)
 
 	// 4b. Create logger.
 	level := telegram.ParseLogLevel(cfg.LogLevel)
@@ -294,16 +293,31 @@ func handleChatMessage(
 
 	rend := render.New(os.Stderr, false).WithModel(modelLabel)
 
+	// ── Typing Indicator ────────────────────────────────────────────
+	// Send "typing" action every 4s while the agent runs (Telegram shows
+	// it for ~5s). Stops when the goroutine's context is cancelled.
+	typingDone := make(chan struct{})
+	defer close(typingDone)
+	go func() {
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				bot.SendChatAction(chatID, "typing")
+			case <-typingDone:
+				return
+			}
+		}
+	}()
+
 	// ── Tool Tracing ───────────────────────────────────────────────
 	// Single editable message showing live tool execution progress.
+	// The message is created lazily — only when the first tool call
+	// fires, not before. This avoids the premature "🤔 Thinking…" spam.
 	var traceMsgID int
 	var traceMu sync.Mutex
 	traceLines := make([]string, 0, 8)
-
-	// Send initial thinking message.
-	if initMsg, err := bot.SendMessage(chatID, "🤔 Thinking...", nil); err == nil {
-		traceMsgID = initMsg.ID
-	}
 
 	// truncate shortens a string for display, appending "…" if trimmed.
 	truncate := func(s string, max int) string {
@@ -331,6 +345,15 @@ func handleChatMessage(
 		ToolEventHandler: func(event string, name string, data string) {
 			traceMu.Lock()
 			defer traceMu.Unlock()
+
+			// Lazy-init: create the trace message on the first tool call.
+			if traceMsgID == 0 && event == "tool_call" {
+				if msg, err := bot.SendMessage(chatID, "🔧 …", nil); err == nil {
+					traceMsgID = msg.ID
+				} else {
+					return
+				}
+			}
 			if traceMsgID == 0 {
 				return
 			}
@@ -343,8 +366,6 @@ func handleChatMessage(
 				bot.EditMessageText(chatID, traceMsgID, strings.Join(traceLines, "\n"), nil)
 
 			case "tool_result":
-				// Replace the last line's ⏳ with a completion marker
-				// and the result size instead of the actual content.
 				sizeLabel := fmt.Sprintf("%dB", len(data))
 				if len(data) > 1024 {
 					sizeLabel = fmt.Sprintf("%dKB", len(data)/1024)
@@ -383,20 +404,6 @@ func handleChatMessage(
 	response, updatedMessages, err := agent.RunWithMessages(context.Background(), cs.Messages)
 	if err != nil {
 		reportError(bot, chatID, "Agent error: "+err.Error())
-		return
-	}
-
-	// Check daily token budget.
-	totalTokens := int64(agent.TotalInputTokens() + agent.TotalOutputTokens())
-	if err := bot.CheckDailyBudget(totalTokens); err != nil {
-		fmt.Fprintf(os.Stderr, "odek telegram: %v\n", err)
-		reportError(bot, chatID, "Daily token budget exceeded. Usage for today has been tracked and will be enforced going forward.")
-		// Still save the session so the conversation isn't lost.
-		cs.Messages = updatedMessages
-		cs.TurnCount++
-		if err := sessionManager.Save(chatID, cs.Messages); err != nil {
-			fmt.Fprintf(os.Stderr, "odek telegram: session save: %v\n", err)
-		}
 		return
 	}
 

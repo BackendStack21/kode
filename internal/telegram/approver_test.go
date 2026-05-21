@@ -168,6 +168,33 @@ func TestResetTrust(t *testing.T) {
 
 // ── Test newID uniqueness ──────────────────────────────────────────────────
 
+// ── Test SetLogger ────────────────────────────────────────────────────────
+
+func TestTelegramApprover_SetLogger_Nil(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+
+	a := NewTelegramApprover(bot, 1)
+	// Initially uses NopLogger.
+	a.SetLogger(nil)
+	// After nil, should use NopLogger (no panic).
+	a.SetLogger(nil)
+}
+
+func TestTelegramApprover_SetLogger_Valid(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+
+	a := NewTelegramApprover(bot, 1)
+	logger := NewFileLogger(LogDebug, "")
+	a.SetLogger(logger)
+	// Just verify no panic — the logger is set internally.
+}
+
+// ── Test newID uniqueness ──────────────────────────────────────────────────
+
 func TestNewID_Unique(t *testing.T) {
 	ts := testServer(t, nil)
 	defer ts.Close()

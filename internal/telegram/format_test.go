@@ -174,6 +174,75 @@ func TestEscapeMarkdown_Emoji(t *testing.T) {
 	}
 }
 
+// ─── isInsideCode ───────────────────────────────────────────────────────────
+
+func TestIsInsideCode_OutsideAnySpan(t *testing.T) {
+	text := "Hello World"
+	if isInsideCode(text, 3) {
+		t.Errorf("isInsideCode(%q, 3) = true, want false (position 'l' in \"Hello\" outside any code span)", text)
+	}
+}
+
+func TestIsInsideCode_InsideInlineCode(t *testing.T) {
+	text := "Hello `code` World"
+	// Position 10 is 'e' in "code" which is inside inline code span.
+	if !isInsideCode(text, 10) {
+		t.Errorf("isInsideCode(%q, 10) = false, want true (position inside inline code span)", text)
+	}
+}
+
+func TestIsInsideCode_InsideCodeBlock(t *testing.T) {
+	text := "```\ncode\n```"
+	// Position 6 is 'd' inside the code block.
+	if !isInsideCode(text, 6) {
+		t.Errorf("isInsideCode(%q, 6) = false, want true (position inside code block)", text)
+	}
+}
+
+func TestIsInsideCode_AtStartOfCodeSpanOpening(t *testing.T) {
+	text := "`code`"
+	// Position 0 is the opening backtick — the delimiter itself is not "inside" the span.
+	if isInsideCode(text, 0) {
+		t.Errorf("isInsideCode(%q, 0) = true, want false (position at opening backtick)", text)
+	}
+}
+
+func TestIsInsideCode_AtEndOfCodeSpan(t *testing.T) {
+	text := "`code`"
+	// Position 5 is the closing backtick — the delimiter itself is not "inside" the span.
+	if isInsideCode(text, 5) {
+		t.Errorf("isInsideCode(%q, 5) = true, want false (position at closing backtick)", text)
+	}
+}
+
+func TestIsInsideCode_AfterCodeBlockCloses(t *testing.T) {
+	text := "```\ncode\n```after"
+	// Position 12 is 'a' in "after" — outside the code block.
+	if isInsideCode(text, 12) {
+		t.Errorf("isInsideCode(%q, 12) = true, want false (position after code block closes)", text)
+	}
+}
+
+func TestIsInsideCode_MultipleCodeSpans_InsideSecond(t *testing.T) {
+	text := "a `b` c `d` e"
+	// Position 9 is 'd' inside the second inline code span.
+	if !isInsideCode(text, 9) {
+		t.Errorf("isInsideCode(%q, 9) = false, want true (position inside second inline code span)", text)
+	}
+	// Position 11 is after the second code span — should be false.
+	if isInsideCode(text, 11) {
+		t.Errorf("isInsideCode(%q, 11) = true, want false (position after second code span)", text)
+	}
+}
+
+func TestIsInsideCode_EmptyText(t *testing.T) {
+	if isInsideCode("", 0) {
+		t.Errorf("isInsideCode(\"\", 0) = true, want false (empty text)")
+	}
+}
+
+// ─── EscapeMarkdown (existing) ─────────────────────────────────────────────
+
 func TestEscapeMarkdown_OnlyReservedChars(t *testing.T) {
 	input := "_*"
 	want := "\\_\\*"

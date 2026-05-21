@@ -420,3 +420,15 @@ func (b *Bot) GetMe() (*User, error) {
 	}
 	return &user, nil
 }
+
+// SendChatAction tells the user that the bot is doing something on their
+// behalf (e.g., "typing"). The action is shown as a status in the chat for
+// ~5 seconds or until the next message is sent. Callers should re-send every
+// 4 seconds for long-running operations.
+func (b *Bot) SendChatAction(chatID int64, action string) error {
+	params := map[string]any{
+		"chat_id": chatID,
+		"action":  action,
+	}
+	return b.doJSON("sendChatAction", params, nil)
+}

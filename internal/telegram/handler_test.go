@@ -453,6 +453,99 @@ func TestHandleUpdate_NilFrom(t *testing.T) {
 	}
 }
 
+// ─── Test extractCommand ────────────────────────────────────────────────────
+
+func TestExtractCommand_Simple(t *testing.T) {
+	cmd, args := extractCommand("/start")
+	if cmd != "start" {
+		t.Errorf("cmd = %q, want %q", cmd, "start")
+	}
+	if args != "" {
+		t.Errorf("args = %q, want %q", args, "")
+	}
+}
+
+func TestExtractCommand_WithArgs(t *testing.T) {
+	cmd, args := extractCommand("/cmd arg1 arg2")
+	if cmd != "cmd" {
+		t.Errorf("cmd = %q, want %q", cmd, "cmd")
+	}
+	if args != "arg1 arg2" {
+		t.Errorf("args = %q, want %q", args, "arg1 arg2")
+	}
+}
+
+func TestExtractCommand_WithBotName(t *testing.T) {
+	cmd, args := extractCommand("/cmd@MyBot")
+	if cmd != "cmd" {
+		t.Errorf("cmd = %q, want %q", cmd, "cmd")
+	}
+	if args != "" {
+		t.Errorf("args = %q, want %q", args, "")
+	}
+}
+
+func TestExtractCommand_WithBotNameAndArgs(t *testing.T) {
+	cmd, args := extractCommand("/cmd@MyBot arg1 arg2")
+	if cmd != "cmd" {
+		t.Errorf("cmd = %q, want %q", cmd, "cmd")
+	}
+	if args != "arg1 arg2" {
+		t.Errorf("args = %q, want %q", args, "arg1 arg2")
+	}
+}
+
+func TestExtractCommand_PlainText(t *testing.T) {
+	cmd, args := extractCommand("hello world")
+	if cmd != "" {
+		t.Errorf("cmd = %q, want %q", cmd, "")
+	}
+	if args != "hello world" {
+		t.Errorf("args = %q, want %q", args, "hello world")
+	}
+}
+
+func TestExtractCommand_EmptyString(t *testing.T) {
+	cmd, args := extractCommand("")
+	if cmd != "" {
+		t.Errorf("cmd = %q, want %q", cmd, "")
+	}
+	if args != "" {
+		t.Errorf("args = %q, want %q", args, "")
+	}
+}
+
+func TestExtractCommand_CommandWithDifferentBot(t *testing.T) {
+	// extractCommand just strips the @botname — filtering is done by handleCommand.
+	cmd, args := extractCommand("/cmd@OtherBot")
+	if cmd != "cmd" {
+		t.Errorf("cmd = %q, want %q", cmd, "cmd")
+	}
+	if args != "" {
+		t.Errorf("args = %q, want %q", args, "")
+	}
+}
+
+func TestExtractCommand_OnlySlash(t *testing.T) {
+	cmd, args := extractCommand("/")
+	if cmd != "" {
+		t.Errorf("cmd = %q, want %q", cmd, "")
+	}
+	if args != "" {
+		t.Errorf("args = %q, want %q", args, "")
+	}
+}
+
+func TestExtractCommand_SlashWithSpace(t *testing.T) {
+	cmd, args := extractCommand("/ something")
+	if cmd != "" {
+		t.Errorf("cmd = %q, want %q", cmd, "")
+	}
+	if args != "something" {
+		t.Errorf("args = %q, want %q", args, "something")
+	}
+}
+
 // ─── Test handleCommand @mention filtering ───────────────────────────────────
 
 func TestHandleCommand_MentionMatchingBot(t *testing.T) {
@@ -1092,6 +1185,442 @@ func TestHandleUpdate_AllowedUserOnly(t *testing.T) {
 	if called {
 		t.Error("OnTextMessage was called for a user not in the allowlist")
 	}
+}
+
+// ─── TestHandler_SetApprover ──────────────────────────────────────────────────
+
+func TestHandler_SetApprover(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	chatID := int64(12345)
+	approver := NewTelegramApprover(bot, chatID)
+
+	// Initially, no approver.
+	if got := h.GetApprover(chatID); got != nil {
+		t.Fatalf("GetApprover before SetApprover = %v, want nil", got)
+	}
+
+	// Set and retrieve.
+	h.SetApprover(chatID, approver)
+	got := h.GetApprover(chatID)
+	if got == nil {
+		t.Fatal("GetApprover after SetApprover = nil, want non-nil")
+	}
+	if got != approver {
+		t.Errorf("GetApprover returned a different approver pointer")
+	}
+
+	// Delete and verify nil.
+	h.DeleteApprover(chatID)
+	if got := h.GetApprover(chatID); got != nil {
+		t.Errorf("GetApprover after DeleteApprover = %v, want nil", got)
+	}
+}
+
+// ─── TestHandler_SetLogger ───────────────────────────────────────────────────
+
+func TestHandler_SetLogger(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	// Default logger should be a NopLogger.
+	if _, ok := h.log.(nopLogger); !ok {
+		t.Fatalf("default Handler.log = %T, want nopLogger", h.log)
+	}
+
+	// SetLogger with nil should keep/restore NopLogger.
+	h.SetLogger(nil)
+	if _, ok := h.log.(nopLogger); !ok {
+		t.Errorf("SetLogger(nil) resulted in %T, want nopLogger", h.log)
+	}
+
+	// SetLogger with a valid NopLogger.
+	l := NewNopLogger()
+	h.SetLogger(l)
+	if h.log != l {
+		t.Errorf("SetLogger did not store the provided logger")
+	}
+
+	// Verify SetLogger(nil) resets to NopLogger again.
+	h.SetLogger(nil)
+	if _, ok := h.log.(nopLogger); !ok {
+		t.Errorf("SetLogger(nil) after valid logger resulted in %T, want nopLogger", h.log)
+	}
+}
+
+// ─── TestHandler_HandleCallback_RouteToApprover ──────────────────────────────
+
+func TestHandler_HandleCallback_RouteToApprover(t *testing.T) {
+	rec := new(requestRecorder)
+	ts := testServer(t, rec)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	chatID := int64(789)
+	approver := NewTelegramApprover(bot, chatID)
+	h.SetApprover(chatID, approver)
+
+	// Send a callback with data that HandleCallback recognises as approval.
+	cq := &CallbackQuery{
+		ID:   "cq_approve_123",
+		From: &User{ID: 456},
+		Message: &Message{
+			Chat: &Chat{ID: chatID},
+		},
+		Data: "apr:test-request-id",
+	}
+
+	h.handleCallback(cq)
+
+	// Verify answerCallbackQuery was called.
+	reqs := rec.all()
+	var foundAnswer bool
+	for _, req := range reqs {
+		if strings.HasSuffix(req.Path, "/answerCallbackQuery") {
+			foundAnswer = true
+			if !strings.Contains(req.Body, `"callback_query_id":"cq_approve_123"`) {
+				t.Errorf("answerCallbackQuery body missing callback_query_id: %s", req.Body)
+			}
+			break
+		}
+	}
+	if !foundAnswer {
+		t.Error("no answerCallbackQuery request was made after approver handled callback")
+	}
+}
+
+// ─── TestHandler_HandleCallback_ApproverAnswerError ──────────────────────────
+
+func TestHandler_HandleCallback_ApproverAnswerError(t *testing.T) {
+	// Create a server that returns an error on answerCallbackQuery.
+	var answerAttempted bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/answerCallbackQuery") {
+			answerAttempted = true
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			resp := map[string]any{
+				"ok":          false,
+				"description": "Bad Request: query is too old",
+				"error_code":  400,
+			}
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// Default success for any other endpoint.
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	}))
+	defer ts.Close()
+
+	bot := &Bot{
+		Token:       "test:token",
+		BaseURL:     ts.URL + "/bottest:token",
+		FileBaseURL: ts.URL + "/file/bottest:token",
+		Client:      ts.Client(),
+		log:         NewNopLogger(),
+	}
+	h := NewHandler(bot)
+
+	chatID := int64(789)
+	approver := NewTelegramApprover(bot, chatID)
+	h.SetApprover(chatID, approver)
+
+	var (
+		errChatID int64
+		errMsg    string
+	)
+	h.OnError = func(chatID int64, err error) {
+		errChatID = chatID
+		errMsg = err.Error()
+	}
+
+	cq := &CallbackQuery{
+		ID:   "cq_old",
+		From: &User{ID: 456},
+		Message: &Message{
+			Chat: &Chat{ID: chatID},
+		},
+		Data: "den:test-request-id",
+	}
+
+	h.handleCallback(cq)
+
+	if !answerAttempted {
+		t.Error("answerCallbackQuery was not attempted")
+	}
+	if errChatID != chatID {
+		t.Errorf("OnError chatID = %d, want %d", errChatID, chatID)
+	}
+	if errMsg == "" {
+		t.Error("OnError was not called with an error message")
+	}
+}
+
+// ─── TestHandler_HandleCallback_FallbackToOnCallbackQuery ────────────────────
+
+func TestHandler_HandleCallback_FallbackToOnCallbackQuery(t *testing.T) {
+	rec := new(requestRecorder)
+	ts := testServer(t, rec)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+	// No approver registered.
+
+	var (
+		capturedChatID int64
+		capturedData   string
+	)
+	h.OnCallbackQuery = func(chatID int64, data string) (string, error) {
+		capturedChatID = chatID
+		capturedData = data
+		return "fallback response", nil
+	}
+
+	cq := &CallbackQuery{
+		ID:   "cq_fallback",
+		From: &User{ID: 456},
+		Message: &Message{
+			Chat: &Chat{ID: 999},
+		},
+		Data: "some_data",
+	}
+
+	h.handleCallback(cq)
+
+	if capturedChatID != 999 {
+		t.Errorf("OnCallbackQuery chatID = %d, want 999", capturedChatID)
+	}
+	if capturedData != "some_data" {
+		t.Errorf("OnCallbackQuery data = %q, want %q", capturedData, "some_data")
+	}
+
+	// Verify answerCallbackQuery was also called before OnCallbackQuery.
+	reqs := rec.all()
+	var foundAnswer bool
+	for _, req := range reqs {
+		if strings.HasSuffix(req.Path, "/answerCallbackQuery") {
+			foundAnswer = true
+			break
+		}
+	}
+	if !foundAnswer {
+		t.Error("no answerCallbackQuery request was made during fallback path")
+	}
+}
+
+// ─── TestHandler_HandleCommand_MentionErrorHandling ──────────────────────────
+
+func TestHandler_HandleCommand_MentionErrorHandling(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	chatID := int64(100)
+	expectedErr := assertError("command execution failed")
+	h.OnCommand = func(_ int64, _ string, _ string) (string, error) {
+		return "", expectedErr
+	}
+
+	var (
+		errChatID int64
+		errMsg    string
+	)
+	h.OnError = func(chatID int64, err error) {
+		errChatID = chatID
+		errMsg = err.Error()
+	}
+
+	h.handleCommand(&Message{
+		Chat: &Chat{ID: chatID},
+		From: &User{ID: 200},
+		Text: "/do_something arg1 arg2",
+	})
+
+	if errChatID != chatID {
+		t.Errorf("OnError chatID = %d, want %d", errChatID, chatID)
+	}
+	if errMsg != string(expectedErr) {
+		t.Errorf("OnError msg = %q, want %q", errMsg, string(expectedErr))
+	}
+}
+
+// ─── TestHandler_HandleMessage_OnErrorCalledOnVoiceFailure ───────────────────
+
+func TestHandler_HandleMessage_OnErrorCalledOnVoiceFailure(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	chatID := int64(333)
+	expectedErr := assertError("voice processing failed")
+	h.OnVoiceMessage = func(_ int64, _ string) (string, error) {
+		return "", expectedErr
+	}
+
+	var (
+		errChatID int64
+		errMsg    string
+	)
+	h.OnError = func(chatID int64, err error) {
+		errChatID = chatID
+		errMsg = err.Error()
+	}
+
+	h.handleMessage(&Message{
+		Chat: &Chat{ID: chatID},
+		From: &User{ID: 444},
+		Voice: &Voice{
+			FileID:   "voice_file_err",
+			Duration: 10,
+			MimeType: "audio/ogg",
+		},
+	})
+
+	if errChatID != chatID {
+		t.Errorf("OnError chatID = %d, want %d", errChatID, chatID)
+	}
+	if errMsg != string(expectedErr) {
+		t.Errorf("OnError msg = %q, want %q", errMsg, string(expectedErr))
+	}
+}
+
+// ─── TestHandler_HandleMessage_OnErrorCalledOnPhotoFailure ───────────────────
+
+func TestHandler_HandleMessage_OnErrorCalledOnPhotoFailure(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	chatID := int64(555)
+	expectedErr := assertError("photo processing failed")
+	h.OnPhotoMessage = func(_ int64, _ []string) (string, error) {
+		return "", expectedErr
+	}
+
+	var (
+		errChatID int64
+		errMsg    string
+	)
+	h.OnError = func(chatID int64, err error) {
+		errChatID = chatID
+		errMsg = err.Error()
+	}
+
+	h.handleMessage(&Message{
+		Chat: &Chat{ID: chatID},
+		From: &User{ID: 666},
+		Photo: []PhotoSize{
+			{FileID: "photo_err", Width: 100, Height: 100},
+		},
+	})
+
+	if errChatID != chatID {
+		t.Errorf("OnError chatID = %d, want %d", errChatID, chatID)
+	}
+	if errMsg != string(expectedErr) {
+		t.Errorf("OnError msg = %q, want %q", errMsg, string(expectedErr))
+	}
+}
+
+// ─── TestHandler_HandleMessage_OnErrorCalledOnTextFailure ────────────────────
+
+func TestHandler_HandleMessage_OnErrorCalledOnTextFailure(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	chatID := int64(777)
+	expectedErr := assertError("text processing failed")
+	h.OnTextMessage = func(_ int64, _ string) (string, error) {
+		return "", expectedErr
+	}
+
+	var (
+		errChatID int64
+		errMsg    string
+	)
+	h.OnError = func(chatID int64, err error) {
+		errChatID = chatID
+		errMsg = err.Error()
+	}
+
+	h.handleMessage(&Message{
+		Chat: &Chat{ID: chatID},
+		From: &User{ID: 888},
+		Text: "trigger text error",
+	})
+
+	if errChatID != chatID {
+		t.Errorf("OnError chatID = %d, want %d", errChatID, chatID)
+	}
+	if errMsg != string(expectedErr) {
+		t.Errorf("OnError msg = %q, want %q", errMsg, string(expectedErr))
+	}
+}
+
+// ─── TestHandler_HandleMessage_NilCallbacks ──────────────────────────────────
+
+func TestHandler_HandleMessage_NilCallbacks(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+	h := NewHandler(bot)
+
+	// Set all callbacks to nil — handleMessage should not panic.
+	h.OnCommand = nil
+	h.OnVoiceMessage = nil
+	h.OnPhotoMessage = nil
+	h.OnTextMessage = nil
+
+	// Text message with nil OnTextMessage.
+	h.handleMessage(&Message{
+		Chat: &Chat{ID: 1},
+		From: &User{ID: 2},
+		Text: "hello",
+	})
+
+	// Voice message with nil OnVoiceMessage.
+	h.handleMessage(&Message{
+		Chat: &Chat{ID: 1},
+		From: &User{ID: 2},
+		Voice: &Voice{
+			FileID:   "voice_file",
+			Duration: 5,
+			MimeType: "audio/ogg",
+		},
+	})
+
+	// Photo message with nil OnPhotoMessage.
+	h.handleMessage(&Message{
+		Chat: &Chat{ID: 1},
+		From: &User{ID: 2},
+		Photo: []PhotoSize{
+			{FileID: "photo_1", Width: 100, Height: 100},
+		},
+	})
+
+	// Command message with nil OnCommand.
+	h.handleMessage(&Message{
+		Chat: &Chat{ID: 1},
+		From: &User{ID: 2},
+		Text: "/start",
+		Entities: []MessageEntity{
+			{Type: "bot_command", Offset: 0, Length: 6},
+		},
+	})
+
+	// If we got here without panicking, the test passes.
 }
 
 // ─── Test HandleUpdate does NOT route disallowed users in callback queries ────

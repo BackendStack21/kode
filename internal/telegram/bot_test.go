@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // ---------------------------------------------------------------------------
@@ -891,4 +892,357 @@ func (m *mpReader) NextPart() (interface {
 	io.ReadCloser
 }, error) {
 	return m.Reader.NextPart()
+}
+
+// ---------------------------------------------------------------------------
+// SetLogger
+// ---------------------------------------------------------------------------
+
+func TestBot_SetLogger(t *testing.T) {
+	t.Run("nil uses NopLogger", func(t *testing.T) {
+		bot := NewBot("testtoken")
+		bot.SetLogger(nil)
+		if _, ok := bot.log.(nopLogger); !ok {
+			t.Errorf("expected nopLogger after SetLogger(nil), got %T", bot.log)
+		}
+	})
+
+	t.Run("valid logger is set", func(t *testing.T) {
+		bot := NewBot("testtoken")
+		fl := NewFileLogger(LogDebug, "")
+		bot.SetLogger(fl)
+		if bot.log != fl {
+			t.Errorf("logger not set correctly")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// EditMessageText
+// ---------------------------------------------------------------------------
+
+func TestBot_EditMessageText(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimSuffix(r.URL.Path, "/")
+		if path != "/editMessageText" {
+			t.Errorf("unexpected path: %s", path)
+		}
+		requireJSONBody(t, r, "application/json", &gotBody)
+		okResponse(w, map[string]any{
+			"message_id": 42,
+			"text":       "edited",
+			"chat":       map[string]any{"id": 123},
+		})
+	}))
+	defer ts.Close()
+
+	bot := NewBot("x")
+	bot.BaseURL = ts.URL
+
+	err := bot.EditMessageText(123, 42, "edited", nil)
+	if err != nil {
+		t.Fatalf("EditMessageText: %v", err)
+	}
+
+	if gotBody["chat_id"] != float64(123) {
+		t.Errorf("chat_id = %v, want 123", gotBody["chat_id"])
+	}
+	if gotBody["message_id"] != float64(42) {
+		t.Errorf("message_id = %v, want 42", gotBody["message_id"])
+	}
+	if gotBody["text"] != "edited" {
+		t.Errorf("text = %v, want %q", gotBody["text"], "edited")
+	}
+}
+
+func TestBot_EditMessageText_WithParseMode(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requireJSONBody(t, r, "application/json", &gotBody)
+		okResponse(w, map[string]any{"message_id": 1, "text": "hello"})
+	}))
+	defer ts.Close()
+
+	bot := NewBot("x")
+	bot.BaseURL = ts.URL
+
+	opts := &SendOpts{ParseMode: ParseModeMarkdownV2}
+	err := bot.EditMessageText(456, 7, "hello", opts)
+	if err != nil {
+		t.Fatalf("EditMessageText with opts: %v", err)
+	}
+
+	if gotBody["parse_mode"] != ParseModeMarkdownV2 {
+		t.Errorf("parse_mode = %v, want %q", gotBody["parse_mode"], ParseModeMarkdownV2)
+	}
+	if gotBody["chat_id"] != float64(456) {
+		t.Errorf("chat_id = %v, want 456", gotBody["chat_id"])
+	}
+	if gotBody["message_id"] != float64(7) {
+		t.Errorf("message_id = %v, want 7", gotBody["message_id"])
+	}
+	if gotBody["text"] != "hello" {
+		t.Errorf("text = %v, want %q", gotBody["text"], "hello")
+	}
+}
+
+func TestBot_EditMessageText_Error(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		failResponse(w, 400, "Bad Request: message is not modified")
+	}))
+	defer ts.Close()
+
+	bot := NewBot("x")
+	bot.BaseURL = ts.URL
+
+	err := bot.EditMessageText(999, 1, "same text", nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "message is not modified") {
+		t.Errorf("error = %q, want substring %q", err, "message is not modified")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetFallbackURLs
+// ---------------------------------------------------------------------------
+
+func TestBot_SetFallbackURLs(t *testing.T) {
+	bot := NewBot("testtoken")
+	originalClient := bot.Client
+
+	fallbacks := []string{"https://api.telegram2.org", "https://api.telegram3.org"}
+	bot.SetFallbackURLs(fallbacks)
+
+	// The bot's client should have been replaced.
+	if bot.Client == originalClient {
+		t.Error("bot.Client was not replaced after SetFallbackURLs")
+	}
+
+	// The transport should be a *FallbackTransport.
+	ft, ok := bot.Client.Transport.(*FallbackTransport)
+	if !ok {
+		t.Fatalf("bot.Client.Transport = %T, want *FallbackTransport", bot.Client.Transport)
+	}
+
+	if len(ft.FallbackURLs) != 2 {
+		t.Errorf("FallbackURLs length = %d, want 2", len(ft.FallbackURLs))
+	}
+	if ft.FallbackURLs[0] != "https://api.telegram2.org" {
+		t.Errorf("FallbackURLs[0] = %q, want %q", ft.FallbackURLs[0], "https://api.telegram2.org")
+	}
+	if ft.FallbackURLs[1] != "https://api.telegram3.org" {
+		t.Errorf("FallbackURLs[1] = %q, want %q", ft.FallbackURLs[1], "https://api.telegram3.org")
+	}
+}
+
+func TestBot_SetFallbackURLs_Empty(t *testing.T) {
+	bot := NewBot("testtoken")
+	originalClient := bot.Client
+
+	// Empty slice should be a no-op.
+	bot.SetFallbackURLs([]string{})
+
+	if bot.Client != originalClient {
+		t.Error("bot.Client was replaced despite empty fallback list")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SetDailyTokenBudget / CheckDailyBudget
+// ---------------------------------------------------------------------------
+
+func TestBot_SetDailyTokenBudget(t *testing.T) {
+	bot := NewBot("testtoken")
+	if bot.DailyTokenBudget != 0 {
+		t.Errorf("initial DailyTokenBudget = %d, want 0", bot.DailyTokenBudget)
+	}
+
+	bot.SetDailyTokenBudget(100_000)
+	if bot.DailyTokenBudget != 100_000 {
+		t.Errorf("DailyTokenBudget = %d, want 100000", bot.DailyTokenBudget)
+	}
+}
+
+func TestBot_CheckDailyBudget_Unset(t *testing.T) {
+	bot := NewBot("testtoken")
+	// Budget is 0 (unset).
+	err := bot.CheckDailyBudget(5000)
+	if err != nil {
+		t.Errorf("expected nil for unset budget, got %v", err)
+	}
+}
+
+func TestBot_CheckDailyBudget_UnderLimit(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	bot := NewBot("testtoken")
+	bot.SetDailyTokenBudget(10_000)
+
+	err := bot.CheckDailyBudget(3000)
+	if err != nil {
+		t.Fatalf("CheckDailyBudget under limit: %v", err)
+	}
+
+	// Verify the budget file was created and contains the correct value.
+	date := time.Now().Format("2006-01-02")
+	budgetPath := filepath.Join(tmpDir, ".odek", "telegram_token_usage_"+date)
+	data, err := os.ReadFile(budgetPath)
+	if err != nil {
+		t.Fatalf("read budget file: %v", err)
+	}
+	if string(data) != "3000" {
+		t.Errorf("budget file content = %q, want %q", string(data), "3000")
+	}
+}
+
+func TestBot_CheckDailyBudget_Exceeded(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+
+	bot := NewBot("testtoken")
+	bot.SetDailyTokenBudget(10_000)
+
+	// Use 8,000 tokens first — under limit.
+	if err := bot.CheckDailyBudget(8000); err != nil {
+		t.Fatalf("first CheckDailyBudget (8000): %v", err)
+	}
+
+	// Try to use another 3,000 — should exceed the 10,000 limit.
+	err := bot.CheckDailyBudget(3000)
+	if err == nil {
+		t.Fatal("expected error for exceeded budget, got nil")
+	}
+	if !strings.Contains(err.Error(), "daily token budget exceeded") {
+		t.Errorf("error = %q, want substring %q", err, "daily token budget exceeded")
+	}
+	if !strings.Contains(err.Error(), "10000") {
+		t.Errorf("error should mention limit 10000, got %q", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SendChatAction
+// ---------------------------------------------------------------------------
+
+func TestBot_SendChatAction(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimSuffix(r.URL.Path, "/")
+		if path != "/sendChatAction" {
+			t.Errorf("unexpected path: %s", path)
+		}
+		requireJSONBody(t, r, "application/json", &gotBody)
+		okResponse(w, true)
+	}))
+	defer ts.Close()
+
+	bot := NewBot("x")
+	bot.BaseURL = ts.URL
+
+	err := bot.SendChatAction(123, "typing")
+	if err != nil {
+		t.Fatalf("SendChatAction: %v", err)
+	}
+
+	if gotBody["chat_id"] != float64(123) {
+		t.Errorf("chat_id = %v, want 123", gotBody["chat_id"])
+	}
+	if gotBody["action"] != "typing" {
+		t.Errorf("action = %v, want %q", gotBody["action"], "typing")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SendVoice — no caption
+// ---------------------------------------------------------------------------
+
+func TestBot_SendVoice_NoCaption(t *testing.T) {
+	tmpDir := t.TempDir()
+	voicePath := filepath.Join(tmpDir, "test_voice.ogg")
+	if err := os.WriteFile(voicePath, []byte("fake-ogg-data"), 0o644); err != nil {
+		t.Fatalf("write temp voice file: %v", err)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimSuffix(r.URL.Path, "/")
+		if path != "/sendVoice" {
+			t.Errorf("unexpected path: %s", path)
+		}
+		requireMultipartBody(t, r, "voice", "test_voice.ogg", map[string]any{
+			"chat_id": float64(789),
+		})
+		okResponse(w, map[string]any{
+			"message_id": 20,
+			"chat":       map[string]any{"id": 789},
+		})
+	}))
+	defer ts.Close()
+
+	bot := NewBot("x")
+	bot.BaseURL = ts.URL
+
+	msg, err := bot.SendVoice(789, voicePath, "")
+	if err != nil {
+		t.Fatalf("SendVoice(no caption): %v", err)
+	}
+	if msg == nil {
+		t.Fatal("SendVoice returned nil message")
+	}
+	if msg.ID != 20 {
+		t.Errorf("msg.ID = %d, want 20", msg.ID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DownloadFile — non-ok status and server error
+// ---------------------------------------------------------------------------
+
+func TestBot_DownloadFile_NonOKStatus(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("Forbidden"))
+	}))
+	defer ts.Close()
+
+	bot := NewBot("testtoken")
+	bot.Client = &http.Client{
+		Transport: &apiRewriter{
+			inner:         http.DefaultTransport,
+			testServerURL: ts.URL,
+		},
+	}
+
+	_, err := bot.DownloadFile("secret/file.txt")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "status 403") {
+		t.Errorf("error = %q, want substring %q", err, "status 403")
+	}
+}
+
+func TestBot_DownloadFile_Error(t *testing.T) {
+	// Point to a closed server to trigger a connection error.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	ts.Close()
+
+	bot := NewBot("testtoken")
+	bot.Client = &http.Client{
+		Transport: &apiRewriter{
+			inner:         http.DefaultTransport,
+			testServerURL: ts.URL,
+		},
+	}
+
+	_, err := bot.DownloadFile("some/file.txt")
+	if err == nil {
+		t.Fatal("expected error for closed server, got nil")
+	}
+	if !strings.Contains(err.Error(), "download file") {
+		t.Errorf("error = %q, want substring %q", err, "download file")
+	}
 }

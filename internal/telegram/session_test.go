@@ -31,6 +31,35 @@ func setupTestSessionManager(t *testing.T) (*SessionManager, *session.Store) {
 }
 
 // ---------------------------------------------------------------------------
+// TestNewSessionManager_default_ttl – 0 TTL defaults to 24h
+// ---------------------------------------------------------------------------
+
+func TestNewSessionManager_default_ttl(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	st, err := session.NewStore()
+	if err != nil {
+		t.Fatalf("session.NewStore() failed: %v", err)
+	}
+
+	// Pass 0 TTL — should default to 24h.
+	sm := NewSessionManager(st, 0)
+	if sm.SessionTTL != 24*time.Hour {
+		t.Errorf("SessionTTL = %v, want 24h", sm.SessionTTL)
+	}
+	if sm.Store != st {
+		t.Errorf("Store pointer mismatch")
+	}
+	if sm.Cache == nil {
+		t.Errorf("Cache map is nil, expected empty map")
+	}
+	if len(sm.Cache) != 0 {
+		t.Errorf("Cache should be empty initially, got %d entries", len(sm.Cache))
+	}
+}
+
+// ---------------------------------------------------------------------------
 // TestNewSessionManager
 // ---------------------------------------------------------------------------
 

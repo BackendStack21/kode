@@ -432,3 +432,122 @@ func TestPoller_Poll_serverError(t *testing.T) {
 		t.Errorf("offset should remain 0 on error, got %d", p.Offset)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// TestPoller_SetLogger
+// ---------------------------------------------------------------------------
+
+func TestPoller_SetLogger(t *testing.T) {
+	bot := &Bot{Token: "test:token", log: NewNopLogger()}
+	p := NewPoller(bot)
+
+	// Default logger should be a NopLogger.
+	if _, ok := p.log.(nopLogger); !ok {
+		t.Fatalf("default Poller.log = %T, want nopLogger", p.log)
+	}
+
+	// SetLogger with nil should keep NopLogger.
+	p.SetLogger(nil)
+	if _, ok := p.log.(nopLogger); !ok {
+		t.Errorf("SetLogger(nil) resulted in %T, want nopLogger", p.log)
+	}
+
+	// SetLogger with a valid logger.
+	l := NewNopLogger()
+	p.SetLogger(l)
+	if p.log != l {
+		t.Errorf("SetLogger did not store the provided logger")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestPoller_Start_ContextCancelled — Start returns ctx.Err() on cancel
+// ---------------------------------------------------------------------------
+
+func TestPoller_Start_ContextCancelled(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := GetUpdatesResponse{
+			OK:     true,
+			Result: []Update{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("failed to encode response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	bot := &Bot{
+		Token:   "test:token",
+		BaseURL: ts.URL + "/bottest:token",
+		Client:  ts.Client(),
+		log:     NewNopLogger(),
+	}
+
+	p := NewPoller(bot)
+	p.Timeout = 0
+
+	updates := make(chan Update, 10)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := p.Start(ctx, updates)
+	if err != context.Canceled {
+		t.Errorf("Start returned %v, want context.Canceled", err)
+	}
+
+	_, ok := <-updates
+	if ok {
+		t.Error("updates channel should be closed after Start returns")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestPoller_Start_SendsUpdates — Start sends updates then exits on cancel
+// ---------------------------------------------------------------------------
+
+func TestPoller_Start_SendsUpdates(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := GetUpdatesResponse{
+			OK: true,
+			Result: []Update{
+				{ID: 1, Message: &Message{Text: "hello", Chat: &Chat{ID: 123}}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Fatalf("failed to encode response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	bot := &Bot{
+		Token:   "test:token",
+		BaseURL: ts.URL + "/bottest:token",
+		Client:  ts.Client(),
+		log:     NewNopLogger(),
+	}
+
+	p := NewPoller(bot)
+	p.Timeout = 0
+	p.Interval = time.Microsecond
+
+	updates := make(chan Update, 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	err := p.Start(ctx, updates)
+	if err != context.DeadlineExceeded && err != context.Canceled {
+		t.Errorf("Start returned %v, want context deadline/cancel error", err)
+	}
+
+	received := false
+	for upd := range updates {
+		if upd.ID == 1 && upd.Message != nil && upd.Message.Text == "hello" {
+			received = true
+		}
+	}
+	if !received {
+		t.Error("did not receive expected update from Start")
+	}
+}
