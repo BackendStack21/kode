@@ -219,13 +219,32 @@ func telegramCmd(args []string) error {
 	//     This preserves the exact same arguments so the bot comes back with
 	//     the same configuration. If syscall.Exec fails, fall through to exit.
 	if restartRequested.Load() {
-		fmt.Fprintf(os.Stderr, "odek telegram: re-executing %s %v...\n", os.Args[0], os.Args[1:])
-		if err := syscall.Exec(os.Args[0], os.Args, os.Environ()); err != nil {
-			fmt.Fprintf(os.Stderr, "odek telegram: restart failed: %v\n", err)
-			return err
-		}
+		return tryReexec()
 	}
 
+	return nil
+}
+
+// execFunc is the system call used to replace the current process image.
+// Swapped in tests to avoid replacing the test process.
+var execFunc func(argv0 string, argv []string, envv []string) error = syscall.Exec
+
+// tryReexec replaces the current process with the same binary and arguments.
+// On success, it never returns (the new process takes over). On failure, it
+// logs the error and returns it so the caller can fall through to graceful exit.
+func tryReexec() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("re-exec: cannot find executable: %w", err)
+	}
+	argv := make([]string, len(os.Args))
+	copy(argv, os.Args)
+	argv[0] = exe
+	fmt.Fprintf(os.Stderr, "odek telegram: re-executing %s %v...\n", exe, os.Args[1:])
+	if err := execFunc(exe, argv, os.Environ()); err != nil {
+		fmt.Fprintf(os.Stderr, "odek telegram: restart failed: %v\n", err)
+		return err
+	}
 	return nil
 }
 
