@@ -193,6 +193,7 @@ func TestConfigSystemMessage(t *testing.T) {
 	cfg := Config{
 		APIKey:        "sk-test",
 		SystemMessage: "You are a helpful assistant.",
+		NoProjectFile: true, // prevent auto-loading AGENTS.md from repo root
 	}
 	agent, err := New(cfg)
 	if err != nil {
@@ -673,7 +674,11 @@ func TestProfileLabel_Flash(t *testing.T) {
 // ── Project File (AGENTS.md) Tests ───────────────────────────────────
 
 func TestLoadProjectFile_Missing(t *testing.T) {
-	// No AGENTS.md in current dir — should return empty
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(cwd)
+	// No AGENTS.md in this dir — should return empty
 	content := LoadProjectFile()
 	if content != "" {
 		t.Errorf("LoadProjectFile() with no file = %q, want empty", content)

@@ -118,8 +118,14 @@ func telegramCmd(args []string) error {
 	if systemMessage == "" {
 		systemMessage = defaultSystem
 	}
+	if resolved.GithubRepoDirectory != "" {
+		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository.", resolved.GithubRepoDirectory)
+	}
+	if resolved.GithubRepoUrl != "" {
+		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
+	}
 
-	// 10. Wire handler callbacks.
+	// Telegram-specific system prompt additions
 	//
 	// Important: OnTextMessage processes in a background goroutine so it doesn't
 	// block the main update processing loop. The TelegramApprover blocks waiting

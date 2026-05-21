@@ -31,7 +31,7 @@ import (
 // flag was not explicitly passed — the config loader will look at lower
 // priority layers for these fields.
 //
-// Fields prefixed with Sandbox are sandbox-specific overrides. They follow
+// CLIFlags holds CLI-only configuration. These fields participate in
 // the same merge chain: global file → project file → ODEK_* env → CLI.
 // Fields typed as *bool distinguish "explicitly set to false" from "not set",
 // which matters when the config file says "sandbox_readonly: false" (user
@@ -56,6 +56,12 @@ type CLIFlags struct {
 	SandboxCPUs     string
 	SandboxUser     string
 	SandboxReadonly *bool // nil = not set
+
+	// GithubRepoDirectory is the path to the local clone of the project repo.
+	GithubRepoDirectory string
+
+	// GithubRepoUrl is the HTTPS URL of the project's GitHub repository.
+	GithubRepoUrl string
 }
 
 // SkillsConfig holds the skills configuration section from JSON files.
@@ -123,6 +129,18 @@ type FileConfig struct {
 
 	// Telegram configures the Telegram bot integration.
 	Telegram *telegram.TelegramConfig `json:"telegram,omitempty"`
+
+	// GithubRepoDirectory is the path to the local clone of the project
+	// repository. Injected into the system prompt so the agent knows
+	// where source code lives and can self-correct.
+	// Config: github_repo_directory, ODEK_GITHUB_REPO_DIRECTORY.
+	GithubRepoDirectory string `json:"github_repo_directory,omitempty"`
+
+	// GithubRepoUrl is the HTTPS URL of the project's GitHub repository.
+	// Injected into the system prompt so the agent can reference the
+	// upstream repo for PRs, issues, and documentation links.
+	// Config: github_repo_url, ODEK_GITHUB_REPO_URL.
+	GithubRepoUrl string `json:"github_repo_url,omitempty"`
 }
 
 // ResolvedConfig is the fully merged result. Every field has a concrete
@@ -200,6 +218,13 @@ type ResolvedConfig struct {
 
 	// Telegram is the resolved Telegram bot configuration.
 	Telegram telegram.TelegramConfig
+
+	// GithubRepoDirectory is the path to the local clone of the project
+	// repository. Injected into the system prompt.
+	GithubRepoDirectory string
+
+	// GithubRepoUrl is the HTTPS URL of the project's GitHub repository.
+	GithubRepoUrl string
 }
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -259,6 +284,8 @@ func loadFile(path string) FileConfig {
 	cfg.SandboxMemory = expandEnv(cfg.SandboxMemory)
 	cfg.SandboxCPUs = expandEnv(cfg.SandboxCPUs)
 	cfg.SandboxUser = expandEnv(cfg.SandboxUser)
+	cfg.GithubRepoDirectory = expandEnv(cfg.GithubRepoDirectory)
+	cfg.GithubRepoUrl = expandEnv(cfg.GithubRepoUrl)
 	return cfg
 }
 
@@ -385,6 +412,16 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		cfg.MaxConcurrency = v
 	}
 
+	// Github repo directory env var
+	if v := envString("GITHUB_REPO_DIRECTORY"); v != "" {
+		cfg.GithubRepoDirectory = v
+	}
+
+	// Github repo URL env var
+	if v := envString("GITHUB_REPO_URL"); v != "" {
+		cfg.GithubRepoUrl = v
+	}
+
 	// Telegram env overrides: merge env vars on top of file config.
 	baseTelegram := telegram.DefaultConfig()
 	if cfg.Telegram != nil {
@@ -442,6 +479,12 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 	if cli.SandboxUser != "" {
 		cfg.SandboxUser = cli.SandboxUser
 	}
+	if cli.GithubRepoDirectory != "" {
+		cfg.GithubRepoDirectory = cli.GithubRepoDirectory
+	}
+	if cli.GithubRepoUrl != "" {
+		cfg.GithubRepoUrl = cli.GithubRepoUrl
+	}
 
 	// Build resolved config with concrete values
 	resolved := ResolvedConfig{
@@ -464,6 +507,8 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		Memory:         resolveMemory(cfg.Memory),
 		MCPServers:     cfg.MCPServers,
 		Telegram:       resolveTelegram(cfg.Telegram),
+		GithubRepoDirectory: cfg.GithubRepoDirectory,
+		GithubRepoUrl:       cfg.GithubRepoUrl,
 	}
 
 	// MaxConcurrency: default to 3 if not set
@@ -676,6 +721,12 @@ func overlayFile(base, override FileConfig) FileConfig {
 	}
 	if override.Telegram != nil {
 		base.Telegram = override.Telegram
+	}
+	if override.GithubRepoDirectory != "" {
+		base.GithubRepoDirectory = override.GithubRepoDirectory
+	}
+	if override.GithubRepoUrl != "" {
+		base.GithubRepoUrl = override.GithubRepoUrl
 	}
 	return base
 }

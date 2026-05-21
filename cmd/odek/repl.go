@@ -62,8 +62,14 @@ func replCmd(args []string) error {
 	if systemMessage == "" {
 		systemMessage = defaultSystem
 	}
+	if resolved.GithubRepoDirectory != "" {
+		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository. You can read and modify files here. When asked to update your own code, this is where the source lives.", resolved.GithubRepoDirectory)
+	}
+	if resolved.GithubRepoUrl != "" {
+		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
+	}
 
-	// Auto-apply sandbox if resuming a sandboxed session
+	// session resume
 	if sess != nil && sess.Sandbox && !resolved.Sandbox {
 		resolved.Sandbox = true
 		fmt.Fprintf(os.Stderr, "odek: session was sandboxed — enabling sandbox\n")

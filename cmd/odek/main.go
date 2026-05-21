@@ -192,6 +192,10 @@ type runFlags struct {
 	SandboxCPUs     string // CPU limit (e.g. "0.5", "2")
 	SandboxUser     string // Container user (e.g. "1000:1000")
 	SandboxReadonly *bool  // nil = not set; true = read-only mount
+
+	// Repo context flags
+	GithubRepoDirectory string // --github-repo-dir
+	GithubRepoUrl       string // --github-repo-url
 }
 
 // parseRunFlags parses `odek run` arguments and returns the parsed flags.
@@ -256,6 +260,12 @@ func parseRunFlags(args []string) (runFlags, error) {
 			i += 2
 		case "--sandbox-user":
 			f.SandboxUser = args[i+1]
+			i += 2
+		case "--github-repo-dir":
+			f.GithubRepoDirectory = args[i+1]
+			i += 2
+		case "--github-repo-url":
+			f.GithubRepoUrl = args[i+1]
 			i += 2
 		case "--ctx", "-c":
 			f.Ctx = strings.Split(args[i+1], ",")
@@ -463,6 +473,7 @@ const defaultConfigTemplate = `{
   "no_color": false,
   "no_agents": false,
   "system": "",
+  "github_repo_directory": "",
   "sandbox_image": "",
   "sandbox_network": "bridge",
   "sandbox_readonly": false,
@@ -588,6 +599,7 @@ func initConfig(args []string) error {
 	fmt.Println("    no_color        Disable colored output (true/false)")
 	fmt.Println("    no_agents       Skip AGENTS.md (true/false)")
 	fmt.Println("    system          System prompt override")
+	fmt.Println("    github_repo_directory  Local clone path of the project repo")
 	fmt.Println("    sandbox_image   Docker image (alpine:latest if empty)")
 	fmt.Println("    sandbox_network Network mode (bridge | none | host)")
 	fmt.Println("    sandbox_readonly Mount working directory read-only")
@@ -719,6 +731,9 @@ func run(args []string) error {
 		SandboxMemory:   f.SandboxMemory,
 		SandboxCPUs:     f.SandboxCPUs,
 		SandboxUser:     f.SandboxUser,
+
+		GithubRepoDirectory: f.GithubRepoDirectory,
+		GithubRepoUrl:       f.GithubRepoUrl,
 	})
 
 	// Resolve @references and --ctx file attachments in the task
@@ -734,8 +749,14 @@ func run(args []string) error {
 	if systemMessage == "" {
 		systemMessage = defaultSystem
 	}
+	if resolved.GithubRepoDirectory != "" {
+		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository. You can read and modify files here.", resolved.GithubRepoDirectory)
+	}
+	if resolved.GithubRepoUrl != "" {
+		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
+	}
 
-	// Build sandbox config from resolved settings
+	// Build sandbox config from resolved settings (first occurrence)
 	sbCfg := sandboxConfig{
 		Image:    resolved.SandboxImage,
 		Network:  resolved.SandboxNetwork,
@@ -1529,8 +1550,14 @@ func continueCmd(args []string) error {
 	if systemMessage == "" {
 		systemMessage = defaultSystem
 	}
+	if resolved.GithubRepoDirectory != "" {
+		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository.", resolved.GithubRepoDirectory)
+	}
+	if resolved.GithubRepoUrl != "" {
+		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
+	}
 
-	// Sandbox (if enabled in config)
+	// Sandbox (if enabled in config) (second occurrence)
 	if resolved.Sandbox {
 		sbCfg := sandboxConfig{
 			Image:    resolved.SandboxImage,

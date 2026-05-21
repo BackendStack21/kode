@@ -56,8 +56,14 @@ Flags:
 	if systemMessage == "" {
 		systemMessage = defaultSystem
 	}
+	if resolved.GithubRepoDirectory != "" {
+		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository. You can read and modify files here.", resolved.GithubRepoDirectory)
+	}
+	if resolved.GithubRepoUrl != "" {
+		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
+	}
 
-	// Build sandbox config from resolved settings
+	// Start agent loop (mcp)
 	sbCfg := sandboxConfig{
 		Image:    resolved.SandboxImage,
 		Network:  resolved.SandboxNetwork,
