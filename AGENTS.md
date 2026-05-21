@@ -8,7 +8,7 @@ It provides context about the project's architecture, conventions, and how to up
 ## Project Identity
 
 - **Package:** `odek` (Go module: `github.com/BackendStack21/kode`)
-- **What it is:** Minimal Go autonomous agent runtime — ReAct (Reasoning + Acting) loop with zero external dependencies (stdlib only).
+- **What it is:** Minimal Go autonomous agent runtime — ReAct (Reasoning + Acting) loop with minimal external dependencies (stdlib + a few focused packages).
 - **Binary:** `odek` — single static binary, ~11 MB, instant startup.
 - **Config:** Layered priority: `~/.odek/config.json` → `./odek.json` → `ODEK_*` env vars → CLI flags.
 
@@ -54,7 +54,7 @@ docs/                         Documentation (CLI, API, CONFIG, MCP, MEMORY, etc.
 
 ## Key Conventions
 
-- **Zero-dependency policy:** No external Go modules beyond stdlib. All contributions must maintain this.
+- **Minimal dependencies policy:** Prefer stdlib, keep dependencies minimal and focused. All contributions must maintain this.
 - **Tests:** 1760+ tests, run with `go test ./...` (no network, no Docker needed for unit tests).
 - **Error handling:** Return errors, don't panic. Fatal errors go through `fmt.Fprintf(os.Stderr, ...)`.
 - **Config structs:** JSON tags for serialization. `*bool` for optional tristate fields (nil = not set).

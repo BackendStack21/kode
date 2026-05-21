@@ -1,12 +1,12 @@
-// Package odek is a minimal, zero-dependency Go agent loop runtime.
+// Package odek is a minimal Go agent loop runtime.
 //
 // odek implements the ReAct (Reasoning + Acting) pattern — the "think,
 // therefore act" loop that powers autonomous AI agents. It is not a
-// framework or an SDK. It is a runtime: one loop, one binary, zero deps.
+// framework or an SDK. It is a runtime: one loop, one binary, minimal deps.
 //
 // # Design
 //
-//   - Zero external dependencies. stdlib only.
+//   - Minimal external dependencies. stdlib + a few focused packages.
 //   - Session isolation via Docker containers (--sandbox).
 //   - LLM-agnostic. Any OpenAI-compatible endpoint works.
 //   - Tool-first. Tools are the only extension point.

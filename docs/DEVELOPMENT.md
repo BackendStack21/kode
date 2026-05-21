@@ -177,4 +177,4 @@ See [docs/SUBAGENTS.md](docs/SUBAGENTS.md) for full documentation.
 3. Run `go test ./...`
 4. Open a PR
 
-**Zero-dependency policy:** Contributions must not introduce external Go modules. stdlib only.
+**Minimal dependencies policy:** Contributions should prefer stdlib and avoid unnecessary external Go modules.

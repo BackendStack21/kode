@@ -1,6 +1,6 @@
 # Memory System
 
-odek has a **three-tier file-based memory** system. Minimal external dependencies from the 21no.de ecosystem (go-vector, go-mcp), all zero-dep Go packages.
+odek has a **three-tier file-based memory** system. Minimal external dependencies from the 21no.de ecosystem (go-vector, go-mcp), all minimal-dependency Go packages.
 
 ## Three Tiers
 

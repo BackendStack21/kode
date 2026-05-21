@@ -205,7 +205,7 @@ odek mcp --sse-addr :8081                   # SSE transport
 
 ## Key Design Properties
 
-- **Minimal Go dependencies** — all zero-dep Go packages from 21no.de
+- **Minimal Go dependencies** — all minimal-dependency Go packages from 21no.de
 - **~11 MB static binary**
 - **One loop, one interface** — tool implementers write `func Call(args string) (string, error)`
 - **File-based config** — no YAML, no DSL, no schema generation
