@@ -560,11 +560,52 @@ func resolveMemory(cfg *memory.MemoryConfig) memory.MemoryConfig {
 }
 
 // resolveTelegram merges file-level telegram config with defaults.
+// Starts from DefaultConfig and overlays any non-zero fields from the
+// file config, so users only need to specify the fields they want to
+// override.
 func resolveTelegram(cfg *telegram.TelegramConfig) telegram.TelegramConfig {
-	if cfg != nil {
-		return *cfg
+	base := telegram.DefaultConfig()
+	if cfg == nil {
+		return base
 	}
-	return telegram.DefaultConfig()
+	// Overlay non-zero fields from the file config.
+	if cfg.Token != "" {
+		base.Token = cfg.Token
+	}
+	if len(cfg.AllowedChats) > 0 {
+		base.AllowedChats = cfg.AllowedChats
+	}
+	if len(cfg.AllowedUsers) > 0 {
+		base.AllowedUsers = cfg.AllowedUsers
+	}
+	if cfg.BotUsername != "" {
+		base.BotUsername = cfg.BotUsername
+	}
+	if cfg.PollInterval > 0 {
+		base.PollInterval = cfg.PollInterval
+	}
+	if cfg.PollTimeout > 0 {
+		base.PollTimeout = cfg.PollTimeout
+	}
+	if cfg.MaxMsgLength > 0 {
+		base.MaxMsgLength = cfg.MaxMsgLength
+	}
+	if cfg.DailyTokenBudget > 0 {
+		base.DailyTokenBudget = cfg.DailyTokenBudget
+	}
+	if cfg.SessionTTL > 0 {
+		base.SessionTTL = cfg.SessionTTL
+	}
+	if len(cfg.FallbackURLs) > 0 {
+		base.FallbackURLs = cfg.FallbackURLs
+	}
+	if cfg.LogLevel != "" {
+		base.LogLevel = cfg.LogLevel
+	}
+	if cfg.LogFile != "" {
+		base.LogFile = cfg.LogFile
+	}
+	return base
 }
 
 // overlayFile overlays a higher-priority FileConfig onto a lower-priority one.

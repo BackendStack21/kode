@@ -10,7 +10,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestFindCommand_Exists(t *testing.T) {
-	knownCommands := []string{"start", "help", "new", "stats", "stop", "mode"}
+	knownCommands := []string{"start", "help", "new", "stats", "stop", "mode", "restart"}
 
 	for _, name := range knownCommands {
 		t.Run(name, func(t *testing.T) {
@@ -29,7 +29,7 @@ func TestFindCommand_Exists(t *testing.T) {
 }
 
 func TestFindCommand_Unknown(t *testing.T) {
-	unknownNames := []string{"unknown", "foo", "delete", "", "restart"}
+	unknownNames := []string{"unknown", "foo", "delete", ""}
 
 	for _, name := range unknownNames {
 		t.Run(name, func(t *testing.T) {
@@ -160,6 +160,20 @@ func TestModeHandler_ContainsMode(t *testing.T) {
 	}
 	if !strings.Contains(got, "Mode") && !strings.Contains(got, "mode") {
 		t.Errorf("mode handler output does not contain 'Mode':\n%s", got)
+	}
+}
+
+func TestRestartHandler_ContainsRestart(t *testing.T) {
+	cmd := FindCommand("restart")
+	if cmd == nil {
+		t.Fatal("restart command not found")
+	}
+	got, err := cmd.Handler("")
+	if err != nil {
+		t.Fatalf("restart handler returned error: %v", err)
+	}
+	if !strings.Contains(got, "Restarting") && !strings.Contains(got, "restart") {
+		t.Errorf("restart handler output does not contain 'Restarting':\n%s", got)
 	}
 }
 

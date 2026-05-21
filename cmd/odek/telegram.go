@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -105,10 +106,30 @@ func telegramCmd(args []string) error {
 		return "", nil
 	}
 
+	// restartRequested is set atomically when a /restart command is received.
+	// Checked after the update loop exits to decide between restart and exit.
+	var restartRequested atomic.Bool
+
 	handler.OnCommand = func(chatID int64, cmdName string, argsStr string) (string, error) {
 		cmd := telegram.FindCommand(cmdName)
 		if cmd == nil {
 			return fmt.Sprintf("Unknown command: /%s", cmdName), nil
+		}
+
+		// Handle /restart — send confirmation directly, then trigger SIGHUP.
+		if cmdName == "restart" {
+			// Send the restart message directly via the bot to ensure it's
+			// delivered before the process re-execs.
+			if _, err := bot.SendMessage(chatID,
+				"🔄 *Restarting...*\n\nThe bot will restart momentarily. This may take a few seconds.",
+				nil); err != nil {
+				handlerLog.Error("send restart message failed", "chat_id", chatID, "error", err)
+			}
+			// Signal SIGHUP to self — the signal handler will cancel the
+			// context, stopping the poller, and the main loop will re-exec.
+			restartRequested.Store(true)
+			syscall.Kill(os.Getpid(), syscall.SIGHUP)
+			return "", nil
 		}
 
 		// Handle /new — clear session and reset trust in the approver.
@@ -117,6 +138,15 @@ func telegramCmd(args []string) error {
 			if a := handler.GetApprover(chatID); a != nil {
 				a.ResetTrust()
 			}
+		}
+
+		// Handle /stats — read from session store.
+		if cmdName == "stats" {
+			cs, err := sessionManager.Load(chatID)
+			if err != nil || cs == nil {
+				return "📊 *Session Stats*\n\nNo active session yet. Send a message to start one.", nil
+			}
+			return formatStats(cs), nil
 		}
 
 		return cmd.Handler(argsStr)
@@ -160,12 +190,17 @@ func telegramCmd(args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 15. Handle SIGINT/SIGTERM for graceful shutdown.
+	// 15. Handle SIGINT/SIGTERM/SIGHUP for graceful shutdown and restart.
+	//     SIGHUP triggers a full process restart (used by /restart command).
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
-		<-sigCh
-		fmt.Fprintf(os.Stderr, "\nodek telegram: shutting down...\n")
+		sig := <-sigCh
+		if sig == syscall.SIGHUP {
+			fmt.Fprintf(os.Stderr, "\nodek telegram: restart requested...\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "\nodek telegram: shutting down...\n")
+		}
 		cancel()
 	}()
 
@@ -176,6 +211,17 @@ func telegramCmd(args []string) error {
 	// 17. Process updates until the channel is closed (ctx cancelled).
 	for upd := range updates {
 		handler.HandleUpdate(upd)
+	}
+
+	// 18. If restart was requested (via /restart command), re-exec the binary.
+	//     This preserves the exact same arguments so the bot comes back with
+	//     the same configuration. If syscall.Exec fails, fall through to exit.
+	if restartRequested.Load() {
+		fmt.Fprintf(os.Stderr, "odek telegram: re-executing %s %v...\n", os.Args[0], os.Args[1:])
+		if err := syscall.Exec(os.Args[0], os.Args, os.Environ()); err != nil {
+			fmt.Fprintf(os.Stderr, "odek telegram: restart failed: %v\n", err)
+			return err
+		}
 	}
 
 	return nil
@@ -275,6 +321,25 @@ func handleChatMessage(
 	if response != "" {
 		handler.SendResponse(chatID, response)
 	}
+}
+
+// formatStats formats session statistics for the Telegram stats command.
+func formatStats(cs *telegram.ChatSession) string {
+	duration := time.Since(cs.CreatedAt).Truncate(time.Second)
+
+	return fmt.Sprintf(
+		"📊 *Session Stats*\n\n"+
+			"Messages: %d\n"+
+			"Turns: %d\n"+
+			"Started: %s\n"+
+			"Duration: %s\n"+
+			"Last active: %s",
+		len(cs.Messages),
+		cs.TurnCount,
+		cs.CreatedAt.Format("Jan 02, 2006 15:04 UTC"),
+		duration.String(),
+		cs.LastActive.Format("15:04 UTC"),
+	)
 }
 
 // reportError sends an error message to the given chat and logs to stderr.

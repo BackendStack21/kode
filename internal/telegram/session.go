@@ -28,6 +28,7 @@ type ChatSession struct {
 	ChatID     int64
 	SessionID  string
 	Messages   []llm.Message
+	CreatedAt  time.Time
 	LastActive time.Time
 	TurnCount  int
 }
@@ -68,6 +69,7 @@ func (sm *SessionManager) GetOrCreate(chatID int64) (*ChatSession, error) {
 		ChatID:     chatID,
 		SessionID:  fmt.Sprintf("tg-%d", chatID),
 		Messages:   make([]llm.Message, 0),
+		CreatedAt:  time.Now(),
 		LastActive: time.Now(),
 		TurnCount:  0,
 	}
@@ -104,7 +106,7 @@ func (sm *SessionManager) Save(chatID int64, messages []llm.Message) error {
 	now := time.Now()
 	sess := &session.Session{
 		ID:        cs.SessionID,
-		CreatedAt: now,
+		CreatedAt: cs.CreatedAt,
 		UpdatedAt: now,
 		Model:     "",
 		Turns:     cs.TurnCount,
@@ -139,6 +141,7 @@ func (sm *SessionManager) Load(chatID int64) (*ChatSession, error) {
 		ChatID:     chatID,
 		SessionID:  sess.ID,
 		Messages:   sess.Messages,
+		CreatedAt:  sess.CreatedAt,
 		LastActive: sess.UpdatedAt,
 		TurnCount:  sess.Turns,
 	}

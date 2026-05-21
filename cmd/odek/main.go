@@ -505,6 +505,20 @@ const defaultConfigTemplate = `{
     "max_concurrency": 3,
     "timeout_seconds": 120,
     "max_iterations": 15
+  },
+  "telegram": {
+    "bot_token": "",
+    "allowed_chats": [],
+    "allowed_users": [],
+    "bot_username": "",
+    "poll_interval": 1,
+    "poll_timeout": 30,
+    "max_msg_length": 4096,
+    "daily_token_budget": 0,
+    "session_ttl_hours": 24,
+    "fallback_urls": [],
+    "log_level": "info",
+    "log_file": ""
   }
 }`
 

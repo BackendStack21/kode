@@ -24,8 +24,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.MaxMsgLength != 4096 {
 		t.Errorf("DefaultConfig().MaxMsgLength = %d, want 4096", cfg.MaxMsgLength)
 	}
-	if cfg.DailyTokenBudget != 1000000 {
-		t.Errorf("DefaultConfig().DailyTokenBudget = %d, want 1000000", cfg.DailyTokenBudget)
+	if cfg.DailyTokenBudget != 0 {
+		t.Errorf("DefaultConfig().DailyTokenBudget = %d, want 0 (unlimited)", cfg.DailyTokenBudget)
 	}
 	if cfg.SessionTTL != 24 {
 		t.Errorf("DefaultConfig().SessionTTL = %d, want 24", cfg.SessionTTL)
@@ -229,8 +229,8 @@ func TestConfigFromEnv_dailyTokenBudget(t *testing.T) {
 func TestConfigFromEnv_dailyTokenBudgetInvalid(t *testing.T) {
 	t.Setenv("ODEK_TELEGRAM_DAILY_TOKEN_BUDGET", "not-a-number")
 	cfg := ConfigFromEnv(DefaultConfig())
-	if cfg.DailyTokenBudget != 1000000 {
-		t.Errorf("DailyTokenBudget = %d, want default 1000000", cfg.DailyTokenBudget)
+	if cfg.DailyTokenBudget != 0 {
+		t.Errorf("DailyTokenBudget = %d, want default 0 (unlimited)", cfg.DailyTokenBudget)
 	}
 }
 
@@ -309,8 +309,8 @@ func TestConfigFromEnv_multipleOverrides(t *testing.T) {
 	if cfg.PollTimeout != 30 {
 		t.Errorf("PollTimeout = %d, want 30", cfg.PollTimeout)
 	}
-	if cfg.DailyTokenBudget != 1000000 {
-		t.Errorf("DailyTokenBudget = %d, want 1000000", cfg.DailyTokenBudget)
+	if cfg.DailyTokenBudget != 0 {
+		t.Errorf("DailyTokenBudget = %d, want 0 (unlimited)", cfg.DailyTokenBudget)
 	}
 }
 

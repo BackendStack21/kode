@@ -24,14 +24,14 @@ type Bot struct {
 }
 
 // NewBot creates a new Bot with the given token and a default HTTP client
-// with a 30-second timeout.
+// with a 60-second timeout (generous for long-polling getUpdates calls).
 func NewBot(token string) *Bot {
 	return &Bot{
 		Token:       token,
 		BaseURL:     fmt.Sprintf("https://api.telegram.org/bot%s", token),
 		FileBaseURL: fmt.Sprintf("https://api.telegram.org/file/bot%s", token),
 		Client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 60 * time.Second,
 		},
 		log: NewNopLogger(),
 	}

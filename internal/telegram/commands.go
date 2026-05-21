@@ -49,6 +49,11 @@ func init() {
 			Description: "Toggle agent modes (sandbox, verbose)",
 			Handler:     modeHandler,
 		},
+		{
+			Command:     "restart",
+			Description: "Restart the bot process gracefully",
+			Handler:     restartHandler,
+		},
 	}
 }
 
@@ -89,6 +94,14 @@ func stopHandler(args string) (string, error) {
 
 func modeHandler(args string) (string, error) {
 	return "⚙️ *Agent Modes*\n\nSelect a mode to toggle:", nil
+}
+
+// restartHandler handles the /restart command.
+// The actual restart signal is sent by the caller (telegramCmd) after
+// this response is delivered to the chat. This handler just returns
+// a confirmation message — the caller sends SIGHUP to trigger restart.
+func restartHandler(args string) (string, error) {
+	return "🔄 *Restarting...*\n\nThe bot will restart momentarily. This may take a few seconds.", nil
 }
 
 // FindCommand returns the command descriptor with the matching name, or nil.

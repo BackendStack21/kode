@@ -16,7 +16,7 @@ type TelegramConfig struct {
 	PollInterval     int      `json:"poll_interval"`      // seconds, default 1
 	PollTimeout      int      `json:"poll_timeout"`       // seconds, default 30
 	MaxMsgLength     int      `json:"max_msg_length"`     // default 4096
-	DailyTokenBudget int64    `json:"daily_token_budget"` // default 1000000
+	DailyTokenBudget int64    `json:"daily_token_budget"` // 0 = unlimited (default)
 	SessionTTL       int      `json:"session_ttl_hours"`  // hours, default 24
 	FallbackURLs     []string `json:"fallback_urls"`
 	LogLevel         string   `json:"log_level"` // "debug","info","warn","error" (default "info")
@@ -29,7 +29,7 @@ func DefaultConfig() TelegramConfig {
 		PollInterval:     1,
 		PollTimeout:      30,
 		MaxMsgLength:     4096,
-		DailyTokenBudget: 1000000,
+		DailyTokenBudget: 0, // 0 = unlimited
 		SessionTTL:       24,
 	}
 }
