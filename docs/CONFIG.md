@@ -224,8 +224,11 @@ odek init --force
 ## Quick examples
 
 ```bash
-# Global config
-echo '{"api_key": "${DEEPSEEK_API_KEY}", "model": "deepseek-v4-flash"}' > ~/.odek/config.json
+# Set API key via environment variable (recommended — keeps secrets out of config files)
+export ODEK_API_KEY="sk-..."
+
+# Global config (model and other settings only, no secrets)
+echo '{"model": "deepseek-v4-flash"}' > ~/.odek/config.json
 odek run "list files"
 
 # Per-project override

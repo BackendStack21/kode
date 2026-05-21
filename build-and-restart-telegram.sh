@@ -78,6 +78,12 @@ fi
 # Start the bot from the project directory so cwd is correct.
 echo "   Starting odek telegram..."
 cd "$PROJECT_DIR"
+
+# Load secrets if available
+if [ -f "$HOME/.odek/secrets.env" ]; then
+    set -a; source "$HOME/.odek/secrets.env"; set +a
+fi
+
 exec "$BINARY" telegram 2>"$STDERR_LOG" &
 
 new_pid=$!
