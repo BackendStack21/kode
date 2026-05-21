@@ -23,6 +23,25 @@ type SkillLoader func(userInput string) string
 // each tool invocation. Used by the WebUI for live streaming of tool events.
 type ToolEventHandler func(event string, name string, data string)
 
+// IterationInfo holds data about a single agent loop iteration, passed to
+// the IterationCallback after each turn. Used for progress reporting.
+type IterationInfo struct {
+	Turn                  int           // current iteration (1-indexed)
+	MaxTurns              int           // max iterations configured
+	ToolNames             []string      // tools called this turn (duplicates possible)
+	InputTokens           int           // cumulative input tokens
+	OutputTokens          int           // cumulative output tokens
+	CacheCreationTokens   int           // cumulative cache creation tokens
+	CacheReadTokens       int           // cumulative cache read tokens
+	CachedTokens          int           // cumulative cached tokens (OpenAI)
+	TotalLatency          time.Duration // cumulative wall time
+	HasFinalAnswer        bool          // true when the agent reached a final answer
+}
+
+// IterationCallback is an optional callback invoked after each iteration
+// of the agent loop. Used by Telegram/WebUI for progress reporting.
+type IterationCallback func(info IterationInfo)
+
 // Engine runs the agent loop: observe → think → act → repeat.
 type Engine struct {
 	client      *llm.Client
@@ -35,6 +54,9 @@ type Engine struct {
 	lastSkillMsg string     // last user message that triggered skill loading (dedup)
 
 	toolEventHandler ToolEventHandler // optional: fires during tool execution
+
+	// iterationCallback is an optional callback fired after each iteration.
+	iterationCallback IterationCallback
 
 	// PromptCaching enables Anthropic/OpenAI/DeepSeek prompt caching markers.
 	// When enabled, the system prompt and first user message are annotated
@@ -72,6 +94,10 @@ func (e *Engine) SetSkillLoader(sl SkillLoader) { e.skillLoader = sl }
 
 // SetToolEventHandler sets the optional tool event callback for live streaming.
 func (e *Engine) SetToolEventHandler(cb ToolEventHandler) { e.toolEventHandler = cb }
+
+// SetIterationCallback sets the iteration progress callback.
+// If nil, no callback is fired.
+func (e *Engine) SetIterationCallback(cb IterationCallback) { e.iterationCallback = cb }
 
 // ── Token Estimation ─────────────────────────────────────────────────
 //
@@ -230,6 +256,7 @@ func (e *Engine) RunWithMessages(ctx context.Context, messages []llm.Message) (s
 // answer plus the complete updated message history.
 func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, []llm.Message, error) {
 	tools := e.buildToolDefs()
+	startTime := time.Now()
 
 	for i := 0; i < e.maxIter; i++ {
 		select {
@@ -323,6 +350,22 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 					e.TotalCachedTokens,
 				)
 			}
+
+			// Fire iteration callback with final answer signal
+			if e.iterationCallback != nil {
+				e.iterationCallback(IterationInfo{
+					Turn:                i + 1,
+					MaxTurns:            e.maxIter,
+					ToolNames:           nil,
+					InputTokens:         e.TotalInputTokens,
+					OutputTokens:        e.TotalOutputTokens,
+					CacheCreationTokens: e.TotalCacheCreationTokens,
+					CacheReadTokens:     e.TotalCacheReadTokens,
+					CachedTokens:        e.TotalCachedTokens,
+					TotalLatency:        time.Since(startTime),
+					HasFinalAnswer:      true,
+				})
+			}
 			// Append final assistant message so callers (e.g. WebUI) get
 			// the final text in the messages slice and can stream it.
 			messages = append(messages, llm.Message{
@@ -348,7 +391,9 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 		messages = append(messages, assistantMsg)
 
 		// ACT: execute each tool call
+		toolNames := make([]string, 0, len(result.ToolCalls))
 		for _, tc := range result.ToolCalls {
+			toolNames = append(toolNames, tc.Function.Name)
 			if e.renderer != nil {
 				e.renderer.ToolCall(tc.Function.Name, tc.Function.Arguments)
 			}
@@ -390,6 +435,22 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 				Content:    delimited,
 				Name:       tc.Function.Name,
 				ToolCallID: tc.ID,
+			})
+		}
+
+		// Fire iteration callback with tool call results
+		if e.iterationCallback != nil {
+			e.iterationCallback(IterationInfo{
+				Turn:                i + 1,
+				MaxTurns:            e.maxIter,
+				ToolNames:           toolNames,
+				InputTokens:         e.TotalInputTokens,
+				OutputTokens:        e.TotalOutputTokens,
+				CacheCreationTokens: e.TotalCacheCreationTokens,
+				CacheReadTokens:     e.TotalCacheReadTokens,
+				CachedTokens:        e.TotalCachedTokens,
+				TotalLatency:        time.Since(startTime),
+				HasFinalAnswer:      false,
 			})
 		}
 	}

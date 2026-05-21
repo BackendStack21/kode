@@ -220,6 +220,22 @@ func (b *Bot) SendMessage(chatID int64, text string, opts *SendOpts) (*Message, 
 	return &msg, nil
 }
 
+// EditMessageText edits a previously sent message in the given chat.
+// The messageID must identify an existing message sent by the bot.
+// Supports SendOpts for parse_mode. Returns an error if the message
+// hasn't changed (Telegram "Bad Request: message is not modified").
+func (b *Bot) EditMessageText(chatID int64, messageID int, text string, opts *SendOpts) error {
+	params := map[string]any{
+		"chat_id":    chatID,
+		"message_id": messageID,
+		"text":       text,
+	}
+	if opts != nil && opts.ParseMode != "" {
+		params["parse_mode"] = opts.ParseMode
+	}
+	return b.doJSON("editMessageText", params, nil)
+}
+
 // SendPhoto sends a photo from a file path to the specified chat.
 func (b *Bot) SendPhoto(chatID int64, path string, caption string) (*Message, error) {
 	params := map[string]any{

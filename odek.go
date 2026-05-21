@@ -96,6 +96,11 @@ type Config struct {
 	// after each tool invocation. Used by the WebUI for live streaming.
 	ToolEventHandler func(event string, name string, data string)
 
+	// IterationCallback, if set, is invoked after each iteration of the
+	// agent loop with progress info (turn number, tokens, tools called).
+	// Used by the Telegram handler for periodic progress updates.
+	IterationCallback loop.IterationCallback
+
 	// Skills configures the skill system. When nil, skills are disabled.
 	Skills *skills.SkillsConfig
 
@@ -402,6 +407,11 @@ func New(cfg Config) (*Agent, error) {
 	// Wire tool event handler for live streaming
 	if cfg.ToolEventHandler != nil {
 		engine.SetToolEventHandler(cfg.ToolEventHandler)
+	}
+
+	// Wire iteration callback for progress reporting
+	if cfg.IterationCallback != nil {
+		engine.SetIterationCallback(cfg.IterationCallback)
 	}
 
 	agent.engine = engine

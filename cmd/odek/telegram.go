@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/BackendStack21/kode"
 	"github.com/BackendStack21/kode/internal/config"
 	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/kode/internal/loop"
 	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/session"
 	"github.com/BackendStack21/kode/internal/telegram"
@@ -102,7 +104,7 @@ func telegramCmd(args []string) error {
 	// dispatch prevents deadlock.
 	handler.OnTextMessage = func(chatID int64, text string) (string, error) {
 		go handleChatMessage(chatID, text, bot, handler, sessionManager,
-			resolved, systemMessage)
+			resolved, systemMessage, handlerLog)
 		return "", nil
 	}
 
@@ -158,13 +160,13 @@ func telegramCmd(args []string) error {
 
 	handler.OnVoiceMessage = func(chatID int64, fileID string) (string, error) {
 		go handleChatMessage(chatID, "[voice message: "+fileID+"]",
-			bot, handler, sessionManager, resolved, systemMessage)
+			bot, handler, sessionManager, resolved, systemMessage, handlerLog)
 		return "", nil
 	}
 
 	handler.OnPhotoMessage = func(chatID int64, fileIDs []string) (string, error) {
 		go handleChatMessage(chatID, "[photo message: "+strings.Join(fileIDs, ",")+"]",
-			bot, handler, sessionManager, resolved, systemMessage)
+			bot, handler, sessionManager, resolved, systemMessage, handlerLog)
 		return "", nil
 	}
 
@@ -239,6 +241,7 @@ func handleChatMessage(
 	sessionManager *telegram.SessionManager,
 	resolved	config.ResolvedConfig,
 	systemMessage string,
+	log telegram.Logger,
 ) {
 	// Serialize per chat: only one agent loop runs per chat at a time.
 	// Prevents same-chat message racing that would corrupt session history.
@@ -272,7 +275,12 @@ func handleChatMessage(
 
 	rend := render.New(os.Stderr, false).WithModel(modelLabel)
 
-	agent, err := odek.New(odek.Config{
+	// Collect agent run stats via the iteration callback.
+	var runInfo loop.IterationInfo
+	var allToolsMu sync.Mutex
+	allTools := make(map[string]int)
+
+	agentCfg := odek.Config{
 		Model:         resolved.Model,
 		BaseURL:       resolved.BaseURL,
 		APIKey:        resolved.APIKey,
@@ -282,7 +290,23 @@ func handleChatMessage(
 		Thinking:      resolved.Thinking,
 		Tools:         tools,
 		Renderer:      rend,
-	})
+		IterationCallback: func(info loop.IterationInfo) {
+			allToolsMu.Lock()
+			for _, name := range info.ToolNames {
+				if _, ok := allTools[name]; !ok {
+					allTools[name] = 0
+				}
+				allTools[name]++
+			}
+			allToolsMu.Unlock()
+
+			if info.HasFinalAnswer {
+				runInfo = info
+			}
+		},
+	}
+
+	agent, err := odek.New(agentCfg)
 	if err != nil {
 		reportError(bot, chatID, "Failed to create agent: "+err.Error())
 		return
@@ -317,9 +341,30 @@ func handleChatMessage(
 		fmt.Fprintf(os.Stderr, "odek telegram: session save: %v\n", err)
 	}
 
-	// Send the response.
+	// Send the response, then append compact stats as a separate message.
 	if response != "" {
 		handler.SendResponse(chatID, response)
+
+		// Send run stats as a separate message directly via Bot.SendMessage
+		// (bypassing SendResponse/FormatResponse) so MarkdownV2 backtick code
+		// formatting is handled natively by Telegram's parser.
+		if runInfo.Turn > 0 {
+			allToolsMu.Lock()
+			toolList := sortedToolKeys(allTools)
+			allToolsMu.Unlock()
+
+			statsLine := formatTelegramStats(runInfo, toolList)
+			if _, err := bot.SendMessage(chatID, statsLine, &telegram.SendOpts{
+				ParseMode: telegram.ParseModeMarkdownV2,
+			}); err != nil {
+				// Fallback: send as plain text so the info isn't lost
+				if _, err2 := bot.SendMessage(chatID, statsLine, nil); err2 != nil {
+					fmt.Fprintf(os.Stderr, "odek telegram: stats send fallback failed: %v (orig: %v)\n", err2, err)
+				}
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "odek telegram: stats skipped (runInfo.Turn=%d)\n", runInfo.Turn)
+		}
 	}
 }
 
@@ -339,6 +384,42 @@ func formatStats(cs *telegram.ChatSession) string {
 		cs.CreatedAt.Format("Jan 02, 2006 15:04 UTC"),
 		duration.String(),
 		cs.LastActive.Format("15:04 UTC"),
+	)
+}
+
+// ── Progress Callback Helpers ──────────────────────────────────────────
+
+// sortedToolKeys returns the keys of a map sorted alphabetically.
+func sortedToolKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// formatTelegramStats formats the final agent run statistics for Telegram.
+// Returns a compact Markdown code-formatted line.
+func formatTelegramStats(info loop.IterationInfo, toolList []string) string {
+	toolStr := "none"
+	if len(toolList) > 0 {
+		toolStr = strings.Join(toolList, ", ")
+	}
+
+	latency := info.TotalLatency.Truncate(time.Second)
+	iters := fmt.Sprintf("%d turn", info.Turn)
+	if info.Turn != 1 {
+		iters += "s"
+	}
+
+	// Always include cache stats so the user can see them even when zero.
+	cacheStr := fmt.Sprintf(" · cache: %dcr+%drd+%dct",
+		info.CacheCreationTokens, info.CacheReadTokens, info.CachedTokens)
+
+	return fmt.Sprintf(
+		"```\n✅ Done · %s · %d in / %d out%s · %s — tools: %s\n```",
+		iters, info.InputTokens, info.OutputTokens, cacheStr, latency.String(), toolStr,
 	)
 }
 
