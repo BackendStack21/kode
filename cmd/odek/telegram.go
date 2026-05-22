@@ -1074,9 +1074,15 @@ func reportError(bot *telegram.Bot, chatID int64, messageID int, msg string) {
 
 // sendAsync sends a Telegram message in a background goroutine and logs
 // any errors to stderr. Use this instead of raw go bot.SendMessage() to
-// prevent silent delivery failures.
+// prevent silent delivery failures. Recovers from panics so a single bad
+// notification doesn't leak a goroutine.
 func sendAsync(bot *telegram.Bot, chatID int64, text string, opts *telegram.SendOpts) {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "odek telegram: async send panic: %v\n", r)
+			}
+		}()
 		if _, err := bot.SendMessage(chatID, text, opts); err != nil {
 			fmt.Fprintf(os.Stderr, "odek telegram: async send failed: %v\n", err)
 		}
