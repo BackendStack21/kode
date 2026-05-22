@@ -30,6 +30,12 @@ type SkillManager struct {
 	ScoredMatcher *ScoredMatcher   // NEW: scoring-based matcher (replaces trie by default)
 	Notifier      SkillNotifier    // receives skill lifecycle events
 	mu            sync.RWMutex
+
+	// Skills file cache — tracks mod times and pre-parsed skills to avoid
+	// re-reading unchanged SKILL.md files on Reload().
+	fileTimes  fileCache       // path → last-known mod time
+	prevSkills map[string]Skill // path → cached parsed skill
+	dirty      bool            // true after explicit mutation — bypasses cache on Reload
 }
 
 // NewSkillManager creates a SkillManager with the given directories.
@@ -39,6 +45,8 @@ func NewSkillManager(userDir, projectDir string) *SkillManager {
 		UserDir:    userDir,
 		ProjectDir: projectDir,
 		Notifier:   &NoopNotifier{},
+		fileTimes:  make(fileCache),
+		prevSkills: make(map[string]Skill),
 	}
 	sm.Reload()
 	return sm
@@ -54,6 +62,15 @@ func (sm *SkillManager) SetNotifier(n SkillNotifier) {
 	sm.Notifier = n
 }
 
+// MarkDirty forces the next Reload() to do a full rescan, bypassing the
+// file modification time cache. Call after writing, patching, or deleting
+// skill files from outside the SkillManager (e.g. auto-save, import).
+func (sm *SkillManager) MarkDirty() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.dirty = true
+}
+
 // Reload rescans skill directories and rebuilds the trigger index.
 // Call after saving or deleting skills to keep the manager in sync.
 func (sm *SkillManager) Reload() {
@@ -65,7 +82,16 @@ func (sm *SkillManager) Reload() {
 // reloadLocked rescans without acquiring the lock. Caller must hold sm.mu.
 func (sm *SkillManager) reloadLocked() {
 	var extraDirs []string
-	sm.Result = ScanDirs(sm.ProjectDir, sm.UserDir, extraDirs)
+	if sm.dirty {
+		// After explicit mutation (save/patch/delete), bypass the file cache
+		// to avoid stale results from sub-second mtime granularity.
+		sm.Result = ScanDirs(sm.ProjectDir, sm.UserDir, extraDirs)
+		sm.fileTimes = make(fileCache)
+		sm.prevSkills = make(map[string]Skill)
+		sm.dirty = false
+	} else {
+		sm.Result = scanDirsCached(sm.ProjectDir, sm.UserDir, extraDirs, sm.fileTimes, sm.prevSkills)
+	}
 
 	// Build index from all lazy skills only (auto-load skills are always in context)
 	sm.TrieIndex = BuildTriggerIndex(sm.Result.Lazy)
@@ -406,6 +432,7 @@ func (t *SkillSaveTool) Call(args string) (string, error) {
 	}
 
 	// Reload to pick up the new skill
+	t.Manager.dirty = true
 	t.Manager.Reload()
 
 	// Fire saved event
@@ -498,6 +525,7 @@ func (t *SkillPatchTool) Call(args string) (string, error) {
 		return "", fmt.Errorf("skill_patch: write: %w", err)
 	}
 
+	t.Manager.dirty = true
 	t.Manager.Reload()
 	return fmt.Sprintf("✓ Patched skill %q: replaced %d characters", input.Name, len(input.OldText)), nil
 }
@@ -564,6 +592,7 @@ func (t *SkillDeleteTool) Call(args string) (string, error) {
 		return "", fmt.Errorf("skill_delete: remove: %w", err)
 	}
 
+	t.Manager.dirty = true
 	t.Manager.Reload()
 
 	// Fire deletion event

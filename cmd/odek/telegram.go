@@ -905,6 +905,7 @@ func handleChatMessage(
 				})
 			}
 			if len(result.Saved) > 0 {
+				sm.MarkDirty()
 				sm.Reload()
 				// Run micro-curation
 				allSkills := sm.AllSkills()

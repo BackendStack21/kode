@@ -576,6 +576,7 @@ func handlePrompt(
 					})
 				}
 				if len(result.Saved) > 0 {
+					sm.MarkDirty()
 					sm.Reload()
 				}
 			}
