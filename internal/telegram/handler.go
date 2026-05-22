@@ -170,7 +170,7 @@ func defaultDocumentHandler(bot *Bot) func(int64, int, string, string) (string, 
 		if err != nil {
 			return "", fmt.Errorf("telegram handler: download document: %w", err)
 		}
-		return fmt.Sprintf("MEDIA:document:%s:%s", path, fileName), nil
+		return fmt.Sprintf("MEDIA:document:%s", path), nil
 	}
 }
 
