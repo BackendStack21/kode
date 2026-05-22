@@ -577,7 +577,11 @@ func handleChatMessage(
 	// Serialize per chat: only one agent loop runs per chat at a time.
 	// Prevents same-chat message racing that would corrupt session history.
 	mu := getChatMutex(chatID)
-	mu.Lock()
+	if !mu.TryLock() {
+		// Another agent run is in progress — tell the user we're queued.
+		bot.SendMessage(chatID, "⏳ Working on your previous request — queued.", nil)
+		mu.Lock()
+	}
 	defer mu.Unlock()
 
 	// Create a per-chat TelegramApprover for inline keyboard approval.
