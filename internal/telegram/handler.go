@@ -419,8 +419,10 @@ func (h *Handler) sendMedia(chatID int64, text string, replyToMessageID int) {
 	}
 }
 
-// sendChunk sends a single text chunk, retrying with plain text on parse errors.
+// sendChunk sends a single text chunk, retrying with plain text on failures.
 // If replyToMessageID is non-zero, the chunk is sent as a reply to that message.
+// When both MarkdownV2 and plain-text sends fail, a short fallback error
+// message is sent so the user knows a portion of the response was lost.
 func (h *Handler) sendChunk(chatID int64, chunk string, replyToMessageID int) {
 	// Try with MarkdownV2 first.
 	opts := &SendOpts{ParseMode: ParseModeMarkdownV2}
@@ -432,20 +434,22 @@ func (h *Handler) sendChunk(chatID int64, chunk string, replyToMessageID int) {
 		return
 	}
 
-	// If it's a "Can't parse entities" error, retry with plain text.
-	errStr := err.Error()
-	if strings.Contains(errStr, "Can't parse entities") || strings.Contains(errStr, "can't parse") {
-		plainOpts := &SendOpts{}
-		if replyToMessageID != 0 {
-			plainOpts.ReplyToMessageID = replyToMessageID
-		}
-		_, err = h.Bot.SendMessage(chatID, chunk, plainOpts)
+	// Retry with plain text — covers parse errors, 5xx errors,
+	// rate limits, and other transient failures.
+	plainOpts := &SendOpts{}
+	if replyToMessageID != 0 {
+		plainOpts.ReplyToMessageID = replyToMessageID
 	}
+	_, err = h.Bot.SendMessage(chatID, chunk, plainOpts)
 
 	if err != nil {
 		h.log.Error("send message failed", "chat_id", chatID, "error", err)
 		if h.OnError != nil {
 			h.OnError(chatID, fmt.Errorf("telegram: send message: %w", err))
+		}
+		// Send a fallback so the user knows part of the response was lost.
+		if _, fbErr := h.Bot.SendMessage(chatID, "⚠️ [part of response lost — Telegram API error]", plainOpts); fbErr != nil {
+			h.log.Error("send fallback also failed", "chat_id", chatID, "error", fbErr)
 		}
 	}
 }
