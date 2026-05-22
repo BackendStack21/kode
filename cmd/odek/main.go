@@ -129,6 +129,46 @@ Safety:
   or any destructive command (rm, shred, mv, etc.). These files may contain secrets.
   To extract specific config values, use grep or jq to pull only the fields you need.`
 
+// buildSystemPrompt assembles the system prompt by priority:
+//  1. resolved.System (explicit --system / ODEK_SYSTEM / config)
+//  2. ~/.odek/IDENTITY.md (swappable identity file)
+//  3. defaultSystem (compiled-in fallback)
+//
+// After selecting the base, it appends repo directory/URL context.
+func buildSystemPrompt(resolved config.ResolvedConfig) string {
+	base := resolved.System
+	if base == "" {
+		base = loadIdentityFile()
+	}
+
+	if resolved.GithubRepoDirectory != "" {
+		base += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository.", resolved.GithubRepoDirectory)
+	}
+	if resolved.GithubRepoUrl != "" {
+		base += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
+	}
+	return base
+}
+
+// loadIdentityFile reads ~/.odek/IDENTITY.md and returns its content.
+// Returns defaultSystem if the file does not exist or cannot be read.
+func loadIdentityFile() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return defaultSystem
+	}
+	path := filepath.Join(home, ".odek", "IDENTITY.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return defaultSystem
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return defaultSystem
+	}
+	return content
+}
+
 // dockerfileName is the filename for project-specific Docker images.
 // When this file exists in the working directory and no explicit
 // sandbox_image is configured, odek builds a content-hash-cached
@@ -816,17 +856,8 @@ func run(args []string) error {
 	}
 	f.Task = enriched
 
-	// Determine system message: CLI/project/env override, or default
-	systemMessage := resolved.System
-	if systemMessage == "" {
-		systemMessage = defaultSystem
-	}
-	if resolved.GithubRepoDirectory != "" {
-		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository. You can read and modify files here.", resolved.GithubRepoDirectory)
-	}
-	if resolved.GithubRepoUrl != "" {
-		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
-	}
+	// Build system prompt: explicit override > IDENTITY.md > compiled default
+	systemMessage := buildSystemPrompt(resolved)
 
 	// Build sandbox config from resolved settings (first occurrence)
 	sbCfg := sandboxConfig{
@@ -1770,16 +1801,7 @@ func continueCmd(args []string) error {
 		defer mcpCleanup()
 	}
 
-	systemMessage := resolved.System
-	if systemMessage == "" {
-		systemMessage = defaultSystem
-	}
-	if resolved.GithubRepoDirectory != "" {
-		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository.", resolved.GithubRepoDirectory)
-	}
-	if resolved.GithubRepoUrl != "" {
-		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
-	}
+	systemMessage := buildSystemPrompt(resolved)
 
 	// Sandbox (if enabled in config) (second occurrence)
 	if resolved.Sandbox {

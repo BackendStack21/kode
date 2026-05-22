@@ -118,20 +118,10 @@ func telegramCmd(args []string) error {
 		AllowedUsers: cfg.AllowedUsers,
 	}
 
-	// 9. Resolve system message.
-	systemMessage := resolved.System
-	if systemMessage == "" {
-		systemMessage = defaultSystem
-	}
-	if resolved.GithubRepoDirectory != "" {
-		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository.", resolved.GithubRepoDirectory)
-	}
-	if resolved.GithubRepoUrl != "" {
-		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
-	}
+	// 9. Build system prompt: explicit override > IDENTITY.md > compiled default
+	systemMessage := buildSystemPrompt(resolved)
 
-	// Quick Facts: must-remember odek metadata injected at the end of the
-	// system prompt so the model sees them right before the user message.
+	// Telegram-specific Quick Facts and recovery guidance
 	systemMessage += "\n\nQuick Facts (use these, do NOT search):\n"
 	systemMessage += "- odek website: https://kode.21no.de\n"
 	systemMessage += "- Built by: 21no.de (https://21no.de)\n"

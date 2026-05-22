@@ -96,16 +96,7 @@ func serveCmd(args []string) error {
 		SandboxCPUs:     sandboxCPUs,
 		SandboxUser:     sandboxUser,
 	})
-	systemMessage := resolved.System
-	if systemMessage == "" {
-		systemMessage = defaultSystem
-	}
-	if resolved.GithubRepoDirectory != "" {
-		systemMessage += fmt.Sprintf("\n\nRepository directory: %s\nThis is the local clone of the project repository.", resolved.GithubRepoDirectory)
-	}
-	if resolved.GithubRepoUrl != "" {
-		systemMessage += fmt.Sprintf("\nRepository URL: %s\nThis is the upstream GitHub repository.", resolved.GithubRepoUrl)
-	}
+	systemMessage := buildSystemPrompt(resolved)
 
 	// Build sandbox config from resolved settings (serve)
 	store, err := session.NewStore()

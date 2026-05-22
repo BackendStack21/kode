@@ -22,10 +22,12 @@ package odek
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/BackendStack21/kode/internal/danger"
 	"github.com/BackendStack21/kode/internal/llm"
 	"github.com/BackendStack21/kode/internal/loop"
 	"github.com/BackendStack21/kode/internal/memory"
@@ -357,10 +359,17 @@ func New(cfg Config) (*Agent, error) {
 		tools[i] = &toolAdapter{t}
 	}
 
-	// Load AGENTS.md from the working directory and append to system message
+	// Load AGENTS.md from the working directory and append to system message.
+	// Content is scanned for prompt injection before being trusted.
 	if !cfg.NoProjectFile {
 		if projectContent := LoadProjectFile(); projectContent != "" {
-			if cfg.SystemMessage != "" {
+			if threats := danger.ScanInjection(projectContent); len(threats) > 0 {
+				var labels []string
+				for _, t := range threats {
+					labels = append(labels, t.Label)
+				}
+				log.Printf("skipping AGENTS.md: injection threats detected: %s", strings.Join(labels, ", "))
+			} else if cfg.SystemMessage != "" {
 				cfg.SystemMessage += "\n\n# Project Instructions\n\n" + projectContent
 			} else {
 				cfg.SystemMessage = "# Project Instructions\n\n" + projectContent

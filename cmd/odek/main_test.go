@@ -1945,3 +1945,100 @@ func TestBoolPtr_False(t *testing.T) {
 		t.Errorf("boolPtr(false) = %v, want false", *p)
 	}
 }
+
+// ── IDENTITY.md Tests ─────────────────────────────────────────────
+
+// setupTestHome creates a temp home directory, sets HOME to it, and
+// returns a cleanup function that restores the original value.
+func setupTestHome(t *testing.T) string {
+	t.Helper()
+	orig := os.Getenv("HOME")
+	dir := t.TempDir()
+	os.Setenv("HOME", dir)
+	t.Cleanup(func() { os.Setenv("HOME", orig) })
+	return dir
+}
+
+func TestLoadIdentityFile_FileExists(t *testing.T) {
+	homeDir := setupTestHome(t)
+	os.MkdirAll(filepath.Join(homeDir, ".odek"), 0700)
+	content := "# Custom Identity\n\nI am a test agent."
+	os.WriteFile(filepath.Join(homeDir, ".odek", "IDENTITY.md"), []byte(content), 0644)
+
+	got := loadIdentityFile()
+	if got != content {
+		t.Errorf("loadIdentityFile() = %q, want %q", got, content)
+	}
+}
+
+func TestLoadIdentityFile_NoFile(t *testing.T) {
+	_ = setupTestHome(t)
+	got := loadIdentityFile()
+	if got != defaultSystem {
+		t.Errorf("expected defaultSystem when no IDENTITY.md, got %q", got)
+	}
+}
+
+func TestLoadIdentityFile_EmptyFile(t *testing.T) {
+	homeDir := setupTestHome(t)
+	os.MkdirAll(filepath.Join(homeDir, ".odek"), 0700)
+	os.WriteFile(filepath.Join(homeDir, ".odek", "IDENTITY.md"), []byte("   \n\n  "), 0644)
+
+	got := loadIdentityFile()
+	if got != defaultSystem {
+		t.Errorf("expected defaultSystem for empty IDENTITY.md, got %q", got)
+	}
+}
+
+func TestBuildSystemPrompt_ExplicitSystemWins(t *testing.T) {
+	homeDir := setupTestHome(t)
+	os.MkdirAll(filepath.Join(homeDir, ".odek"), 0700)
+	os.WriteFile(filepath.Join(homeDir, ".odek", "IDENTITY.md"), []byte("# Identity from file"), 0644)
+
+	resolved := config.ResolvedConfig{
+		System:              "Explicit system override",
+		GithubRepoDirectory: "/tmp/repo",
+	}
+
+	got := buildSystemPrompt(resolved)
+	if !strings.Contains(got, "Explicit system override") {
+		t.Errorf("expected explicit system override, got %q", got)
+	}
+	if strings.Contains(got, "Identity from file") {
+		t.Error("IDENTITY.md content should NOT appear when explicit System is set")
+	}
+	if !strings.Contains(got, "/tmp/repo") {
+		t.Error("repo directory should appear in prompt")
+	}
+}
+
+func TestBuildSystemPrompt_FallsBackToIdentity(t *testing.T) {
+	homeDir := setupTestHome(t)
+	os.MkdirAll(filepath.Join(homeDir, ".odek"), 0700)
+	os.WriteFile(filepath.Join(homeDir, ".odek", "IDENTITY.md"), []byte("# Custom Identity"), 0644)
+
+	resolved := config.ResolvedConfig{}
+
+	got := buildSystemPrompt(resolved)
+	if !strings.Contains(got, "# Custom Identity") {
+		t.Errorf("expected IDENTITY.md content, got %q", got)
+	}
+	if strings.Contains(got, "⚠️ ANTI-PATTERN") {
+		t.Error("defaultSystem should NOT appear when IDENTITY.md exists")
+	}
+}
+
+func TestBuildSystemPrompt_FallsBackToDefault(t *testing.T) {
+	_ = setupTestHome(t)
+	resolved := config.ResolvedConfig{
+		GithubRepoUrl: "https://github.com/test/repo",
+	}
+
+	got := buildSystemPrompt(resolved)
+	if !strings.Contains(got, "⚠️ ANTI-PATTERN") {
+		t.Error("expected defaultSystem prefix when no override or IDENTITY.md")
+	}
+	if !strings.Contains(got, "https://github.com/test/repo") {
+		t.Error("repo URL should appear in prompt")
+	}
+}
