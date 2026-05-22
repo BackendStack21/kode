@@ -1553,3 +1553,84 @@ func TestBot_DoJSON_RetryExhausted(t *testing.T) {
 		t.Errorf("error = %q, want substring %q", err, "Service Unavailable")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Retry (doUpload with exponential backoff)
+// ---------------------------------------------------------------------------
+
+func TestBot_DoUpload_RetryOn429(t *testing.T) {
+	tmpDir := t.TempDir()
+	photoPath := filepath.Join(tmpDir, "test.jpg")
+	if err := os.WriteFile(photoPath, []byte("fake-jpeg"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(429)
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok":          false,
+				"error_code":  429,
+				"description": "Too Many Requests",
+			})
+			return
+		}
+		okResponse(w, map[string]any{
+			"message_id": 30,
+			"chat":       map[string]any{"id": 1},
+		})
+	}))
+	defer ts.Close()
+
+	bot := NewBot("x")
+	bot.BaseURL = ts.URL
+
+	var msg Message
+	err := bot.doUpload("sendPhoto", "photo", photoPath, map[string]any{"chat_id": float64(1)}, &msg)
+	if err != nil {
+		t.Fatalf("doUpload with retry: %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("attempts = %d, want 2", attempts)
+	}
+	if msg.ID != 30 {
+		t.Errorf("msg.ID = %d, want 30", msg.ID)
+	}
+}
+
+func TestBot_DoUpload_RetryOn5xx(t *testing.T) {
+	tmpDir := t.TempDir()
+	docPath := filepath.Join(tmpDir, "test.pdf")
+	if err := os.WriteFile(docPath, []byte("pdf-data"), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(503)
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok":          false,
+				"error_code":  503,
+				"description": "Service Unavailable",
+			})
+			return
+		}
+		okResponse(w, map[string]any{"message_id": 31})
+	}))
+	defer ts.Close()
+
+	bot := NewBot("x")
+	bot.BaseURL = ts.URL
+
+	err := bot.doUpload("sendDocument", "document", docPath, map[string]any{"chat_id": float64(1)}, nil)
+	if err != nil {
+		t.Fatalf("doUpload with 5xx retry: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3", attempts)
+	}
+}

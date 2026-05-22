@@ -135,6 +135,7 @@ func (b *Bot) doJSON(method string, body any, dest any) error {
 }
 
 // doUpload sends a multipart/form-data POST request with a file and optional parameters.
+// Retries on transient errors with the same backoff strategy as doJSON.
 func (b *Bot) doUpload(method string, field string, path string, params map[string]any, dest any) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -175,51 +176,77 @@ func (b *Bot) doUpload(method string, field string, path string, params map[stri
 		return fmt.Errorf("telegram: close multipart writer: %w", err)
 	}
 
+	bodyBytes := buf.Bytes()
+	contentType := writer.FormDataContentType()
 	url := b.url(method)
-	req, err := http.NewRequest(http.MethodPost, url, &buf)
-	if err != nil {
-		b.log.Error("create request failed", "method", method, "error", err)
-		return fmt.Errorf("telegram: create request: %w", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	var lastErr error
 
-	resp, err := b.Client.Do(req)
-	if err != nil {
-		b.log.Error("http post failed", "method", method, "error", err)
-		return fmt.Errorf("telegram: post %s: %w", method, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		b.log.Error("read response body failed", "method", method, "error", err)
-		return fmt.Errorf("telegram: read response: %w", err)
-	}
-
-	var apiResp struct {
-		OK          bool              `json:"ok"`
-		Result      json.RawMessage   `json:"result"`
-		Description string            `json:"description"`
-		ErrorCode   int               `json:"error_code"`
-	}
-	if err := json.Unmarshal(respBody, &apiResp); err != nil {
-		b.log.Error("unmarshal response failed", "method", method, "error", err)
-		return fmt.Errorf("telegram: unmarshal response: %w", err)
-	}
-
-	if !apiResp.OK {
-		b.log.Error("api error", "method", method, "description", apiResp.Description, "error_code", apiResp.ErrorCode)
-		return fmt.Errorf("telegram: %s failed: %s (code %d)", method, apiResp.Description, apiResp.ErrorCode)
-	}
-
-	if dest != nil && len(apiResp.Result) > 0 {
-		if err := json.Unmarshal(apiResp.Result, dest); err != nil {
-			b.log.Error("unmarshal result failed", "method", method, "error", err)
-			return fmt.Errorf("telegram: unmarshal result: %w", err)
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			b.log.Warn("retrying upload", "method", method, "attempt", attempt, "backoff", backoff)
+			time.Sleep(backoff)
 		}
+
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(bodyBytes))
+		if err != nil {
+			b.log.Error("create request failed", "method", method, "error", err)
+			return fmt.Errorf("telegram: create request: %w", err)
+		}
+		req.Header.Set("Content-Type", contentType)
+
+		resp, err := b.Client.Do(req)
+		if err != nil {
+			b.log.Error("http post failed", "method", method, "error", err)
+			lastErr = fmt.Errorf("telegram: post %s: %w", method, err)
+			continue
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			b.log.Error("read response body failed", "method", method, "error", err)
+			lastErr = fmt.Errorf("telegram: read response: %w", err)
+			continue
+		}
+
+		var apiResp struct {
+			OK          bool            `json:"ok"`
+			Result      json.RawMessage `json:"result"`
+			Description string          `json:"description"`
+			ErrorCode   int             `json:"error_code"`
+		}
+		if err := json.Unmarshal(respBody, &apiResp); err != nil {
+			b.log.Error("unmarshal response failed", "method", method, "error", err)
+			return fmt.Errorf("telegram: unmarshal response: %w", err)
+		}
+
+		if !apiResp.OK {
+			if apiResp.ErrorCode == 429 {
+				b.log.Warn("rate limited", "method", method, "description", apiResp.Description)
+				lastErr = fmt.Errorf("telegram: %s failed: %s (code %d)", method, apiResp.Description, apiResp.ErrorCode)
+				continue
+			}
+			if apiResp.ErrorCode >= 500 && apiResp.ErrorCode < 600 {
+				b.log.Warn("server error", "method", method, "error_code", apiResp.ErrorCode, "description", apiResp.Description)
+				lastErr = fmt.Errorf("telegram: %s failed: %s (code %d)", method, apiResp.Description, apiResp.ErrorCode)
+				continue
+			}
+			b.log.Error("api error", "method", method, "description", apiResp.Description, "error_code", apiResp.ErrorCode)
+			return fmt.Errorf("telegram: %s failed: %s (code %d)", method, apiResp.Description, apiResp.ErrorCode)
+		}
+
+		if dest != nil && len(apiResp.Result) > 0 {
+			if err := json.Unmarshal(apiResp.Result, dest); err != nil {
+				b.log.Error("unmarshal result failed", "method", method, "error", err)
+				return fmt.Errorf("telegram: unmarshal result: %w", err)
+			}
+		}
+
+		return nil
 	}
 
-	return nil
+	return lastErr
 }
 
 // SendMessage sends a text message to the specified chat.
