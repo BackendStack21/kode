@@ -277,40 +277,89 @@ func (c *Client) Call(ctx context.Context, messages []Message, systemBlocks []Sy
 	}
 
 	url := c.BaseURL + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBytes))
-	if err != nil {
-		return nil, fmt.Errorf("llm: create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 
-	// Add Anthropic-specific API version header (required for prompt caching)
-	// Safe to always send — other providers ignore unknown headers.
-	req.Header.Set("anthropic-version", "2023-06-01")
+	const maxRetries = 3
+	var lastErr error
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("llm: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
-	if err != nil {
-		return nil, fmt.Errorf("llm: read response: %w", err)
-	}
-	if len(respBytes) > maxResponseSize {
-		return nil, fmt.Errorf("llm: response exceeds maximum size (%d bytes)", maxResponseSize)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body := strings.TrimSpace(string(respBytes))
-		if body != "" {
-			return nil, fmt.Errorf("llm: %s (status %d): %s", resp.Status, resp.StatusCode, body)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff: 1s, 2s, 4s
+			backoff := time.Duration(1<<(attempt-1)) * time.Second
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
 		}
-		return nil, fmt.Errorf("llm: %s (status %d)", resp.Status, resp.StatusCode)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBytes))
+		if err != nil {
+			return nil, fmt.Errorf("llm: create request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("llm: %w", err)
+			if isRetryableNetworkError(err) {
+				continue
+			}
+			return nil, lastErr
+		}
+
+		respBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseSize+1))
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("llm: read response: %w", err)
+			continue
+		}
+		if len(respBytes) > maxResponseSize {
+			return nil, fmt.Errorf("llm: response exceeds maximum size (%d bytes)", maxResponseSize)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			errBody := strings.TrimSpace(string(respBytes))
+			if errBody != "" {
+				lastErr = fmt.Errorf("llm: %s (status %d): %s", resp.Status, resp.StatusCode, errBody)
+			} else {
+				lastErr = fmt.Errorf("llm: %s (status %d)", resp.Status, resp.StatusCode)
+			}
+			if isRetryableHTTPStatus(resp.StatusCode) {
+				continue
+			}
+			return nil, lastErr
+		}
+
+		return parseResponse(respBytes)
 	}
 
-	return parseResponse(respBytes)
+	return nil, fmt.Errorf("llm: retry exhausted (%d attempts): %w", maxRetries+1, lastErr)
+}
+
+// isRetryableHTTPStatus returns true for HTTP status codes that indicate
+// a transient error safe to retry after a backoff.
+func isRetryableHTTPStatus(code int) bool {
+	return code == http.StatusTooManyRequests ||
+		code == http.StatusBadGateway ||
+		code == http.StatusServiceUnavailable ||
+		code == http.StatusGatewayTimeout
+}
+
+// isRetryableNetworkError returns true for network errors that are likely
+// transient (connection refused, timeout, EOF before headers).
+func isRetryableNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	// Common transient network error patterns
+	return strings.Contains(s, "connection refused") ||
+		strings.Contains(s, "connection reset") ||
+		strings.Contains(s, "EOF") ||
+		strings.Contains(s, "timeout") ||
+		strings.Contains(s, "TLS handshake timeout")
 }
 
 func parseResponse(data []byte) (*CallResult, error) {
