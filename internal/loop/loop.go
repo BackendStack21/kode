@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/kode/internal/redact"
 	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/tool"
 )
@@ -538,7 +539,7 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 				if err != nil {
 					output = fmt.Sprintf("error: %s", err.Error())
 				} else {
-					output = res
+					output = redact.RedactSecrets(res)
 				}
 			}
 

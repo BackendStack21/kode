@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/kode/internal/redact"
 )
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -264,6 +265,15 @@ func (s *Store) Save(sess *Session) error {
 // read and write gets replaced with a regular file.
 // Also atomically updates the session index with the session's metadata.
 func (s *Store) saveLocked(sess *Session) error {
+	// Redact secrets from all messages before writing to disk.
+	// This is defense-in-depth: the loop engine already redacts tool
+	// outputs, but this catches any secrets that slipped through
+	// (e.g. LLM hallucinations, direct API usage).
+	for i := range sess.Messages {
+		sess.Messages[i].Content = redact.RedactSecrets(sess.Messages[i].Content)
+		sess.Messages[i].ReasoningContent = redact.RedactSecrets(sess.Messages[i].ReasoningContent)
+	}
+
 	data, err := json.MarshalIndent(sess, "", "  ")
 	if err != nil {
 		return fmt.Errorf("session: marshal: %w", err)
