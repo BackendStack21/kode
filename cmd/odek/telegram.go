@@ -910,7 +910,7 @@ func handleChatMessage(
 					}
 				}
 				msg := skills.RunAutoCurate(userDir, newSkills, allSkills, *skillsCfg, nil)
-			if msg != "" {
+			if msg != "" && skillsCfg.Verbose {
 				sendAsync(bot, chatID, msg, nil)
 			}
 			}
