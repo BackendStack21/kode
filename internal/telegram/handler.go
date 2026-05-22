@@ -278,6 +278,8 @@ func (h *Handler) handleCommand(msg *Message) {
 			if h.OnError != nil {
 				h.OnError(msg.Chat.ID, err)
 			}
+			// Send the error message to the user so they know the command failed.
+			h.SendResponse(msg.Chat.ID, "❌ "+err.Error(), msg.ID)
 			return
 		}
 		if resp != "" {
@@ -320,6 +322,8 @@ func (h *Handler) handleCallback(cq *CallbackQuery) {
 			if h.OnError != nil {
 				h.OnError(cq.Message.Chat.ID, err)
 			}
+			// Send the error message to the user.
+			h.SendResponse(cq.Message.Chat.ID, "❌ "+err.Error(), cq.Message.ID)
 			return
 		}
 		if resp != "" {
