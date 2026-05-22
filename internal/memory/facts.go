@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // File names for fact targets.
@@ -45,10 +46,13 @@ const entrySep = "\n§\n"
 
 // FactStore manages typed fact files (user.md and env.md) with character caps,
 // duplicate prevention, and entry-level CRUD via substring matching.
+// All write operations are protected by a mutex to prevent TOCTOU races
+// between concurrent sessions sharing the same memory directory.
 type FactStore struct {
-	dir       string
-	capUser   int
-	capEnv    int
+	mu      sync.Mutex
+	dir     string
+	capUser int
+	capEnv  int
 }
 
 // NewFactStore creates a FactStore rooted at dir. Fact files are stored as
@@ -124,6 +128,9 @@ func (f *FactStore) Add(target, content string) error {
 		return fmt.Errorf("memory: empty content")
 	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	content = strings.TrimSpace(content)
 
 	// Read existing content
@@ -161,7 +168,7 @@ func (f *FactStore) Add(target, content string) error {
 		newContent = existing + entrySep + content
 	}
 
-	return os.WriteFile(f.path(target), []byte(newContent), 0600)
+	return f.writeEntries(target, parseEntries(newContent))
 }
 
 // Replace finds an entry by substring match and replaces it with new content.
@@ -176,6 +183,9 @@ func (f *FactStore) Replace(target, oldText, content string) error {
 	if strings.TrimSpace(oldText) == "" {
 		return fmt.Errorf("memory: empty old_text")
 	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	content = strings.TrimSpace(content)
 	oldText = strings.TrimSpace(oldText)
@@ -236,6 +246,9 @@ func (f *FactStore) Remove(target, oldText string) error {
 		return fmt.Errorf("memory: empty old_text")
 	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	oldText = strings.TrimSpace(oldText)
 
 	existing, err := f.Read(target)
@@ -280,10 +293,17 @@ func (f *FactStore) Entries(target string) ([]string, error) {
 	return parseEntries(existing), nil
 }
 
-// writeEntries joins entries and writes to disk.
+// writeEntries joins entries and writes to disk atomically (temp + rename).
+// Caller must hold f.mu.
 func (f *FactStore) writeEntries(target string, entries []string) error {
 	content := strings.Join(entries, entrySep)
-	return os.WriteFile(f.path(target), []byte(content), 0600)
+	path := f.path(target)
+	tmpPath := path + ".tmp"
+
+	if err := os.WriteFile(tmpPath, []byte(content), 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // parseEntries splits file content into individual entries.

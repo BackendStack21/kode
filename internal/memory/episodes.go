@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BackendStack21/go-vector/pkg/vector"
+	"github.com/BackendStack21/kode/internal/session"
 )
 
 // maxEpisodeSummaryBytes caps how much summary text we store per episode.
@@ -35,7 +37,10 @@ type RankStrategy func(query string, episodes []EpisodeMeta) ([]EpisodeMeta, err
 
 // EpisodeStore manages on-disk episode summaries (Tier 3 memory).
 // Written after sessions with sufficient turns, searchable via SimpleCall.
+// Index operations are protected by a mutex to prevent TOCTOU races
+// between concurrent sessions sharing the same memory directory.
 type EpisodeStore struct {
+	mu     sync.Mutex
 	dir    string
 	rankFn RankStrategy
 }
@@ -54,8 +59,12 @@ func NewEpisodeStore(dir string, rankFn RankStrategy) *EpisodeStore {
 
 // Write stores an episode summary for a session. Creates the episodes
 // directory and updates the index.
+// sessionID is validated for path traversal before use.
 func (e *EpisodeStore) Write(sessionID, summary string, turns int) error {
-	if err := os.MkdirAll(e.dir, 0755); err != nil {
+	if err := session.ValidateSessionID(sessionID); err != nil {
+		return fmt.Errorf("memory: episodes write: %w", err)
+	}
+	if err := os.MkdirAll(e.dir, 0700); err != nil {
 		return fmt.Errorf("memory: episodes mkdir: %w", err)
 	}
 
@@ -90,7 +99,11 @@ func (e *EpisodeStore) WriteIfEnough(sessionID, summary string, turns int) error
 }
 
 // Read returns the full summary content for a session.
+// sessionID is validated for path traversal before use.
 func (e *EpisodeStore) Read(sessionID string) (string, error) {
+	if err := session.ValidateSessionID(sessionID); err != nil {
+		return "", fmt.Errorf("memory: episodes read: %w", err)
+	}
 	path := filepath.Join(e.dir, sessionID+".md")
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -146,7 +159,11 @@ func (e *EpisodeStore) Search(query string, limit int) ([]EpisodeMeta, error) {
 // ── Index helpers ─────────────────────────────────────────────────────
 
 // addToIndex appends an entry to the index and writes it.
+// Caller must hold e.mu (acquired by Write).
 func (e *EpisodeStore) addToIndex(meta EpisodeMeta) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	idx, err := e.ReadIndex()
 	if err != nil {
 		// Index error means we start fresh
@@ -156,7 +173,8 @@ func (e *EpisodeStore) addToIndex(meta EpisodeMeta) error {
 	return e.writeIndex(idx)
 }
 
-// writeIndex serializes the index to disk.
+// writeIndex serializes the index to disk atomically (temp + rename).
+// Caller must hold e.mu.
 func (e *EpisodeStore) writeIndex(idx []EpisodeMeta) error {
 	// Write to temp + rename for atomicity
 	idxPath := filepath.Join(e.dir, episodeIndexFile)
@@ -169,7 +187,11 @@ func (e *EpisodeStore) writeIndex(idx []EpisodeMeta) error {
 	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, idxPath)
+	if err := os.Rename(tmpPath, idxPath); err != nil {
+		os.Remove(tmpPath) // best-effort cleanup
+		return err
+	}
+	return nil
 }
 
 // truncateForIndex shortens the summary for the index entry (first 120 chars).

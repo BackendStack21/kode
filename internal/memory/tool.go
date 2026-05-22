@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/BackendStack21/kode/internal/session"
 )
 
 // memoryToolSchema is the JSON schema for the `memory` tool.
@@ -178,6 +180,9 @@ func (t *MemoryTool) handleView(target, query string) (string, error) {
 	}
 	if query == "" {
 		return errorJSON("query (session_id) is required for view"), nil
+	}
+	if err := session.ValidateSessionID(query); err != nil {
+		return errorJSON("invalid session_id: " + err.Error()), nil
 	}
 	content, err := t.manager.episodes.Read(query)
 	if err != nil {

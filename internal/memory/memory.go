@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+
+	"github.com/BackendStack21/kode/internal/session"
 )
 
 // Default memory dir relative to ~/.odek/
@@ -79,6 +82,7 @@ type MemoryManager struct {
 	// prompt caching avoids rebuilding the system prompt block on every
 	// iteration when memory hasn't changed. The cache is invalidated
 	// whenever facts or buffer are modified.
+	promptMu    sync.RWMutex
 	promptCache string
 	promptDirty bool
 }
@@ -231,7 +235,7 @@ func (m *MemoryManager) AddFact(target, content string) error {
 	if err := m.facts.Add(target, content); err != nil {
 		return err
 	}
-	m.promptDirty = true
+	m.markPromptDirty()
 
 	// Incrementally update merge detector instead of re-reading + re-embedding all.
 	// Check dedup: if content already existed in the entries we read at the top,
@@ -270,7 +274,7 @@ func (m *MemoryManager) ReplaceFact(target, oldText, content string) error {
 	if err := m.facts.Replace(target, oldText, content); err != nil {
 		return err
 	}
-	m.promptDirty = true
+	m.markPromptDirty()
 	// Re-fit merge detector
 	if m.cfg.MergeOnWrite != nil && *m.cfg.MergeOnWrite {
 		entries, _ := m.facts.Entries(target)
@@ -287,7 +291,7 @@ func (m *MemoryManager) RemoveFact(target, oldText string) error {
 	if err := m.facts.Remove(target, oldText); err != nil {
 		return err
 	}
-	m.promptDirty = true
+	m.markPromptDirty()
 	// Re-fit merge detector
 	if m.cfg.MergeOnWrite != nil && *m.cfg.MergeOnWrite {
 		entries, _ := m.facts.Entries(target)
@@ -349,8 +353,28 @@ Entries for %s:
 		return nil // LLM returned nothing useful
 	}
 
+	// Security: scan LLM output before persisting
+	for _, entry := range newEntries {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if err := ScanContent(entry); err != nil {
+			return fmt.Errorf("memory: consolidated entry rejected: %w", err)
+		}
+	}
+
 	// Write back
-	return m.facts.writeEntries(target, newEntries)
+	if err := m.facts.writeEntries(target, newEntries); err != nil {
+		return err
+	}
+	m.markPromptDirty()
+	// Re-fit merge detector
+	if m.cfg.MergeOnWrite != nil && *m.cfg.MergeOnWrite {
+		entries, _ := m.facts.Entries(target)
+		m.merge.Fit(entries)
+	}
+	return nil
 }
 
 // ── Buffer Operations ────────────────────────────────────────────────
@@ -362,7 +386,7 @@ func (m *MemoryManager) AppendBuffer(role, message string) {
 	}
 	line := FormatBufferLine(role, message)
 	m.buffer.Append(line)
-	m.promptDirty = true
+	m.markPromptDirty()
 }
 
 // GetBuffer returns the current buffer lines (for system prompt injection).
@@ -382,20 +406,32 @@ func (m *MemoryManager) RestoreBuffer(lines []string) {
 	for _, line := range lines {
 		m.buffer.Append(line)
 	}
-	m.promptDirty = true
+	m.markPromptDirty()
 }
 
 // ClearBuffer resets the buffer for a new session.
 func (m *MemoryManager) ClearBuffer() {
 	m.buffer.Clear()
+	m.markPromptDirty()
+}
+
+// markPromptDirty invalidates the cached system prompt so the next
+// BuildSystemPrompt() call rebuilds from current facts/buffer state.
+func (m *MemoryManager) markPromptDirty() {
+	m.promptMu.Lock()
 	m.promptDirty = true
+	m.promptMu.Unlock()
 }
 
 // ── Episode Operations ───────────────────────────────────────────────
 
 // OnSessionEnd is called when a session ends. If turns >= threshold,
 // extracts durable facts using the LLM and stores them as an episode.
+// sessionID is validated for path traversal before any file I/O.
 func (m *MemoryManager) OnSessionEnd(sessionID string, turns int, messages []string) {
+	if err := session.ValidateSessionID(sessionID); err != nil {
+		return
+	}
 	minTurns := m.cfg.MinTurnsForExtraction
 	if minTurns <= 0 {
 		minTurns = defaultMinTurnsForExtraction
@@ -468,9 +504,13 @@ func (m *MemoryManager) BuildSystemPrompt() string {
 	}
 
 	// Return cached prompt if memory hasn't changed since last build.
+	m.promptMu.RLock()
 	if !m.promptDirty && m.promptCache != "" {
-		return m.promptCache
+		cached := m.promptCache
+		m.promptMu.RUnlock()
+		return cached
 	}
+	m.promptMu.RUnlock()
 
 	userFact, _ := m.facts.Read("user")
 	envFact, _ := m.facts.Read("env")
@@ -542,8 +582,10 @@ func (m *MemoryManager) BuildSystemPrompt() string {
 	}
 
 	b.WriteString("───────────────────────────────\n")
+	m.promptMu.Lock()
 	m.promptCache = b.String()
 	m.promptDirty = false
+	m.promptMu.Unlock()
 	return m.promptCache
 }
 
