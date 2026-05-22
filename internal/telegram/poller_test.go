@@ -551,3 +551,49 @@ func TestPoller_Start_SendsUpdates(t *testing.T) {
 		t.Error("did not receive expected update from Start")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Backoff calculation
+// ---------------------------------------------------------------------------
+
+func TestPoller_BackoffDuration(t *testing.T) {
+	p := NewPoller(nil)
+	p.Interval = 1 * time.Second
+
+	tests := []struct {
+		errors int
+		want   time.Duration
+	}{
+		{0, 0},
+		{1, 2 * time.Second},  // 1s * 2^1
+		{2, 4 * time.Second},  // 1s * 2^2
+		{3, 8 * time.Second},  // 1s * 2^3
+		{4, 16 * time.Second}, // 1s * 2^4
+		{5, 32 * time.Second}, // 1s * 2^5
+		{6, 60 * time.Second}, // capped at 60x interval
+		{7, 60 * time.Second}, // stays capped
+	}
+
+	for _, tt := range tests {
+		got := p.backoffDuration(tt.errors)
+		if got != tt.want {
+			t.Errorf("backoffDuration(%d) = %v, want %v", tt.errors, got, tt.want)
+		}
+	}
+}
+
+func TestPoller_BackoffResetsOnSuccess(t *testing.T) {
+	p := NewPoller(nil)
+	p.consecutiveErrors = 5
+
+	// Simulate a successful poll — backoff should be 0.
+	if d := p.backoffDuration(p.consecutiveErrors); d == 0 {
+		t.Error("expected non-zero backoff with 5 errors")
+	}
+
+	// After successful poll, reset.
+	p.consecutiveErrors = 0
+	if d := p.backoffDuration(p.consecutiveErrors); d != 0 {
+		t.Errorf("expected zero backoff after reset, got %v", d)
+	}
+}

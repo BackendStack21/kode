@@ -7,11 +7,12 @@ import (
 
 // Poller implements long-polling for Telegram updates.
 type Poller struct {
-	Bot      *Bot
-	Offset   int
-	Interval time.Duration
-	Timeout  int
-	log      Logger
+	Bot               *Bot
+	Offset            int
+	Interval          time.Duration
+	Timeout           int
+	consecutiveErrors int
+	log               Logger
 }
 
 // NewPoller creates a new Poller with sensible defaults.
@@ -33,6 +34,22 @@ func (p *Poller) SetLogger(l Logger) {
 		return
 	}
 	p.log = l
+}
+
+// backoffDuration returns the sleep duration after consecutive poll errors.
+// Formula: interval * 2^errors, capped at 60 * interval.
+// Returns 0 for 0 errors (no backoff needed).
+func (p *Poller) backoffDuration(errors int) time.Duration {
+	if errors <= 0 {
+		return 0
+	}
+	shift := 1 << errors // 2^errors
+	d := p.Interval * time.Duration(shift)
+	max := 60 * p.Interval
+	if d > max {
+		return max
+	}
+	return d
 }
 
 // Poll performs a single long-poll cycle.
@@ -68,7 +85,9 @@ func (p *Poller) Poll(ctx context.Context) ([]Update, error) {
 // Start begins the infinite long-polling loop.
 // It calls Poll() repeatedly, sending each received update to the channel.
 // On empty result (timeout), sleeps for Interval then retries.
-// On error, sleeps for 5*Interval (backoff), logs to stderr, but continues.
+// On error, sleeps with exponential backoff (interval * 2^consecutiveErrors,
+// capped at 60 * interval), logs to the logger, but continues.
+// Backoff resets to zero after a successful poll.
 // When ctx is cancelled, closes the channel and returns ctx.Err().
 func (p *Poller) Start(ctx context.Context, updates chan<- Update) error {
 	defer close(updates)
@@ -88,9 +107,10 @@ func (p *Poller) Start(ctx context.Context, updates chan<- Update) error {
 			default:
 			}
 
-			p.log.Error("poll error", "error", err)
+			p.consecutiveErrors++
+			backoff := p.backoffDuration(p.consecutiveErrors)
+			p.log.Error("poll error", "error", err, "consecutive_errors", p.consecutiveErrors, "backoff", backoff)
 
-			backoff := 5 * p.Interval
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -98,6 +118,9 @@ func (p *Poller) Start(ctx context.Context, updates chan<- Update) error {
 			}
 			continue
 		}
+
+		// Successful poll — reset error counter.
+		p.consecutiveErrors = 0
 
 		if len(result) == 0 {
 			// Timeout — no updates, sleep for Interval and retry.
