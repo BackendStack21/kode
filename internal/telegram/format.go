@@ -257,7 +257,9 @@ func convertItalicAndEscape(line string) string {
 }
 
 // splitChunks splits text into chunks no larger than maxBytes bytes.
-// It splits at paragraph boundaries (\n\n) when possible.
+// It splits at paragraph boundaries (\n\n) when possible, but never
+// splits inside fenced code blocks (```), which would break MarkdownV2
+// formatting and cause Telegram parse errors.
 // If a single paragraph exceeds maxBytes, it is split at the last space
 // before the limit.
 func splitChunks(text string, maxBytes int) []string {
@@ -265,7 +267,51 @@ func splitChunks(text string, maxBytes int) []string {
 		maxBytes = 4096
 	}
 
-	paragraphs := strings.Split(text, "\n\n")
+	// Walk through the text to find \n\n paragraph boundaries,
+	// but skip \n\n that falls inside fenced code blocks (```).
+	// \n\n inside a code block is kept as part of the block.
+	var paragraphs []string
+	start := 0
+	inCodeBlock := false
+
+	for i := 0; i < len(text); {
+		// Toggle code block state on ``` at the start of a line.
+		if i <= len(text)-3 && text[i:i+3] == "```" {
+			if i == 0 || text[i-1] == '\n' {
+				inCodeBlock = !inCodeBlock
+				i += 3
+				continue
+			}
+		}
+
+		// Look for \n\n paragraph boundary — only split when outside
+		// a code block.
+		if i <= len(text)-2 && text[i:i+2] == "\n\n" && !inCodeBlock {
+			seg := text[start:i]
+			if len(seg) > 0 {
+				paragraphs = append(paragraphs, seg)
+			}
+			i += 2 // skip the \n\n
+			start = i
+			continue
+		}
+		i++
+	}
+
+	// Flush the remaining segment.
+	if start < len(text) {
+		seg := text[start:]
+		if len(seg) > 0 {
+			paragraphs = append(paragraphs, seg)
+		}
+	}
+
+	if len(paragraphs) == 0 {
+		return nil
+	}
+
+	// Now chunk paragraphs. Each paragraph (including code blocks) is
+	// an atomic unit that won't be split at \n\n boundaries.
 	var chunks []string
 	var current strings.Builder
 
@@ -289,7 +335,7 @@ func splitChunks(text string, maxBytes int) []string {
 				chunks = append(chunks, current.String())
 				current.Reset()
 			}
-			// Split the paragraph
+			// Split the paragraph at spaces
 			remaining := p
 			for len(remaining) > 0 {
 				if len(remaining) <= maxBytes {
@@ -323,5 +369,3 @@ func splitChunks(text string, maxBytes int) []string {
 
 	return chunks
 }
-
-
