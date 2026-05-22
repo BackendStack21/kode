@@ -72,6 +72,13 @@ type Engine struct {
 	// are visible to the agent on the next turn.
 	memoryPromptFunc func() string
 
+	// memMsgIdx tracks the position of the volatile memory system message
+	// in the messages array. -1 means not yet inserted. Using a separate
+	// message for memory (rather than concatenating into messages[0]) lets
+	// DeepSeek/Anthropic prompt caching keep the stable baseSystem cached
+	// across turns — only the memory message changes each iteration.
+	memMsgIdx int
+
 	// PromptCaching enables Anthropic/OpenAI/DeepSeek prompt caching markers.
 	// When enabled, the system prompt and first user message are annotated
 	// with cache_control markers, and the system prompt is moved to the
@@ -288,6 +295,7 @@ func (e *Engine) trimContext(messages []llm.Message, toolDefs []llm.ToolDef) []l
 
 // Run executes the loop for a given task and returns the final response.
 func (e *Engine) Run(ctx context.Context, task string) (string, error) {
+	e.memMsgIdx = -1
 	messages := []llm.Message{
 		{Role: "user", Content: task},
 	}
@@ -308,6 +316,7 @@ func (e *Engine) Run(ctx context.Context, task string) (string, error) {
 // new user message, call RunWithMessages, then save the returned messages.
 func (e *Engine) RunWithMessages(ctx context.Context, messages []llm.Message) (string, []llm.Message, error) {
 	// Reset token accounting for this run
+	e.memMsgIdx = -1
 	e.TotalInputTokens = 0
 	e.TotalOutputTokens = 0
 	e.TotalCacheCreationTokens = 0
@@ -401,13 +410,30 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 
 		// Refresh memory content before each LLM call so the agent sees
 		// the latest facts even if it mutated memory during this session.
+		// Memory is injected as a separate system message (messages[1] or
+		// later) so that messages[0] (baseSystem) remains stable across
+		// turns — letting DeepSeek/Anthropic prompt caching keep it cached.
 		if e.memoryPromptFunc != nil {
 			if memBlock := e.memoryPromptFunc(); memBlock != "" {
-				e.system = e.baseSystem + memBlock
-				// Update messages[0] if it's the system message
+				// Keep messages[0] as the stable baseSystem (never modified).
 				if len(messages) > 0 && messages[0].Role == "system" {
-					messages[0].Content = e.system
+					messages[0].Content = e.baseSystem
 				}
+				memMsg := llm.Message{Role: "system", Content: memBlock}
+				if e.memMsgIdx >= 0 && e.memMsgIdx < len(messages) {
+					// Update existing memory slot — keeps position stable.
+					messages[e.memMsgIdx].Content = memBlock
+				} else {
+					// First time: insert memory message after base system.
+					insertAt := 1
+					messages = append(messages[:insertAt],
+						append([]llm.Message{memMsg}, messages[insertAt:]...)...)
+					e.memMsgIdx = insertAt
+				}
+			} else if e.memMsgIdx >= 0 && e.memMsgIdx < len(messages) {
+				// No memory block — remove the memory message if present.
+				messages = append(messages[:e.memMsgIdx], messages[e.memMsgIdx+1:]...)
+				e.memMsgIdx = -1
 			}
 		}
 

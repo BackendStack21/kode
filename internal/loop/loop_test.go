@@ -941,3 +941,168 @@ func TestEngine_Run_CacheAccumulation_NoCache(t *testing.T) {
 		t.Errorf("TotalCachedTokens = %d, want 0", engine.TotalCachedTokens)
 	}
 }
+
+// ── Prompt Tiering Tests ───────────────────────────────────────────
+
+// TestPromptTiering_SeparateMemoryMessage verifies that memory is injected
+// as a separate system message rather than concatenated into messages[0].
+// This ensures messages[0] (baseSystem) remains stable across turns for
+// DeepSeek/Anthropic prompt caching.
+func TestPromptTiering_SeparateMemoryMessage(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return
+		}
+
+		if callCount == 1 {
+			// Verify: messages[0] = baseSystem (stable), messages[1] = memory (volatile)
+			if len(body.Messages) < 2 {
+				t.Errorf("expected at least 2 messages (system + memory + user), got %d", len(body.Messages))
+			} else {
+				if body.Messages[0].Role != "system" {
+					t.Errorf("messages[0].Role = %q, want system", body.Messages[0].Role)
+				}
+				if body.Messages[0].Content != "You are a stable base." {
+					t.Errorf("messages[0].Content = %q, want %q", body.Messages[0].Content, "You are a stable base.")
+				}
+				if body.Messages[1].Role != "system" {
+					t.Errorf("messages[1].Role = %q, want system (memory)", body.Messages[1].Role)
+				}
+				if body.Messages[1].Content != "memory-block-v1" {
+					t.Errorf("messages[1].Content = %q, want memory-block-v1", body.Messages[1].Content)
+				}
+			}
+			// Return a tool call to force another iteration.
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"","tool_calls":[{"id":"call_1","function":{"name":"echo","arguments":"{}"}}]}}]}`)
+		} else {
+			// Second call: memory should be updated.
+			if len(body.Messages) >= 2 && body.Messages[1].Role == "system" {
+				if body.Messages[1].Content != "memory-block-v2" {
+					t.Errorf("messages[1].Content = %q, want memory-block-v2", body.Messages[1].Content)
+				}
+				// messages[0] must still be the stable base.
+				if body.Messages[0].Content != "You are a stable base." {
+					t.Errorf("messages[0].Content changed: %q, want %q", body.Messages[0].Content, "You are a stable base.")
+				}
+			}
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"done"}}]}`)
+		}
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
+	registry := tool.NewRegistry([]tool.Tool{echoTool})
+	engine := New(client, registry, 10, "You are a stable base.", nil, 0)
+
+	// Set up memory callback that returns different values per call.
+	memVersion := 0
+	engine.SetMemoryPromptFunc(func() string {
+		memVersion++
+		return fmt.Sprintf("memory-block-v%d", memVersion)
+	})
+
+	_, err := engine.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+}
+
+// TestPromptTiering_NoMemoryDropsMessage verifies that when the memory
+// callback returns empty, the memory system message is removed.
+func TestPromptTiering_NoMemoryDropsMessage(t *testing.T) {
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return
+		}
+
+		if callCount == 1 {
+			// First call: memory is non-empty, should be at index 1.
+			if len(body.Messages) >= 2 && body.Messages[1].Role == "system" {
+				if body.Messages[1].Content != "initial-memory" {
+					t.Errorf("unexpected memory: %q", body.Messages[1].Content)
+				}
+			}
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"","tool_calls":[{"id":"call_1","function":{"name":"echo","arguments":"{}"}}]}}]}`)
+		} else {
+			// Second call: memory is empty, should NOT have a second system message.
+			systemCount := 0
+			for _, m := range body.Messages {
+				if m.Role == "system" {
+					systemCount++
+				}
+			}
+			if systemCount != 1 {
+				t.Errorf("expected 1 system message (base only), got %d", systemCount)
+			}
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"done"}}]}`)
+		}
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
+	registry := tool.NewRegistry([]tool.Tool{echoTool})
+	engine := New(client, registry, 10, "You are a stable base.", nil, 0)
+
+	memVersion := 0
+	engine.SetMemoryPromptFunc(func() string {
+		memVersion++
+		if memVersion == 1 {
+			return "initial-memory"
+		}
+		return "" // Empty after first call
+	})
+
+	_, err := engine.Run(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+}
+
+// TestPromptTiering_MemMsgIdxResets verifies that memMsgIdx resets
+// between Run calls, preventing stale index carry-over.
+func TestPromptTiering_MemMsgIdxResets(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	engine := New(client, registryOrNil(), 10, "base system", nil, 0)
+
+	// Run 1 with memory
+	engine.SetMemoryPromptFunc(func() string { return "mem-run1" })
+	engine.Run(context.Background(), "run1")
+
+	// memMsgIdx should be set
+	if engine.memMsgIdx != 1 {
+		t.Errorf("after run1: memMsgIdx = %d, want 1", engine.memMsgIdx)
+	}
+
+	// Run 2 without memory callback — should reset
+	engine.memoryPromptFunc = nil
+	engine.Run(context.Background(), "run2")
+
+	if engine.memMsgIdx != -1 {
+		t.Errorf("after run2 (no callback): memMsgIdx = %d, want -1", engine.memMsgIdx)
+	}
+}
+
+func registryOrNil() *tool.Registry { return tool.NewRegistry(nil) }

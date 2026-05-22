@@ -435,12 +435,8 @@ func New(cfg Config) (*Agent, error) {
 	}
 
 	// Wire per-turn memory injection so the agent sees the latest facts
-	// even after mutating memory during a session.
-	// The initial system message gets the current memory snapshot,
 	// and the loop engine refreshes it before each LLM call.
-	if memoryBlock := memoryManager.BuildSystemPrompt(); memoryBlock != "" {
-		cfg.SystemMessage += memoryBlock
-	}
+	// (Memory is injected per-turn via SetMemoryPromptFunc below.)
 
 	// Auto-search relevant past episodes and inject them into the system
 	// prompt so the agent has context from previous sessions without
