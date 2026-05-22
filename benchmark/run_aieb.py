@@ -326,7 +326,7 @@ SCORERS = {
     "3.3": verify_refactor,
 }
 
-# ─── Runner ───────────────────────────────────────────────────────────
+# ─── Runners ───────────────────────────────────────────────────────────
 
 def run_odek(task):
     cmd = [ODEK_BIN, "run", "--model", "deepseek-v4-flash",
@@ -355,10 +355,32 @@ def run_odek(task):
     return {"wall_time": round(wall,1), "tokens_in": tokens_in, "tokens_out": tokens_out,
             "iterations": iters, "score": score, "error": None}
 
+def run_hermes(task):
+    cmd = ["hermes", "-z", task["prompt"],
+           "-m", "deepseek-v4-flash", "--provider", "deepseek",
+           "-t", "terminal,file,search"]
+    
+    start = time.time()
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                          cwd=str(BENCHMARK_DIR))
+    except subprocess.TimeoutExpired:
+        return {"error": "timeout", "wall_time": time.time()-start, "score": 0}
+    except Exception as e:
+        return {"error": str(e), "wall_time": time.time()-start, "score": 0}
+    
+    wall = time.time() - start
+    output = (r.stdout or "") + "\n" + (r.stderr or "")
+    score = SCORERS[task["id"]](output)
+    
+    return {"wall_time": round(wall,1), "tokens_in": 0, "tokens_out": 0,
+            "iterations": 0, "score": score, "error": None}
+
 # ─── Main ─────────────────────────────────────────────────────────────
 
-def main():
-    print("AIEB v1.0 — odek + deepseek-v4-flash\n")
+def main(agent="odek"):
+    runner = run_odek if agent == "odek" else run_hermes
+    print(f"AIEB v1.0 — {agent} + deepseek-v4-flash\n")
     setup()
     
     total_time = 0
@@ -369,7 +391,7 @@ def main():
     for task in TASKS:
         tier = f"T{task['tier']}"
         print(f"  [{tier}.{task['id']}] {task['name']:12s}...", end=" ", flush=True)
-        r = run_odek(task)
+        r = runner(task)
         
         if r.get("error"):
             print(f"❌ {r['error']}")
@@ -408,4 +430,8 @@ def main():
     print(f"\n  Results saved to benchmark/results.json")
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    p = argparse.ArgumentParser()
+    p.add_argument("--agent", default="odek", choices=["odek", "hermes"])
+    args = p.parse_args()
+    main(agent=args.agent)
