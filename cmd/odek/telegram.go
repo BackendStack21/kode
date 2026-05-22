@@ -406,7 +406,17 @@ func telegramCmd(args []string) error {
 	}
 
 	handler.OnVoiceMessage = func(chatID int64, messageID int, fileID string) (string, error) {
-		go handleChatMessage(chatID, messageID, "[voice message: "+fileID+"]",
+		// Download the voice file so the agent can transcribe it.
+		localPath, err := telegram.DownloadVoice(bot, fileID)
+		if err != nil {
+			handlerLog.Warn("voice download failed", "chat_id", chatID, "error", err)
+			go handleChatMessage(chatID, messageID,
+				fmt.Sprintf("[voice message received — download failed: %v]", err),
+				bot, handler, sessionManager, resolved, systemMessage, handlerLog)
+			return "", nil
+		}
+		go handleChatMessage(chatID, messageID,
+			fmt.Sprintf("🎤 Voice message received and saved to %q. Use shell tools (ffmpeg, whisper) to transcribe and respond.", localPath),
 			bot, handler, sessionManager, resolved, systemMessage, handlerLog)
 		return "", nil
 	}
