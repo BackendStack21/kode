@@ -59,11 +59,19 @@ func scanDirCached(dir string, fc fileCache, prevSkills map[string]Skill) []Skil
 		if !e.IsDir() {
 			continue
 		}
+		// Refuse symlink directory entries — could redirect to arbitrary paths.
+		if e.Type()&os.ModeSymlink != 0 {
+			continue
+		}
 		skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
-		info, err := os.Stat(skillPath)
+		info, err := os.Lstat(skillPath)
 		if err != nil {
 			// File was deleted or inaccessible — remove from cache
 			delete(fc, skillPath)
+			continue
+		}
+		// Refuse symlink SKILL.md files.
+		if info.Mode()&os.ModeSymlink != 0 {
 			continue
 		}
 

@@ -37,7 +37,7 @@ var injectionPatterns = []InjectionPattern{
 	{regexp.MustCompile(`(?i)(decode|interpret|execute)\s+(this|the\s+following)\s+(base64|hex|encoded)`), "encoded instruction"},
 
 	// ── HTML / markup injections ───────────────────────────────────
-	{regexp.MustCompile(`<!--.{0,50}(ignore|disregard|new\s+instructions|system\s+prompt).{0,50}-->`), "HTML comment injection"},
+	{regexp.MustCompile(`(?s)<!--.{0,80}(ignore|disregard|new\s+instructions|system\s+prompt).{0,80}-->`), "HTML comment injection"},
 	{regexp.MustCompile(`(?i)<script|<style|<iframe|<object|<embed`), "HTML tag injection"},
 
 	// ── Social engineering / confusion ─────────────────────────────

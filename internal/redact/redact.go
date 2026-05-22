@@ -40,8 +40,10 @@ var patterns = []*regexp.Regexp{
 	// AWS access keys: AKIA + 16 uppercase (also ASIA for temp credentials)
 	regexp.MustCompile(`A[SK]IA[0-9A-Z]{16}`),
 
-	// Private keys (RSA, EC, OpenSSH, DSA)
-	regexp.MustCompile(`-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----[^-]*-----END (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----`),
+	// Private keys (RSA, EC, OpenSSH, DSA, ED25519, PKCS#8)
+	// PKCS#8 format (default openssl genpkey output) — with optional
+	// ENCRYPTED prefix and optional algorithm label.
+	regexp.MustCompile(`-----BEGIN (RSA |EC |OPENSSH |DSA |ED25519 |ENCRYPTED )?PRIVATE KEY-----[^-]*-----END (RSA |EC |OPENSSH |DSA |ED25519 |ENCRYPTED )?PRIVATE KEY-----`),
 
 	// JWT tokens (three base64url segments separated by dots)
 	// Minimum ~40 chars to avoid matching short dotted strings

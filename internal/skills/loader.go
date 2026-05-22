@@ -270,6 +270,7 @@ func ScanDirs(projectDir, userDir string, extraDirs []string) *ScanResult {
 }
 
 // scanDir reads all SKILL.md files in a single skill directory.
+// Symlinks are refused — they could redirect reads to arbitrary files.
 func scanDir(dir string) []Skill {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -279,6 +280,11 @@ func scanDir(dir string) []Skill {
 	var skills []Skill
 	for _, e := range entries {
 		if !e.IsDir() {
+			continue
+		}
+		// Refuse symlink entries — a symlinked skill directory could
+		// redirect reads to arbitrary paths.
+		if e.Type()&os.ModeSymlink != 0 {
 			continue
 		}
 		skillPath := filepath.Join(dir, e.Name(), "SKILL.md")
@@ -308,7 +314,14 @@ const FenceEnd = "╚═══ END SKILL — resume core identity ═══╝"
 // FormatAsContext formats a skill's body for injection into the system prompt.
 // The skill is wrapped in protective fences that tell the model this content
 // is external guidance, lower priority than core identity.
+// The body is sanitized to prevent fence breakout — any embedded FenceEnd
+// markers are replaced so they can't close the outer fence prematurely.
 func FormatAsContext(s Skill) string {
+	// Sanitize body: replace any embedded FenceEnd marker to prevent
+	// fence breakout attacks where a skill contains the closing fence
+	// as part of its content.
+	body := strings.ReplaceAll(s.Body, FenceEnd, "[FENCE-END-MARKER-REMOVED]")
+
 	var b strings.Builder
 	b.WriteString(FenceBegin)
 	b.WriteString("\n## Skill: ")
@@ -320,8 +333,8 @@ func FormatAsContext(s Skill) string {
 		b.WriteString("0")
 	}
 	b.WriteString(")\n\n")
-	b.WriteString(s.Body)
-	if !strings.HasSuffix(s.Body, "\n") {
+	b.WriteString(body)
+	if !strings.HasSuffix(body, "\n") {
 		b.WriteString("\n")
 	}
 	b.WriteString(FenceEnd)

@@ -432,7 +432,7 @@ func (t *SkillSaveTool) Call(args string) (string, error) {
 	}
 
 	// Reload to pick up the new skill
-	t.Manager.dirty = true
+	t.Manager.MarkDirty()
 	t.Manager.Reload()
 
 	// Fire saved event
@@ -525,7 +525,7 @@ func (t *SkillPatchTool) Call(args string) (string, error) {
 		return "", fmt.Errorf("skill_patch: write: %w", err)
 	}
 
-	t.Manager.dirty = true
+	t.Manager.MarkDirty()
 	t.Manager.Reload()
 	return fmt.Sprintf("✓ Patched skill %q: replaced %d characters", input.Name, len(input.OldText)), nil
 }
@@ -592,7 +592,7 @@ func (t *SkillDeleteTool) Call(args string) (string, error) {
 		return "", fmt.Errorf("skill_delete: remove: %w", err)
 	}
 
-	t.Manager.dirty = true
+	t.Manager.MarkDirty()
 	t.Manager.Reload()
 
 	// Fire deletion event

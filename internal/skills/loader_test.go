@@ -298,6 +298,39 @@ Test body content.
 	}
 }
 
+func TestScanDir_RefusesSymlinks(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a real skill directory
+	realDir := filepath.Join(dir, "real-skill")
+	os.MkdirAll(realDir, 0755)
+	os.WriteFile(filepath.Join(realDir, "SKILL.md"), []byte("---\nname: real-skill\n---\n\n## Real"), 0644)
+
+	// Create a symlink pointing to the real directory
+	symlinkDir := filepath.Join(dir, "symlink-skill")
+	if err := os.Symlink(realDir, symlinkDir); err != nil {
+		t.Skipf("symlinks not supported: %v", err)
+	}
+
+	result := ScanDirs(dir, "", nil)
+	total := len(result.AutoLoad) + len(result.Lazy)
+
+	// The symlink entry should be skipped — only the real skill should appear
+	if total != 1 {
+		t.Fatalf("expected 1 skill (symlink refused), got %d", total)
+	}
+
+	var s Skill
+	if len(result.AutoLoad) > 0 {
+		s = result.AutoLoad[0]
+	} else {
+		s = result.Lazy[0]
+	}
+	if s.Name != "real-skill" {
+		t.Errorf("expected 'real-skill', got %q", s.Name)
+	}
+}
+
 func writeTestSkill(t *testing.T, dir, name, body string) {
 	t.Helper()
 	skillDir := filepath.Join(dir, name)

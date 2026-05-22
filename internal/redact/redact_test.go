@@ -144,6 +144,33 @@ b3BlbnNzaC1rZXktdjEAAAAA...
 	if result2 != "[REDACTED]" {
 		t.Errorf("OpenSSH private key not redacted: got %q", result2)
 	}
+
+	// PKCS#8 — default openssl genpkey output
+	input3 := `-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0B...
+-----END PRIVATE KEY-----`
+	result3 := RedactSecrets(input3)
+	if result3 != "[REDACTED]" {
+		t.Errorf("PKCS#8 private key not redacted: got %q", result3)
+	}
+
+	// PKCS#8 encrypted
+	input4 := `-----BEGIN ENCRYPTED PRIVATE KEY-----
+MIIFHzBJBgkqhkiG9w0B...
+-----END ENCRYPTED PRIVATE KEY-----`
+	result4 := RedactSecrets(input4)
+	if result4 != "[REDACTED]" {
+		t.Errorf("encrypted PKCS#8 private key not redacted: got %q", result4)
+	}
+
+	// ED25519
+	input5 := `-----BEGIN ED25519 PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIE...
+-----END ED25519 PRIVATE KEY-----`
+	result5 := RedactSecrets(input5)
+	if result5 != "[REDACTED]" {
+		t.Errorf("ED25519 private key not redacted: got %q", result5)
+	}
 }
 
 func TestRedactSecrets_EnvVarCredentials(t *testing.T) {
