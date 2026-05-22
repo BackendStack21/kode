@@ -15,6 +15,7 @@ package skills
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -358,9 +359,9 @@ func (sm *ScoredMatcher) ExplainMatch(input string) string {
 		b.WriteString(" ")
 		b.WriteString(s.Name)
 		b.WriteString(" (score=")
-		b.WriteString(itoa(score))
+		b.WriteString(strconv.Itoa(score))
 		b.WriteString("/")
-		b.WriteString(itoa(sm.cfg.MinScore))
+		b.WriteString(strconv.Itoa(sm.cfg.MinScore))
 		b.WriteString(")")
 
 		// Show keyword hits
@@ -391,27 +392,5 @@ func (sm *ScoredMatcher) ExplainMatch(input string) string {
 	return b.String()
 }
 
-// itoa is a simple int-to-string for avoiding strconv import.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var buf [12]byte
-	neg := false
-	if n < 0 {
-		neg = true
-		n = -n
-	}
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
-}
+
 

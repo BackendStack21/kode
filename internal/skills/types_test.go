@@ -178,3 +178,13 @@ func TestFilterSkipped(t *testing.T) {
 		t.Errorf("filtered[0].Name = %q, want keep-me", filtered[0].Name)
 	}
 }
+
+// TestDefaultSkipThreshold ensures the default skip threshold is >= 3
+// so users don't permanently suppress a skill after one accidental skip.
+func TestDefaultSkipThreshold_NotTooAggressive(t *testing.T) {
+	cfg := DefaultSkillsConfig()
+	if cfg.Curation.SkipThreshold < 3 {
+		t.Errorf("Default SkipThreshold = %d, want >= 3 (regression: one accidental skip should not permanently suppress)",
+			cfg.Curation.SkipThreshold)
+	}
+}

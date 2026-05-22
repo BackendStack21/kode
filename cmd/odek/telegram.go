@@ -745,16 +745,16 @@ func handleChatMessage(
 		},
 		SkillEventHandler: func(event skills.SkillEvent) {
 			switch event.Type {
-			case "loaded":
-				names := strings.Join(event.Skills, ", ")
-				go bot.SendMessage(chatID, "📚 Loaded skill: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
-			case "autoloaded":
-				names := strings.Join(event.Skills, ", ")
-				go bot.SendMessage(chatID, "📚 Auto-loaded skills: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
-			case "saved":
-				go bot.SendMessage(chatID, fmt.Sprintf("✓ Saved skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
-			case "deleted":
-				go bot.SendMessage(chatID, fmt.Sprintf("✗ Deleted skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
+		case "loaded":
+			names := strings.Join(event.Skills, ", ")
+			sendAsync(bot, chatID, "📚 Loaded skill: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
+		case "autoloaded":
+			names := strings.Join(event.Skills, ", ")
+			sendAsync(bot, chatID, "📚 Auto-loaded skills: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
+		case "saved":
+			sendAsync(bot, chatID, fmt.Sprintf("✓ Saved skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
+		case "deleted":
+			sendAsync(bot, chatID, fmt.Sprintf("✗ Deleted skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
 			case "suggested":
 				replyMarkup := &telegram.InlineKeyboardMarkup{
 					InlineKeyboard: [][]telegram.InlineKeyboardButton{
@@ -779,8 +779,8 @@ func handleChatMessage(
 					}
 					msg += fmt.Sprintf("\n\n```\n%s\n```", preview)
 				}
-				go bot.SendMessage(chatID, msg,
-					&telegram.SendOpts{ReplyMarkup: replyMarkup, ParseMode: "Markdown", ReplyToMessageID: messageID})
+			sendAsync(bot, chatID, msg,
+				&telegram.SendOpts{ReplyMarkup: replyMarkup, ParseMode: "Markdown", ReplyToMessageID: messageID})
 			}
 		},
 	}
@@ -890,9 +890,9 @@ func handleChatMessage(
 					}
 				}
 				msg := skills.RunAutoCurate(userDir, newSkills, allSkills, *skillsCfg, nil)
-				if msg != "" {
-					go bot.SendMessage(chatID, msg, nil)
-				}
+			if msg != "" {
+				sendAsync(bot, chatID, msg, nil)
+			}
 			}
 		} else {
 			// Store suggestions for inline keyboard callback handling
@@ -1000,6 +1000,17 @@ func reportError(bot *telegram.Bot, chatID int64, messageID int, msg string) {
 	if _, err := bot.SendMessage(chatID, "❌ "+msg, &telegram.SendOpts{ReplyToMessageID: messageID}); err != nil {
 		fmt.Fprintf(os.Stderr, "odek telegram: send error message: %v\n", err)
 	}
+}
+
+// sendAsync sends a Telegram message in a background goroutine and logs
+// any errors to stderr. Use this instead of raw go bot.SendMessage() to
+// prevent silent delivery failures.
+func sendAsync(bot *telegram.Bot, chatID int64, text string, opts *telegram.SendOpts) {
+	go func() {
+		if _, err := bot.SendMessage(chatID, text, opts); err != nil {
+			fmt.Fprintf(os.Stderr, "odek telegram: async send failed: %v\n", err)
+		}
+	}()
 }
 
 // ── Singleton Lock ─────────────────────────────────────────────────────

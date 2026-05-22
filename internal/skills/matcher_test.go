@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -241,6 +242,32 @@ func TestScoredMatcher_ExplainMatch(t *testing.T) {
 	if !strings.Contains(explanation, "score=") {
 		t.Error("expected score in explanation")
 	}
+
+	// Regression: verify score values are proper integers in the output.
+	// After replacing custom itoa() with strconv.Itoa(), ensure score format
+	// is correct (e.g. "score=9/3" not "score=/3" or garbled).
+	// Find the score substring and verify it contains digits before the slash.
+	idx := strings.Index(explanation, "score=")
+	if idx < 0 {
+		t.Fatal("score= not found")
+	}
+	rest := explanation[idx+len("score="):]
+	slashIdx := strings.IndexByte(rest, '/')
+	if slashIdx < 0 {
+		t.Fatal("expected / in score format")
+	}
+	scoreStr := rest[:slashIdx]
+	if scoreStr == "" {
+		t.Error("score value is empty — itoa/strconv regression")
+	}
+	scoreVal, err := strconv.Atoi(scoreStr)
+	if err != nil {
+		t.Errorf("score value %q is not a valid integer: %v", scoreStr, err)
+	}
+	if scoreVal < 0 {
+		t.Errorf("score value %d should be non-negative", scoreVal)
+	}
+	t.Logf("score format OK: score=%d/%d", scoreVal, scoreVal) // second value is threshold
 }
 
 func TestScoredMatcher_Stripping(t *testing.T) {

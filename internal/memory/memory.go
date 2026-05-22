@@ -75,6 +75,12 @@ type MemoryManager struct {
 	merge    *MergeDetector
 	llm      LLMClient
 	cfg      MemoryConfig
+
+	// prompt caching avoids rebuilding the system prompt block on every
+	// iteration when memory hasn't changed. The cache is invalidated
+	// whenever facts or buffer are modified.
+	promptCache string
+	promptDirty bool
 }
 
 // NewMemoryManager creates a fully wired MemoryManager.
@@ -222,6 +228,7 @@ func (m *MemoryManager) AddFact(target, content string) error {
 	if err := m.facts.Add(target, content); err != nil {
 		return err
 	}
+	m.promptDirty = true
 
 	// Incrementally update merge detector instead of re-reading + re-embedding all.
 	// Check dedup: if content already existed in the entries we read at the top,
@@ -260,6 +267,7 @@ func (m *MemoryManager) ReplaceFact(target, oldText, content string) error {
 	if err := m.facts.Replace(target, oldText, content); err != nil {
 		return err
 	}
+	m.promptDirty = true
 	// Re-fit merge detector
 	if m.cfg.MergeOnWrite != nil && *m.cfg.MergeOnWrite {
 		entries, _ := m.facts.Entries(target)
@@ -276,6 +284,7 @@ func (m *MemoryManager) RemoveFact(target, oldText string) error {
 	if err := m.facts.Remove(target, oldText); err != nil {
 		return err
 	}
+	m.promptDirty = true
 	// Re-fit merge detector
 	if m.cfg.MergeOnWrite != nil && *m.cfg.MergeOnWrite {
 		entries, _ := m.facts.Entries(target)
@@ -350,6 +359,7 @@ func (m *MemoryManager) AppendBuffer(role, message string) {
 	}
 	line := FormatBufferLine(role, message)
 	m.buffer.Append(line)
+	m.promptDirty = true
 }
 
 // GetBuffer returns the current buffer lines (for system prompt injection).
@@ -369,11 +379,13 @@ func (m *MemoryManager) RestoreBuffer(lines []string) {
 	for _, line := range lines {
 		m.buffer.Append(line)
 	}
+	m.promptDirty = true
 }
 
 // ClearBuffer resets the buffer for a new session.
 func (m *MemoryManager) ClearBuffer() {
 	m.buffer.Clear()
+	m.promptDirty = true
 }
 
 // ── Episode Operations ───────────────────────────────────────────────
@@ -425,6 +437,11 @@ func (m *MemoryManager) SearchEpisodes(query string, limit int) ([]EpisodeMeta, 
 func (m *MemoryManager) BuildSystemPrompt() string {
 	if m.cfg.Enabled == nil || !*m.cfg.Enabled {
 		return ""
+	}
+
+	// Return cached prompt if memory hasn't changed since last build.
+	if !m.promptDirty && m.promptCache != "" {
+		return m.promptCache
 	}
 
 	userFact, _ := m.facts.Read("user")
@@ -497,7 +514,9 @@ func (m *MemoryManager) BuildSystemPrompt() string {
 	}
 
 	b.WriteString("───────────────────────────────\n")
-	return b.String()
+	m.promptCache = b.String()
+	m.promptDirty = false
+	return m.promptCache
 }
 
 // ── Private helpers ──────────────────────────────────────────────────

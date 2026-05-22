@@ -85,9 +85,10 @@ const (
 // The zero value is usable but won't produce any output — call New()
 // to create a properly initialized Renderer.
 type Renderer struct {
-	w     io.Writer
-	color bool
-	model string
+	w           io.Writer
+	color       bool
+	model       string
+	skillVerbose bool // show skill notifications (auto-load, save, suggest, etc.)
 }
 
 // New creates a Renderer that writes to w. If color is false, ANSI escape
@@ -102,6 +103,13 @@ func New(w io.Writer, color bool) *Renderer {
 // WithModel sets the model name displayed in iteration headers.
 func (r *Renderer) WithModel(name string) *Renderer {
 	r.model = name
+	return r
+}
+
+// WithSkillVerbose controls whether skill lifecycle notifications
+// (auto-load, save, suggest, delete) are shown. Disabled by default.
+func (r *Renderer) WithSkillVerbose(verbose bool) *Renderer {
+	r.skillVerbose = verbose
 	return r
 }
 
@@ -290,7 +298,7 @@ func (r *Renderer) Error(err error) {
 
 // SkillLoaded prints a notification about lazy-loaded skills.
 func (r *Renderer) SkillLoaded(names []string) {
-	if r.disable() || len(names) == 0 {
+	if r.disable() || len(names) == 0 || !r.skillVerbose {
 		return
 	}
 	joined := strings.Join(names, ", ")
@@ -299,7 +307,7 @@ func (r *Renderer) SkillLoaded(names []string) {
 
 // SkillAutoLoaded prints a notification about auto-loaded skills at startup.
 func (r *Renderer) SkillAutoLoaded(names []string) {
-	if r.disable() || len(names) == 0 {
+	if r.disable() || len(names) == 0 || !r.skillVerbose {
 		return
 	}
 	joined := strings.Join(names, ", ")
@@ -308,7 +316,7 @@ func (r *Renderer) SkillAutoLoaded(names []string) {
 
 // SkillSuggested prints a skill suggestion from the learning system.
 func (r *Renderer) SkillSuggested(name, heuristic string) {
-	if r.disable() || name == "" {
+	if r.disable() || name == "" || !r.skillVerbose {
 		return
 	}
 	fmt.Fprintln(r.w, r.style(yellow, "🔍 Skill suggestion: "+name+" ("+heuristic+")"))
@@ -316,7 +324,7 @@ func (r *Renderer) SkillSuggested(name, heuristic string) {
 
 // SkillSaved prints confirmation of a saved skill.
 func (r *Renderer) SkillSaved(name string) {
-	if r.disable() || name == "" {
+	if r.disable() || name == "" || !r.skillVerbose {
 		return
 	}
 	fmt.Fprintln(r.w, r.style(green, "✓ Saved skill \""+name+"\""))
@@ -324,7 +332,7 @@ func (r *Renderer) SkillSaved(name string) {
 
 // SkillDeleted prints confirmation of a deleted skill.
 func (r *Renderer) SkillDeleted(name string) {
-	if r.disable() || name == "" {
+	if r.disable() || name == "" || !r.skillVerbose {
 		return
 	}
 	fmt.Fprintln(r.w, r.style(red, "✗ Deleted skill \""+name+"\""))

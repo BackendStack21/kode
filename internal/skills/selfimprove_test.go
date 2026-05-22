@@ -540,8 +540,8 @@ func TestAutoSaveSuggestions_MaxPerRun(t *testing.T) {
 
 func TestDefaultSkipThreshold(t *testing.T) {
 	cfg := DefaultSkillsConfig()
-	if cfg.Curation.SkipThreshold != 1 {
-		t.Errorf("SkipThreshold = %d, want 1 (one skip should be enough)", cfg.Curation.SkipThreshold)
+	if cfg.Curation.SkipThreshold != 3 {
+		t.Errorf("SkipThreshold = %d, want 3 (one accidental skip should not permanently suppress)", cfg.Curation.SkipThreshold)
 	}
 	if !cfg.AutoSave.Enabled {
 		t.Error("AutoSave.Enabled should default to true")

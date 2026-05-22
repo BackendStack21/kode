@@ -484,3 +484,76 @@ func TestMin(t *testing.T) {
 		t.Errorf("min(0, 0) = %d, want 0", got)
 	}
 }
+
+// TestMemoryPromptCache verifies that BuildSystemPrompt returns a cached
+// result when memory hasn't changed, and invalidates the cache on mutation.
+func TestMemoryPromptCache(t *testing.T) {
+	dir := t.TempDir()
+	mm := NewMemoryManager(dir, nil, DefaultMemoryConfig())
+
+	// First call builds the prompt and caches it.
+	mm.AddFact("user", "User prefers Go")
+	p1 := mm.BuildSystemPrompt()
+	if !strings.Contains(p1, "User prefers Go") {
+		t.Fatal("expected fact in initial prompt")
+	}
+
+	// Cached result — same call returns identical prompt.
+	p1b := mm.BuildSystemPrompt()
+	if p1b != p1 {
+		t.Error("prompt should be cached when no mutation occurred")
+	}
+
+	// Add a DIFFERENT fact — should invalidate cache.
+	mm.AddFact("user", "User also likes Python")
+	p2 := mm.BuildSystemPrompt()
+	if p2 == p1 {
+		t.Error("prompt should differ after AddFact with new content")
+	}
+	if !strings.Contains(p2, "User also likes Python") {
+		t.Errorf("expected new fact in prompt, got %q", p2)
+	}
+
+	// AppendBuffer — should invalidate.
+	mm.AppendBuffer("user", "buffer entry")
+	p3 := mm.BuildSystemPrompt()
+	if p3 == p2 {
+		t.Error("prompt should differ after AppendBuffer")
+	}
+
+	// ReplaceFact — should invalidate.
+	mm.ReplaceFact("user", "Go", "User prefers Rust")
+	p4 := mm.BuildSystemPrompt()
+	if p4 == p3 {
+		t.Error("prompt should differ after ReplaceFact")
+	}
+	if !strings.Contains(p4, "Rust") {
+		t.Errorf("expected replaced fact in prompt, got %q", p4)
+	}
+	if strings.Contains(p4, "User prefers Go") {
+		t.Error("old fact should not appear after ReplaceFact")
+	}
+
+	// RemoveFact — should invalidate.
+	mm.RemoveFact("user", "Python")
+	p5 := mm.BuildSystemPrompt()
+	if p5 == p4 {
+		t.Error("prompt should differ after RemoveFact")
+	}
+	if strings.Contains(p5, "Python") {
+		t.Error("removed fact should not appear in prompt")
+	}
+
+	// Cached after no mutation.
+	p5b := mm.BuildSystemPrompt()
+	if p5b != p5 {
+		t.Error("prompt should be cached after no mutation")
+	}
+
+	// ClearBuffer — should invalidate.
+	mm.ClearBuffer()
+	p6 := mm.BuildSystemPrompt()
+	if p6 == p5b {
+		t.Error("prompt should differ after ClearBuffer")
+	}
+}

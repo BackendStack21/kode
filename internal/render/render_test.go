@@ -588,7 +588,7 @@ func TestRenderer_Summary_NoColor(t *testing.T) {
 
 func TestRenderer_SkillLoaded(t *testing.T) {
 	var buf bytes.Buffer
-	r := New(&buf, true)
+	r := New(&buf, true).WithSkillVerbose(true)
 
 	r.SkillLoaded([]string{"docker-build", "go-test"})
 	out := buf.String()
@@ -621,7 +621,7 @@ func TestRenderer_SkillLoaded_Empty(t *testing.T) {
 
 func TestRenderer_SkillAutoLoaded(t *testing.T) {
 	var buf bytes.Buffer
-	r := New(&buf, true)
+	r := New(&buf, true).WithSkillVerbose(true)
 
 	r.SkillAutoLoaded([]string{"ci-pipeline", "git-workflow"})
 	out := buf.String()
@@ -635,7 +635,7 @@ func TestRenderer_SkillAutoLoaded(t *testing.T) {
 
 func TestRenderer_SkillSuggested(t *testing.T) {
 	var buf bytes.Buffer
-	r := New(&buf, true)
+	r := New(&buf, true).WithSkillVerbose(true)
 
 	r.SkillSuggested("procedure-docker", "multi-step")
 	out := buf.String()
@@ -655,7 +655,7 @@ func TestRenderer_SkillSuggested(t *testing.T) {
 
 func TestRenderer_SkillSaved(t *testing.T) {
 	var buf bytes.Buffer
-	r := New(&buf, true)
+	r := New(&buf, true).WithSkillVerbose(true)
 
 	r.SkillSaved("my-skill")
 	out := buf.String()
@@ -672,7 +672,7 @@ func TestRenderer_SkillSaved(t *testing.T) {
 
 func TestRenderer_SkillDeleted(t *testing.T) {
 	var buf bytes.Buffer
-	r := New(&buf, true)
+	r := New(&buf, true).WithSkillVerbose(true)
 
 	r.SkillDeleted("old-skill")
 	out := buf.String()
@@ -698,7 +698,7 @@ func TestRenderer_SkillEvents_NilSafe(t *testing.T) {
 
 func TestRenderer_SkillEvents_NoColor(t *testing.T) {
 	var buf bytes.Buffer
-	r := New(&buf, false)
+	r := New(&buf, false).WithSkillVerbose(true)
 
 	r.SkillLoaded([]string{"docker-build"})
 	out := buf.String()

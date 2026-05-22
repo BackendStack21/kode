@@ -121,8 +121,8 @@ func DefaultSkillsConfig() SkillsConfig {
 			StalenessDays: 90,
 			AutoPrune:     false,
 			AutoCurate:    true,
-			SkipThreshold: 1,
-			SkipResetDays: 30,
+		SkipThreshold: 3,
+		SkipResetDays: 30,
 		},
 		AutoSave: AutoSaveConfig{
 			Enabled:    true,

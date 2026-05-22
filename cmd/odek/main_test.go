@@ -1369,7 +1369,7 @@ func TestRunLearn_MultiStepProcedure(t *testing.T) {
 
 	// Create local odek.json with auto_save enabled, LLM enhancement disabled
 	// (mock server can't handle enhancement prompts)
-	configContent := `{"skills": {"auto_save": {"enabled": true, "require_llm": false}, "llm_learn": false}}`
+	configContent := `{"skills": {"verbose": true, "auto_save": {"enabled": true, "require_llm": false}, "llm_learn": false}}`
 	os.WriteFile("odek.json", []byte(configContent), 0644)
 	defer os.Remove("odek.json")
 
@@ -1426,7 +1426,7 @@ func TestRunLearn_InteractiveReject(t *testing.T) {
 	}()
 
 	// Create local odek.json with auto_save disabled and LLM enhancement disabled
-	configContent := `{"skills": {"auto_save": {"enabled": false}, "llm_learn": false}}`
+	configContent := `{"skills": {"verbose": true, "auto_save": {"enabled": false}, "llm_learn": false}}`
 	os.WriteFile("odek.json", []byte(configContent), 0644)
 	defer os.Remove("odek.json")
 

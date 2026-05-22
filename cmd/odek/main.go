@@ -845,6 +845,12 @@ func run(args []string) error {
 	color := !resolved.NoColor && render.ColorEnabled()
 	rend := render.New(os.Stderr, color).WithModel(modelLabel)
 
+	// Wire skill verbosity to the renderer so skill lifecycle
+	// notifications (save, suggest, delete) respect the config.
+	if resolved.Skills.Learn {
+		rend.WithSkillVerbose(resolved.Skills.Verbose)
+	}
+
 	// Resolve skills config pointer (only when learn mode is enabled)
 	var skillsCfg *skills.SkillsConfig
 	if resolved.Skills.Learn {
@@ -1331,7 +1337,7 @@ func runLearnLoop(messages []llm.Message, task string, sm *skills.SkillManager, 
 	// Filter out previously-skipped suggestions
 	filtered, skipped := skills.FilterSkipped(suggestions, userDir,
 		skillsCfg.Curation.SkipThreshold, skillsCfg.Curation.SkipResetDays)
-	if skipped > 0 {
+	if skipped > 0 && skillsCfg.Verbose {
 		fmt.Fprintf(os.Stderr, "   (%d suggestion(s) previously skipped, suppressed)\n", skipped)
 	}
 	if len(filtered) == 0 {
@@ -1342,22 +1348,27 @@ func runLearnLoop(messages []llm.Message, task string, sm *skills.SkillManager, 
 	if skillsCfg.AutoSave.Enabled {
 		if !skillsCfg.AutoSave.RequireLLM || skillsCfg.LLMLearn {
 			result := skills.AutoSaveSuggestions(filtered, userDir, skillsCfg)
-			for _, name := range result.Saved {
-				heuristic := result.Heuristics[name]
-				if heuristic != "" {
-					fmt.Fprintf(os.Stderr, "   ✓ Auto-saved skill %q (%s)\n", name, heuristic)
-				} else {
-					fmt.Fprintf(os.Stderr, "   ✓ Auto-saved skill %q\n", name)
+			if skillsCfg.Verbose {
+				for _, name := range result.Saved {
+					heuristic := result.Heuristics[name]
+					if heuristic != "" {
+						fmt.Fprintf(os.Stderr, "   ✓ Auto-saved skill %q (%s)\n", name, heuristic)
+					} else {
+						fmt.Fprintf(os.Stderr, "   ✓ Auto-saved skill %q\n", name)
+					}
 				}
+				if result.Skipped > 0 {
+					fmt.Fprintf(os.Stderr, "   (%d previously skipped, suppressed)\n", result.Skipped)
+				}
+				for _, name := range result.Failed {
+					fmt.Fprintf(os.Stderr, "   ⚠ Quality gate failed for %q (use --no-auto-save to review manually)\n", name)
+				}
+			}
+			// Fire notifier events even when silent so WebUI/Telegram get them
+			for _, name := range result.Saved {
 				sm.Notifier.Notify(skills.SkillEvent{
 					Type: "saved", SkillName: name, Timestamp: time.Now().UTC(),
 				})
-			}
-			if result.Skipped > 0 {
-				fmt.Fprintf(os.Stderr, "   (%d previously skipped, suppressed)\n", result.Skipped)
-			}
-			for _, name := range result.Failed {
-				fmt.Fprintf(os.Stderr, "   ⚠ Quality gate failed for %q (use --no-auto-save to review manually)\n", name)
 			}
 			if len(result.Saved) > 0 {
 				sm.Reload()
@@ -1369,6 +1380,9 @@ func runLearnLoop(messages []llm.Message, task string, sm *skills.SkillManager, 
 	}
 
 	// Interactive fallback: show preview and prompt
+	if !skillsCfg.Verbose {
+		return // silently skip interactive prompt in non-verbose mode
+	}
 	fmt.Fprintf(os.Stderr, "\n🔍 Learning: detected %d skill pattern(s)\n", len(filtered))
 	for _, s := range filtered {
 		fmt.Fprint(os.Stderr, skills.FormatSuggestionWithPreview(s, true, 400))
@@ -1407,7 +1421,7 @@ func runAutoCurate(userDir string, sm *skills.SkillManager, cfg skills.SkillsCon
 		}
 	}
 	msg := skills.RunAutoCurate(userDir, newSkills, allSkills, cfg, llmClient)
-	if msg != "" {
+	if msg != "" && cfg.Verbose {
 		fmt.Fprint(os.Stderr, msg)
 	}
 }

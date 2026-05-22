@@ -1026,7 +1026,7 @@ func TestAgent_SkillEventHandler_FiresViaMultiNotifier(t *testing.T) {
 
 	var skillEvents []skills.SkillEvent
 	var buf bytes.Buffer
-	rend := render.New(&buf, false)
+	rend := render.New(&buf, false).WithSkillVerbose(true)
 
 	cfg := Config{
 		APIKey:       "sk-test",
