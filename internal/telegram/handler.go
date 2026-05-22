@@ -158,7 +158,10 @@ func defaultPhotoHandler(bot *Bot) func(int64, int, []string) (string, error) {
 // ─── Update Routing ───────────────────────────────────────────────────────
 
 // HandleUpdate routes an incoming Telegram update to the appropriate handler.
+// Recovers from panics in handler callbacks to prevent a single bad update
+// from crashing the entire bot loop.
 func (h *Handler) HandleUpdate(upd Update) {
+	defer h.recoverFromPanic("HandleUpdate", upd.ID)
 	switch {
 	case upd.Message != nil:
 		h.handleMessage(upd.Message)
@@ -166,6 +169,20 @@ func (h *Handler) HandleUpdate(upd Update) {
 		h.handleCallback(upd.CallbackQuery)
 	default:
 		h.log.Warn("ignoring unsupported update type", "update_id", upd.ID)
+	}
+}
+
+// recoverFromPanic catches panics in handler callbacks, logs them, and fires
+// OnError if configured. Use as: defer h.recoverFromPanic("method", id).
+func (h *Handler) recoverFromPanic(method string, updateID int) {
+	if r := recover(); r != nil {
+		h.log.Error("panic recovered", "method", method, "update_id", updateID, "panic", r)
+		if h.OnError != nil {
+			// Try to extract a chat ID from the panic context, but
+			// we don't have it here — use 0 and let the callback
+			// decide how to handle it.
+			h.OnError(0, fmt.Errorf("telegram: panic in %s (update %d): %v", method, updateID, r))
+		}
 	}
 }
 

@@ -570,7 +570,7 @@ func handleChatMessage(
 	bot *telegram.Bot,
 	handler *telegram.Handler,
 	sessionManager *telegram.SessionManager,
-	resolved	config.ResolvedConfig,
+	resolved config.ResolvedConfig,
 	systemMessage string,
 	log telegram.Logger,
 ) {
@@ -583,6 +583,16 @@ func handleChatMessage(
 		mu.Lock()
 	}
 	defer mu.Unlock()
+
+	// Recover from panics so a single bad agent run doesn't deadlock the chat.
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("panic in handleChatMessage", "chat_id", chatID, "panic", r)
+			reportError(bot, chatID, messageID, fmt.Sprintf(
+				"Internal error: %v\n\nThe bot is still running. Use /new to start a fresh session.", r,
+			))
+		}
+	}()
 
 	// Create a per-chat TelegramApprover for inline keyboard approval.
 	approver := telegram.NewTelegramApprover(bot, chatID)
