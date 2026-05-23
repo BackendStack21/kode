@@ -37,6 +37,7 @@ type wsApprover struct {
 	pending    map[string]chan string        // request ID → response channel
 	mu         sync.Mutex
 	approveAll map[danger.RiskClass]bool     // trust-cached risk classes
+	cancel     chan struct{}                 // closed by Cancel() to interrupt waiting PromptCommand
 }
 
 // newWSApprover creates a wsApprover that sends requests via sendFn.
@@ -45,6 +46,7 @@ func newWSApprover(sendFn func(v any) error) *wsApprover {
 		sendFn:     sendFn,
 		pending:    make(map[string]chan string),
 		approveAll: make(map[danger.RiskClass]bool),
+		cancel:     make(chan struct{}),
 	}
 }
 
@@ -79,9 +81,15 @@ func (a *wsApprover) PromptCommand(cls danger.RiskClass, cmd, description string
 		return fmt.Errorf("approval: send failed: %w", err)
 	}
 
-	// Wait for response (60s timeout prevents agent deadlock)
+	// Wait for response, cancellation, or timeout (60s).
 	select {
 	case action := <-resp:
+		// Ack the user's choice back to the browser for UI feedback.
+		a.sendFn(map[string]any{
+			"type":   "approval_ack",
+			"id":     id,
+			"action": action,
+		})
 		switch action {
 		case "approve":
 			return nil
@@ -91,6 +99,8 @@ func (a *wsApprover) PromptCommand(cls danger.RiskClass, cmd, description string
 		default:
 			return fmt.Errorf("operation denied by user: %s", cmd)
 		}
+	case <-a.cancel:
+		return fmt.Errorf("approval cancelled: %s", cmd)
 	case <-time.After(60 * time.Second):
 		return fmt.Errorf("approval timeout: %s", cmd)
 	}
@@ -117,4 +127,15 @@ func (a *wsApprover) newID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return "apr-" + hex.EncodeToString(b)
+}
+
+// Cancel interrupts any pending PromptCommand by closing the cancel channel.
+// Safe to call multiple times — subsequent calls are no-ops.
+func (a *wsApprover) Cancel() {
+	select {
+	case <-a.cancel:
+		// Already closed.
+	default:
+		close(a.cancel)
+	}
 }

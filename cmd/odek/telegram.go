@@ -392,7 +392,7 @@ func telegramCmd(args []string) error {
 					// Channel full or closed — clarify already resolved.
 				}
 			}
-			return "✅ Got it, thanks!", nil
+			return "✅ You chose **" + answer + "**", nil
 		}
 
 		// Route skill suggestion callbacks — Save or Skip.
@@ -1228,15 +1228,23 @@ func handleChatMessage(
 			traceMsgID = 0
 		}
 
-		// If the context was cancelled (by /stop or restart), don't send
-		// a redundant error message — the canceller already notified the
-		// user with a summary or restart notification.
+		// If the context was cancelled (by /stop or restart), save partial
+		// state and notify the user with a cancellation summary.
 		if errors.Is(err, context.Canceled) {
 			// Save partial session state so the conversation isn't lost.
 			cs.LastActive = time.Now()
 			if saveErr := sessionManager.Save(chatID, cs.Messages); saveErr != nil {
 				log.Error("save session after cancel", "chat_id", chatID, "error", saveErr)
 			}
+			// Send a cancellation summary so the user knows what happened.
+			cancelMsg := "⏹️ *Task cancelled.*"
+			if infoVal, ok := chatRunInfos.LoadAndDelete(chatID); ok {
+				info := infoVal.(loop.IterationInfo)
+				cancelMsg += "\n\n" + formatStopSummary(info)
+			}
+			cancelMsg += "\n\n_Session state saved. Send a new message to continue._"
+			sendAsync(bot, chatID, cancelMsg,
+				&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2, ReplyToMessageID: messageID})
 			return
 		}
 

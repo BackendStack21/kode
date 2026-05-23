@@ -303,6 +303,9 @@ func handleWS(store *session.Store, resources *resource.Registry, resolved confi
 		return
 	}
 	defer agent.Close()
+	if approver != nil {
+		defer approver.Cancel() // release any pending approval on disconnect
+	}
 	if sandboxCleanup != nil {
 		defer sandboxCleanup()
 	}

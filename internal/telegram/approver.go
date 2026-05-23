@@ -45,6 +45,7 @@ type TelegramApprover struct {
 	mu      sync.Mutex
 	trusted map[danger.RiskClass]bool
 	log     Logger
+	cancel  chan struct{} // closed by Cancel() to interrupt waiting PromptCommand
 
 	// ChatID is the Telegram chat where approval prompts are sent.
 	ChatID int64
@@ -58,6 +59,7 @@ func NewTelegramApprover(bot *Bot, chatID int64) *TelegramApprover {
 		pending: make(map[string]chan string),
 		trusted: make(map[danger.RiskClass]bool),
 		log:     NewNopLogger(),
+		cancel:  make(chan struct{}),
 	}
 }
 
@@ -68,6 +70,17 @@ func (a *TelegramApprover) SetLogger(l Logger) {
 		return
 	}
 	a.log = l
+}
+
+// Cancel interrupts any pending PromptCommand by closing the cancel channel.
+// Safe to call multiple times — subsequent calls are no-ops.
+func (a *TelegramApprover) Cancel() {
+	select {
+	case <-a.cancel:
+		// Already closed.
+	default:
+		close(a.cancel)
+	}
 }
 
 // PromptCommand sends an approval request with inline keyboard and waits
@@ -135,7 +148,7 @@ func (a *TelegramApprover) PromptCommand(cls danger.RiskClass, cmd, description 
 		a.mu.Unlock()
 	}()
 
-	// Wait for response or timeout.
+	// Wait for response, cancellation, or timeout.
 	select {
 	case action := <-resp:
 		switch action {
@@ -157,6 +170,8 @@ func (a *TelegramApprover) PromptCommand(cls danger.RiskClass, cmd, description 
 		default:
 			return fmt.Errorf("operation denied: %s", cmd)
 		}
+	case <-a.cancel:
+		return fmt.Errorf("approval cancelled: %s", cmd)
 	case <-time.After(approvalTimeout):
 		return fmt.Errorf("approval timeout: %s", cmd)
 	}

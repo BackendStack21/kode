@@ -331,8 +331,9 @@ func (h *Handler) handleCallback(cq *CallbackQuery) {
 
 	// Route approval callbacks to the per-chat TelegramApprover.
 	if a := h.GetApprover(cq.Message.Chat.ID); a != nil && a.HandleCallback(cq.Data) {
-		// Answer the callback (remove loading state on button).
-		if err := h.Bot.AnswerCallbackQuery(cq.ID, "", false); err != nil {
+		// Show a toast acknowledging the user's choice.
+		ack := approvalToast(cq.Data)
+		if err := h.Bot.AnswerCallbackQuery(cq.ID, ack, false); err != nil {
 			h.log.Error("answer callback query (approval) failed", "chat_id", cq.Message.Chat.ID, "error", err)
 			if h.OnError != nil {
 				h.OnError(cq.Message.Chat.ID, err)
@@ -577,3 +578,18 @@ func extractCommand(text string) (cmd string, args string) {
 	return cmdPart, args
 }
 
+
+// approvalToast returns a toast message for an approval callback action.
+// Parses the callback data prefix to determine the user's choice.
+func approvalToast(data string) string {
+	switch {
+	case strings.HasPrefix(data, cbPrefixApprove):
+		return "✅ Approved"
+	case strings.HasPrefix(data, cbPrefixDeny):
+		return "❌ Denied"
+	case strings.HasPrefix(data, cbPrefixTrust):
+		return "🔒 Trusted for this session"
+	default:
+		return ""
+	}
+}

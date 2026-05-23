@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BackendStack21/kode/internal/danger"
 )
@@ -266,4 +267,48 @@ func TestWSApprover_PromptOperation_SendError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for send failure in operation")
 	}
+}
+
+// ── Test Cancel ────────────────────────────────────────────────────────
+
+func TestWSApprover_Cancel_InterruptsPrompt(t *testing.T) {
+	var acked bool
+	sendFn := func(v any) error {
+		if m, ok := v.(map[string]any); ok && m["type"] == "approval_ack" {
+			acked = true
+		}
+		return nil
+	}
+	a := newWSApprover(sendFn)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- a.PromptCommand(danger.Safe, "test", "")
+	}()
+
+	// Cancel immediately.
+	a.Cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("expected error from cancelled PromptCommand")
+		}
+		if !strings.Contains(err.Error(), "cancelled") {
+			t.Errorf("expected 'cancelled' in error, got: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("PromptCommand did not return after Cancel() within 3s")
+	}
+
+	// Ack event should NOT be sent on cancel — the user didn't respond.
+	if acked {
+		t.Error("approval_ack should not be sent on cancel")
+	}
+}
+
+func TestWSApprover_Cancel_Idempotent(t *testing.T) {
+	a := newWSApprover(func(v any) error { return nil })
+	a.Cancel()
+	a.Cancel() // second call should not panic
 }

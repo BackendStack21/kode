@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/BackendStack21/kode/internal/danger"
 )
@@ -305,4 +307,47 @@ func TestApprover_ConcurrentAccess(t *testing.T) {
 	if !a.IsTrusted(danger.SystemWrite) {
 		t.Error("IsTrusted should be true after concurrent sets")
 	}
+}
+
+// ── Test Cancel ────────────────────────────────────────────────────────
+
+func TestTelegramApprover_Cancel_InterruptsPrompt(t *testing.T) {
+	// Cancel() should cause a blocked PromptCommand to return immediately
+	// with a cancellation error, not hang for the full timeout.
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+
+	a := NewTelegramApprover(bot, 1)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- a.PromptCommand(danger.SystemWrite, "rm -rf /tmp/test", "test cancel")
+	}()
+
+	// Cancel immediately.
+	a.Cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("expected error from cancelled PromptCommand, got nil")
+		}
+		if !strings.Contains(err.Error(), "cancelled") {
+			t.Errorf("expected 'cancelled' in error, got: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("PromptCommand did not return after Cancel() within 3s")
+	}
+}
+
+func TestTelegramApprover_Cancel_Idempotent(t *testing.T) {
+	ts := testServer(t, nil)
+	defer ts.Close()
+	bot := testBot(t, ts)
+
+	a := NewTelegramApprover(bot, 1)
+	a.Cancel()
+	a.Cancel() // second call should not panic
+	// If we get here without panic, it's idempotent.
 }
