@@ -602,7 +602,7 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 				CachedTokens:        e.TotalCachedTokens,
 				TotalLatency:        time.Since(startTime),
 				HasFinalAnswer:      false,
-				ReasoningContent:    result.Content,
+				ReasoningContent:    result.ReasoningContent,
 				IsPreTool:           true,
 			})
 		}
