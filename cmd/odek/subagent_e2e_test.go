@@ -301,6 +301,12 @@ func TestE2E_ToolTimeout(t *testing.T) {
 func TestE2E_ToolConcurrencyLimit(t *testing.T) {
 	skipIfNoE2E(t)
 
+	// Use an invalid API key so subagents fail on connection setup
+	// (no real LLM needed to test concurrency limits)
+	oldKey := os.Getenv("ODEK_API_KEY")
+	os.Setenv("ODEK_API_KEY", "invalid-e2e-test-key")
+	defer os.Setenv("ODEK_API_KEY", oldKey)
+
 	tool := &delegateTasksTool{
 		maxConcurrency: 2,
 		odekPath:       e2eBinary,

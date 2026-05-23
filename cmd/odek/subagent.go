@@ -354,8 +354,11 @@ func subagentCmd(args []string) error {
 		fmt.Fprintf(os.Stderr, "🔧 Sub-agent: %s\n", truncate(cfg.goal, 60))
 	}
 
-	// Create agent — silent renderer for stderr
-	rend := render.New(os.Stderr, !cfg.quiet)
+	// Create agent — when quiet, pass nil renderer so ALL output is suppressed
+	var rend *render.Renderer
+	if !cfg.quiet {
+		rend = render.New(os.Stderr, false)
+	}
 
 	// Build agent config, optionally with streaming
 	aCfg := odek.Config{
