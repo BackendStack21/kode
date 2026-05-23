@@ -1151,7 +1151,7 @@ func handleChatMessage(
 			case "tool_call":
 				args := truncate(data, 150)
 				line := fmt.Sprintf("%s `%s` %s", render.ToolEmoji(name), name, args)
-				if msg, err := bot.SendMessage(chatID, line, nil); err == nil {
+				if msg, err := bot.SendMessage(chatID, line, &telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2}); err == nil {
 					toolMsgIDs.Store(name, msg.ID)
 				}
 
@@ -1163,7 +1163,8 @@ func handleChatMessage(
 					sizeLabel = fmt.Sprintf("%dKB", len(data)/1024)
 				}
 				bot.SendMessage(chatID,
-					fmt.Sprintf("%s `%s` ✅ (%s)", render.ToolEmoji(name), name, sizeLabel), nil)
+					fmt.Sprintf("%s `%s` ✅ (%s)", render.ToolEmoji(name), name, sizeLabel),
+					&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
 				// Clean up the initial tool_call message — it's stale now.
 				if msgIDVal, ok := toolMsgIDs.Load(name); ok {
 					bot.DeleteMessage(chatID, msgIDVal.(int))
