@@ -272,6 +272,56 @@ and are available in `odek run`, `odek repl`, `odek continue`, and `odek serve`.
 
 See [docs/MCP.md](docs/MCP.md#odek-as-mcp-client) for detailed instructions.
 
+## Telegram
+
+The `telegram` section configures the Telegram bot integration and the `--deliver` flag.
+
+```json
+{
+  "telegram": {
+    "bot_token": "8610437446:AAElHFJ...",
+    "allowed_users": [8592463065],
+    "allowed_chats": [],
+    "poll_interval": 1,
+    "poll_timeout": 30,
+    "max_msg_length": 4096,
+    "session_ttl_hours": 24,
+    "log_level": "info",
+    "log_file": "",
+    "default_chat_id": 8592463065
+  }
+}
+```
+
+| Field | Env var | Default | Description |
+|-------|---------|---------|-------------|
+| `bot_token` | `ODEK_TELEGRAM_BOT_TOKEN` | — (required) | Telegram bot API token from @BotFather |
+| `allowed_users` | — | all | Restrict bot to specific user IDs |
+| `allowed_chats` | — | all | Restrict bot to specific chat IDs |
+| `poll_interval` | — | 1 | Seconds between poll cycles |
+| `poll_timeout` | — | 30 | Long-poll timeout (1-60 seconds) |
+| `max_msg_length` | — | 4096 | Max characters per message |
+| `session_ttl_hours` | — | 24 | Hours before inactive session expires |
+| `log_level` | — | info | Log level: debug, info, warn, error |
+| `log_file` | — | stderr | Log file path (empty = stderr) |
+| `default_chat_id` | — | 0 | **Required for `--deliver`** — numeric chat ID where `odek run --deliver` sends results. Get this from your bot's update or use a tool like `@userinfobot`. |
+
+### --deliver flag
+
+The `--deliver` flag on `odek run` sends the agent's final response to the configured
+`default_chat_id` as a plain text message. This enables **cron-based scheduled agent
+workflows** — no daemon needed.
+
+```bash
+# Run an agent task and deliver the result to Telegram
+odek run --deliver "Check the CI pipeline status"
+
+# Works with task text first too
+odek run "Daily summary" --deliver
+```
+
+See [docs/TELEGRAM.md](docs/TELEGRAM.md#cron-integration) for full cron setup instructions.
+
 ## odek init
 
 Create a config file template:

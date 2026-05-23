@@ -37,6 +37,7 @@
 | `--max-iter <n>` | int | `90` | Max think→act cycles |
 | `--thinking <level>` | string | profile default | Reasoning depth: `enabled`/`disabled`/`low`/`medium`/`high` |
 | `--sandbox` | bool | false | Execute shell commands inside Docker container |
+| `--deliver` | bool | false | Deliver the agent's final response to the configured Telegram `default_chat_id`. Requires `telegram.bot_token` + `telegram.default_chat_id` in config. Use with cron for scheduled agent tasks. |
 | `--interaction-mode <mode>` | string | `engaging` | Tool-call rendering: `engaging` (emoji narration) or `verbose` (raw tool output) |
 | `--no-color` | bool | false | Disable colored terminal output |
 | `--prompt-caching` | bool | false | Enable Anthropic/OpenAI/DeepSeek prompt caching markers |
@@ -324,7 +325,14 @@ odek run "Set up CI with GitHub Actions"
 # File attachments
 odek run --ctx go.mod "check go version"
 odek run -c main.go,util.go "refactor both files"
-odek run "@schema.sql design a migration plan"
+odek run "&#64;schema.sql design a migration plan"
+
+# Cron integration: deliver agent result to Telegram
+odek run --deliver "Daily weather forecast for Berlin"
+odek run --deliver "Check the CI pipeline status"
+
+# Systemd cron example (crontab -e):
+# */5 * * * * /usr/local/bin/odek run "Say hello" --deliver >> /tmp/odek-cron.log 2>&1
 ```
 
 ## Config priority

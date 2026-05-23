@@ -378,6 +378,97 @@ This avoids binary overwrite races, stale HTTP/2 connections, and session contex
 
 A fire-and-forget goroutine sends `sendChatAction("typing")` every 4 seconds while the agent runs. Each API call is dispatched in its own goroutine so a slow or hanging HTTP call cannot block the ticker and permanently stop the indicator.
 
+## Cron Integration
+
+odek can run fully offline agent tasks and deliver the result to Telegram, enabling system cron-based scheduled agent workflows — no daemon or scheduler required.
+
+### How it works
+
+```
+cron daemon  ──[every N minutes]──►  odek run "<task>" --deliver
+                                           │
+                                    ┌──────┴──────┐
+                                    │  agent loop  │
+                                    │  (no daemon) │
+                                    └──────┬──────┘
+                                           │ result text
+                                           ▼
+                                    Telegram API
+                                           │
+                                    ┌──────┴──────┐
+                                    │  your chat   │
+                                    └─────────────┘
+```
+
+Each cron tick spawns an independent `odek run` process. The agent executes the task, produces a result, and exits. The `--deliver` flag sends the result to your configured Telegram chat as a plain text message. No persistent bot process, no long-polling — just a single agent run per tick.
+
+### Prerequisites
+
+1. **Telegram bot token** and **default chat ID** must be configured in `~/.odek/config.json`:
+
+```json
+{
+  "telegram": {
+    "bot_token": "8610437446:AAElHFJ...",
+    "default_chat_id": 8592463065
+  }
+}
+```
+
+2. **Verify delivery works** before setting up cron:
+
+```bash
+odek run "Say hello" --deliver
+```
+
+If no message arrives, check:
+- The bot token is valid (`curl https://api.telegram.org/bot<TOKEN>/getMe`)
+- The `default_chat_id` is correct (the numeric chat ID, not the username)
+- The binary is at a stable path (system cron uses a minimal PATH, so use the full path)
+
+### Setting up a cron job
+
+```bash
+# Edit your crontab
+crontab -e
+
+# Add a job — runs every 5 minutes
+*/5 * * * * /usr/local/bin/odek run "Say hello briefly" --deliver >> /tmp/odek-cron.log 2>&1
+```
+
+**Important:**
+- Use the **full absolute path** to the `odek` binary — cron runs with a minimal `PATH`
+- Always redirect stderr to a log file (`2>&1`) for debugging
+- Place `--deliver` **before** the task text, or anywhere after it (both work)
+- The agent runs in **single-shot mode** by default — no session persistence, no learning loop
+- Each cron tick is a fully independent agent invocation with no memory of previous runs
+
+### Debugging
+
+If messages don't arrive:
+
+```bash
+# 1. Verify the binary works standalone
+/usr/local/bin/odek run "test" --deliver
+
+# 2. Check cron's stderr log
+cat /tmp/odek-cron.log
+
+# 3. Confirm Telegram API is reachable from cron's environment
+# Add to crontab to test:
+# * * * * * curl -s "https://api.telegram.org/bot<TOKEN>/getMe" >> /tmp/telegram-test.log 2>&1
+
+# 4. Check that the config file is readable by cron's user
+ls -la ~/.odek/config.json
+```
+
+### Config reference
+
+| Config field | Env var | Description |
+|---|---|---|
+| `telegram.bot_token` | `ODEK_TELEGRAM_BOT_TOKEN` | Telegram bot API token (required) |
+| `telegram.default_chat_id` | — | Numeric chat ID to deliver results to (required) |
+
 ## Testing
 
 The Telegram package has **473 tests** with **87.1% coverage**. Tests use:
