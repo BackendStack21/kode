@@ -1051,18 +1051,165 @@ body {
 .msg .bubble .content li { margin: 3px 0; line-height: 1.55; }
 .msg .bubble .content ul { padding-left: 18px; }
 .msg .bubble .content ul li::marker { color: var(--accent); }
+
+/* ── Phase 1: Message Fade-In ── */
+@keyframes msgEnter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.msg { animation: msgEnter 0.25s ease-out; }
+
+/* ── Phase 1: Collapsible Long Messages ── */
+.bubble.collapsible { max-height: 500px; overflow: hidden; position: relative; }
+.bubble.collapsible.expanded { max-height: none; }
+.bubble .collapse-toggle {
+  display: none; cursor: pointer; padding: 4px 12px; font-size: 11px;
+  color: var(--accent); text-align: center;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-mono); letter-spacing: 0.3px;
+  position: sticky; bottom: 0; background: var(--bg-card);
+  border-radius: 0 0 10px 10px; user-select: none;
+}
+.bubble.collapsible .collapse-toggle { display: block; }
+.bubble.collapsible .collapse-toggle:hover { background: var(--accent-subtle); }
+
+/* ── Phase 1: Message Copy Button ── */
+.bubble { position: relative; }
+.bubble .copy-btn {
+  position: absolute; top: 6px; right: 8px; opacity: 0;
+  transition: opacity 0.15s; cursor: pointer;
+  padding: 4px; border-radius: 4px;
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  display: flex; align-items: center; gap: 4px;
+  z-index: 5; font-size: 11px; color: var(--text-tertiary);
+}
+.bubble:hover .copy-btn { opacity: 0.7; }
+.bubble .copy-btn:hover { opacity: 1; background: var(--accent-subtle); color: var(--accent); }
+.copy-btn.copied { opacity: 1 !important; color: #3dd68c !important; border-color: #3dd68c !important; }
+
+/* ── Phase 1: User/Assistant Visual Differentiation ── */
+.msg.user .bubble {
+  border-left: 2px solid var(--border-subtle);
+  background: var(--bg-primary);
+}
+.msg.assistant .bubble {
+  border-left: 2px solid var(--accent);
+  background: rgba(56,189,248,0.03);
+}
+.msg .sender::before {
+  content: ''; display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; margin-right: 6px; vertical-align: middle;
+}
+.msg.user .sender::before { background: var(--text-tertiary); }
+.msg.assistant .sender::before { background: var(--accent); }
+.msg-stats { border-top-color: var(--border-subtle); margin-top: 8px; padding-top: 6px; }
+
+/* ── Phase 1: Cancel Button ── */
+#cancel-btn {
+  display: none; align-items: center; gap: 5px;
+  background: rgba(239,68,68,0.12); color: #ef4444;
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 6px; padding: 4px 10px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+  margin-left: auto; letter-spacing: 0.3px;
+  animation: cancelPulse 1.5s ease-in-out infinite;
+}
+#cancel-btn.visible { display: inline-flex; }
+#cancel-btn:hover { background: rgba(239,68,68,0.2); border-color: #ef4444; }
+@keyframes cancelPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.3); }
+  50% { box-shadow: 0 0 0 4px rgba(239,68,68,0.1); }
+}
+#cancel-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+/* ── Phase 1: Scroll-to-Bottom Button ── */
+#scroll-bottom-btn {
+  display: none; position: absolute; bottom: 20px; right: 16px;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--bg-card); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary); cursor: pointer;
+  align-items: center; justify-content: center;
+  transition: all 0.15s; z-index: 5;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+#scroll-bottom-btn.visible { display: flex; }
+#scroll-bottom-btn:hover { background: var(--accent-subtle); color: var(--accent); border-color: var(--accent); }
+#scroll-bottom-btn svg { width: 18px; height: 18px; }
+
+/* ── Phase 1: Loading Skeleton ── */
+#loading-skeleton {
+  display: none; padding: 24px; max-width: 600px; margin: 0 auto;
+}
+#loading-skeleton.visible { display: block; animation: fadeIn 0.2s ease-out; }
+.skeleton-bar {
+  height: 14px; border-radius: 7px; background: var(--bg-card);
+  margin-bottom: 10px; position: relative; overflow: hidden;
+}
+.skeleton-bar::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  animation: skeletonShimmer 1.5s infinite;
+}
+.skeleton-bar:nth-child(1) { width: 100%; }
+.skeleton-bar:nth-child(2) { width: 75%; }
+.skeleton-bar:nth-child(3) { width: 55%; }
+.skeleton-bar:nth-child(4) { width: 40%; }
+@keyframes skeletonShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ── Phase 1: Mobile Sidebar Overlay ── */
+#sidebar-overlay {
+  display: none; position: fixed; inset: 0; z-index: 8;
+  background: rgba(0,0,0,0.5);
+}
+#sidebar-overlay.active { display: block; }
+
+#hamburger-btn {
+  display: none; background: none; border: none;
+  color: var(--text-secondary); cursor: pointer;
+  padding: 4px; border-radius: 4px;
+}
+#hamburger-btn:hover { color: var(--text-primary); background: var(--accent-subtle); }
+#hamburger-btn svg { width: 20px; height: 20px; }
+
+/* Mobile responsive overrides */
+@media (max-width: 767px) {
+  #app { grid-template-columns: 1fr; }
+  #sidebar {
+    position: fixed; top: 48px; left: 0; bottom: 0; width: 280px;
+    z-index: 9; transform: translateX(-100%);
+    transition: transform 0.25s ease-out;
+    background: var(--bg-primary);
+  }
+  #sidebar.active { transform: translateX(0); }
+  #hamburger-btn { display: flex; }
+  #topbar .stats { display: none; }
+  #topbar .session-stats { display: none; }
+  /* On mobile, always show cancel button when visible */
+  #cancel-btn.visible { display: inline-flex; }
+}
+
 </style>
 </head>
 <body>
 <div id="app">
   <!-- Top Bar -->
   <div id="topbar">
+    <button id="hamburger-btn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
+      <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
     <span class="dot" id="ws-dot"></span>
     <span class="brand">odek serve</span>
     <span class="status" id="ws-status">connecting...</span>
     <div class="stats" id="stats-bar"></div>
     <span class="model" id="model-label"></span>
     <span class="session-stats" id="session-stats"></span>
+    <button id="cancel-btn" onclick="cancelAgent()" aria-label="Cancel">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   </div>
 
   <!-- Sidebar -->
@@ -1074,9 +1221,19 @@ body {
     <div id="session-list"></div>
   </div>
 
+  <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
   <!-- Main Chat -->
   <div id="main">
+    <div id="loading-skeleton">
+      <div class="skeleton-bar"></div>
+      <div class="skeleton-bar"></div>
+      <div class="skeleton-bar"></div>
+    </div>
     <div id="messages">
+      <button id="scroll-bottom-btn" onclick="scrollToBottom()" aria-label="Scroll to bottom">
+        <svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
       <div id="empty-state">
         <div id="particles"></div>
         <div id="empty-state-inner">
@@ -1187,6 +1344,10 @@ const statsBar = document.getElementById('stats-bar');
 const sessionListEl = document.getElementById('session-list');
 const sidebarSearch = document.getElementById('sidebar-search');
 const emptyState = document.getElementById('empty-state');
+const cancelBtn = document.getElementById('cancel-btn');
+const scrollBottomBtn = document.getElementById('scroll-bottom-btn');
+const skeletonEl = document.getElementById('loading-skeleton');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
 
 // ── Streaming ──
 let streamBubbleEl = null;
@@ -1332,6 +1493,8 @@ function connect() {
     statusEl.textContent = 'connected';
     sendBtn.disabled = false;
     statsBar.textContent = '';
+    // Hide loading skeleton when connected
+    if (skeletonEl) skeletonEl.classList.remove('visible');
   };
 
   ws.onclose = () => {
@@ -1570,6 +1733,7 @@ function endStream() {
   subagentGroup = null;
   busy = false;
   hideLoading();
+  hideCancel();
   sendBtn.disabled = !ws || ws.readyState !== WebSocket.OPEN;
   promptEl.disabled = false;
   promptEl.focus();
@@ -2044,6 +2208,7 @@ function send() {
   promptEl.disabled = true;
 
   showLoading();
+  showCancel();
 
   ws.send(JSON.stringify({
     type: 'prompt',
@@ -2132,6 +2297,13 @@ attachBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
   handleFiles(fileInput.files);
   fileInput.value = '';
+});
+
+// ── Scroll-to-bottom button visibility ──
+messagesEl.addEventListener('scroll', () => {
+  if (!scrollBottomBtn) return;
+  const atBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < SCROLL_THRESHOLD;
+  scrollBottomBtn.classList.toggle('visible', !atBottom);
 });
 
 // Drag and drop on messages area
@@ -2365,6 +2537,8 @@ async function loadSessions() {
 
 // ── Init ──
 connect();
+// Show skeleton while connecting
+if (skeletonEl) skeletonEl.classList.add('visible');
 loadSessions();
 promptEl.focus();
 
@@ -2384,6 +2558,98 @@ document.addEventListener('keydown', (e) => {
     showToast('Sessions refreshed');
   }
 });
+
+
+// ── Phase 1: Cancel Button ──
+function showCancel() {
+  if (cancelBtn) cancelBtn.classList.add('visible');
+}
+function hideCancel() {
+  if (cancelBtn) cancelBtn.classList.remove('visible');
+}
+window.cancelAgent = function() {
+  fetch('/api/cancel', { method: 'POST' }).catch(function(){});
+  hideCancel();
+  addSystemMessage('⏹ Canceled');
+};
+
+// ── Phase 1: Scroll to Bottom ──
+window.scrollToBottom = function() {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (scrollBottomBtn) scrollBottomBtn.classList.remove('visible');
+};
+
+// ── Phase 1: Sidebar Toggle (mobile) ──
+window.toggleSidebar = function() {
+  var sidebar = document.getElementById('sidebar');
+  if (!sidebar) return;
+  sidebar.classList.toggle('active');
+  if (sidebarOverlay) sidebarOverlay.classList.toggle('active');
+};
+
+// ── Phase 1: Collapse Long Messages ──
+window.toggleCollapse = function(el) {
+  var bubble = el.closest('.bubble');
+  if (!bubble) return;
+  bubble.classList.toggle('expanded');
+  el.textContent = bubble.classList.contains('expanded') ? 'Show less ▲' : 'Show more ▼';
+};
+
+// ── Phase 1: Copy Message ──
+window.copyMessage = function(btn, content) {
+  if (!content) {
+    var bubble = btn.closest('.bubble');
+    if (bubble) {
+      var contentEl = bubble.querySelector('.content');
+      content = contentEl ? contentEl.textContent : '';
+    }
+  }
+  if (!content) return;
+  navigator.clipboard.writeText(content).then(function() {
+    btn.classList.add('copied');
+    btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied';
+    setTimeout(function() {
+      btn.classList.remove('copied');
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    }, 2000);
+  }).catch(function(){});
+};
+
+// ── Phase 1: Add copy buttons to rendered messages ──
+function addCopyButton(bubble) {
+  if (bubble.querySelector('.copy-btn')) return;
+  var btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  btn.title = 'Copy message';
+  btn.onclick = function() { copyMessage(this); };
+  bubble.appendChild(btn);
+}
+
+// ── Phase 1: Collapse long messages after rendering ──
+function checkCollapse(bubble) {
+  var content = bubble.querySelector('.content');
+  if (!content || content.scrollHeight <= 500) return;
+  bubble.classList.add('collapsible');
+  var toggle = document.createElement('div');
+  toggle.className = 'collapse-toggle';
+  toggle.textContent = 'Show more ▼';
+  toggle.onclick = function() { toggleCollapse(this); };
+  bubble.appendChild(toggle);
+}
+
+// Patch addMessage to add copy button and collapse check
+var origAddMessage = addMessage;
+addMessage = function(role, content) {
+  origAddMessage(role, content);
+  var msgs = messagesEl.querySelectorAll('.msg .bubble');
+  if (msgs.length > 0) {
+    var last = msgs[msgs.length - 1];
+    addCopyButton(last);
+    checkCollapse(last);
+  }
+};
+
 
 })();
 </script>

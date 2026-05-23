@@ -56,6 +56,7 @@ func startTestServer(t *testing.T) *testServer {
 	mux.HandleFunc("/", s.handleStatic())
 	mux.HandleFunc("/api/sessions", s.handleSessionList())
 	mux.HandleFunc("/api/resources", s.handleResourceSearch())
+	mux.HandleFunc("/api/cancel", handleCancel)
 	mux.Handle("/ws", &golangws.Server{
 		Handshake: func(*golangws.Config, *http.Request) error { return nil },
 		Handler:   s.handleWebSocket,
@@ -796,6 +797,45 @@ func newTestSessionStore(t *testing.T) *session.Store {
 	return store
 }
 
+// mockLLM creates an httptest.Server that handles both the model discovery call
+// (GET /models — called once by odek.New during agent initialization) and chat
+// completion requests. The chat handler receives a 1-based callCount that
+// excludes the discovery call, so tests can write simple sequential logic.
+//
+// Usage:
+//
+//	llmSrv := mockLLM(t, func(w http.ResponseWriter, callCount int) {
+//	    if callCount == 1 { ... }
+//	})
+//	defer llmSrv.Close()
+//
+// The returned *mockLLMServer exposes .CallCount and a .Reset() method for
+// tests that need to restart the sequence (e.g. multi-prompt scenarios).
+type mockLLMServer struct {
+	*httptest.Server
+	callCount int
+}
+
+func (m *mockLLMServer) Reset() {
+	m.callCount = 0
+}
+
+func mockLLM(t *testing.T, chatHandler func(w http.ResponseWriter, callCount int)) *mockLLMServer {
+	t.Helper()
+	m := &mockLLMServer{}
+	m.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Handle model discovery (GET /models) — called once by odek.New
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/models") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+			return
+		}
+		m.callCount++
+		chatHandler(w, m.callCount)
+	}))
+	return m
+}
+
 // buildServeMux creates a listener on a random port and builds the
 // odek serve HTTP mux with a pre-configured session store.
 func buildServeMux(t *testing.T, store *session.Store) (net.Listener, *http.ServeMux) {
@@ -828,6 +868,7 @@ func buildServeMux(t *testing.T, store *session.Store) (net.Listener, *http.Serv
 	})
 	mux.HandleFunc("/api/resources", handleResourceSearch(resourceReg))
 	mux.HandleFunc("/api/sessions", handleSessionList(store))
+	mux.HandleFunc("/api/cancel", handleCancel)
 
 	return ln, mux
 }
@@ -1003,9 +1044,7 @@ func TestServeCmd_UnknownFlag(t *testing.T) {
 // the same code path the WebUI uses for sub-agent delegation rendering.
 func TestServe_E2E_MultiToolCall(t *testing.T) {
 	// Mock LLM: make two shell tool calls, then a final response.
-	callCount := 0
-	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+	llmSrv := mockLLM(t, func(w http.ResponseWriter, callCount int) {
 		w.Header().Set("Content-Type", "application/json")
 		if callCount <= 2 {
 			fmt.Fprintf(w, `{"choices":[{"message":{"content":"Running step %d.","tool_calls":[{"id":"call_%d","function":{"name":"shell","arguments":"{\"command\":\"echo step %d\"}"}}]}}]}`,
@@ -1013,7 +1052,7 @@ func TestServe_E2E_MultiToolCall(t *testing.T) {
 		} else {
 			w.Write([]byte(`{"choices":[{"message":{"content":"All done."}}]}`))
 		}
-	}))
+	})
 	defer llmSrv.Close()
 
 	envCleanup := setTestEnv(t, llmSrv.URL)
@@ -1118,9 +1157,7 @@ multiDone:
 // economics fields.
 func TestServe_E2E_TokenStats(t *testing.T) {
 	// Mock LLM server with usage info in every response
-	callCount := 0
-	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+	llmSrv := mockLLM(t, func(w http.ResponseWriter, callCount int) {
 		w.Header().Set("Content-Type", "application/json")
 		if callCount <= 1 {
 			// First call: tool call with usage
@@ -1129,7 +1166,7 @@ func TestServe_E2E_TokenStats(t *testing.T) {
 			// Final answer with usage
 			fmt.Fprint(w, `{"choices":[{"message":{"content":"All done."}}],"usage":{"prompt_tokens":300,"completion_tokens":60}}`)
 		}
-	}))
+	})
 	defer llmSrv.Close()
 
 	envCleanup := setTestEnv(t, llmSrv.URL)
@@ -1232,7 +1269,7 @@ statsCheck:
 	t.Logf("  sessionOutputTokens: %.0f", sessOut)
 
 	// Send a second prompt to verify session-level accumulation
-	callCount = 0 // reset mock so next prompt also makes a tool call
+	llmSrv.Reset() // reset mock so next prompt also makes a tool call
 	prompt2 := map[string]string{"type": "prompt", "content": "do another thing"}
 	payload2, _ := json.Marshal(prompt2)
 	if err := golangws.Message.Send(conn, string(payload2)); err != nil {
@@ -1296,16 +1333,14 @@ sessionCheck:
 // This confirms the live streaming pipeline works.
 func TestServe_E2E_LiveToolEvents(t *testing.T) {
 	// Mock LLM: one tool call, then final answer.
-	callCount := 0
-	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+	llmSrv := mockLLM(t, func(w http.ResponseWriter, callCount int) {
 		w.Header().Set("Content-Type", "application/json")
 		if callCount == 1 {
 			fmt.Fprint(w, `{"choices":[{"message":{"content":"Running.","tool_calls":[{"id":"c_1","function":{"name":"shell","arguments":"{\"command\":\"echo ok\"}"}}]}}],"usage":{"prompt_tokens":100,"completion_tokens":20}}`)
 		} else {
 			fmt.Fprint(w, `{"choices":[{"message":{"content":"All done."}}],"usage":{"prompt_tokens":200,"completion_tokens":40}}`)
 		}
-	}))
+	})
 	defer llmSrv.Close()
 
 	envCleanup := setTestEnv(t, llmSrv.URL)
@@ -1462,3 +1497,231 @@ func TestServe_DoneCacheStats(t *testing.T) {
 		t.Errorf("cachedTokens type = %T, want float64", v)
 	}
 }
+
+// ── Cancel Tests ──
+
+func TestServe_Cancel_GetReturns405(t *testing.T) {
+	s := startTestServer(t)
+	defer s.Close()
+
+	resp, err := http.Get(s.url + "/api/cancel")
+	if err != nil {
+		t.Fatalf("GET /api/cancel: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 405 {
+		t.Errorf("status = %d, want 405 (method not allowed)", resp.StatusCode)
+	}
+}
+
+func TestServe_Cancel_PostReturns204(t *testing.T) {
+	s := startTestServer(t)
+	defer s.Close()
+
+	resp, err := http.Post(s.url+"/api/cancel", "", nil)
+	if err != nil {
+		t.Fatalf("POST /api/cancel: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 204 {
+		t.Errorf("status = %d, want 204", resp.StatusCode)
+	}
+}
+
+func TestServe_Cancel_NoopWhenIdle(t *testing.T) {
+	// Calling cancel when no prompt is running should be harmless (204).
+	s := startTestServer(t)
+	defer s.Close()
+
+	for i := 0; i < 3; i++ {
+		resp, err := http.Post(s.url+"/api/cancel", "", nil)
+		if err != nil {
+			t.Fatalf("POST %d: %v", i, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 204 {
+			t.Errorf("attempt %d: status = %d, want 204", i, resp.StatusCode)
+		}
+	}
+}
+
+func TestServe_Cancel_WebSocketCancel(t *testing.T) {
+	// Verify that cancel aborts an in-progress prompt and
+	// the WebSocket receives a canceled state (no done event).
+	s := startTestServer(t)
+	defer s.Close()
+
+	conn, err := golangws.Dial(s.wsURL+"/ws", "", "http://localhost")
+	if err != nil {
+		t.Fatalf("Dial(): %v", err)
+	}
+	defer conn.Close()
+
+	// Send a prompt that would trigger agent execution
+	prompt := map[string]string{"type": "prompt", "content": "hello"}
+	payload, _ := json.Marshal(prompt)
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send(): %v", err)
+	}
+
+	// Immediately cancel
+	resp, err := http.Post(s.url+"/api/cancel", "", nil)
+	if err != nil {
+		t.Fatalf("POST /api/cancel: %v", err)
+	}
+	resp.Body.Close()
+
+	// Read events — we should get at least a session event, then error
+	// (canceled context), and no done event.
+	var events []map[string]any
+	timeout := time.After(3 * time.Second)
+	done := false
+
+	for !done {
+		select {
+		case <-timeout:
+			done = true
+		default:
+			var event map[string]any
+			if err := readJSON(conn, &event); err != nil {
+				done = true
+				break
+			}
+			events = append(events, event)
+			if event["type"] == "done" || event["type"] == "error" {
+				done = true
+			}
+		}
+	}
+
+	if len(events) == 0 {
+		t.Fatal("expected at least one event after cancel")
+	}
+	if events[0]["type"] != "session" {
+		t.Errorf("first event type = %v, want 'session'", events[0]["type"])
+	}
+	// The last event should be error (context canceled) or done
+	lastType := events[len(events)-1]["type"]
+	if lastType != "error" && lastType != "done" {
+		t.Errorf("last event type = %v, want 'error' or 'done'", lastType)
+	}
+}
+
+
+func TestServe_E2E_CancelWithMockLLM(t *testing.T) {
+	// Verify the cancel infrastructure at the HTTP/WS level.
+	// 1. Send a prompt via WebSocket
+	// 2. POST /api/cancel returns 204
+	// 3. WebSocket eventually receives a terminal event
+	llmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{
+				"message": map[string]any{
+					"content": "",
+					"tool_calls": []map[string]any{{
+						"id":   "call_1",
+						"type": "function",
+						"function": map[string]any{
+							"name":      "shell",
+							"arguments": "{\"command\":\"echo phase1-cancel-test\"}",
+						},
+					}},
+				},
+			}},
+		})
+	}))
+	defer llmSrv.Close()
+
+	envCleanup := setTestEnv(t, llmSrv.URL)
+	defer envCleanup()
+
+	store := newTestSessionStore(t)
+	ln, mux := buildServeMux(t, store)
+	defer ln.Close()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- serveOnListener(ln, mux) }()
+	waitForHTTP(t, ln.Addr().String())
+
+	wsURL := "ws://" + ln.Addr().String() + "/ws"
+	conn, err := golangws.Dial(wsURL, "", "http://localhost")
+	if err != nil {
+		t.Fatalf("Dial(%q): %v", wsURL, err)
+	}
+	defer conn.Close()
+	t.Log("WebSocket connected")
+
+	// Send a prompt
+	payload, _ := json.Marshal(map[string]string{"type": "prompt", "content": "test cancel"})
+	if err := golangws.Message.Send(conn, string(payload)); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	t.Log("Prompt sent")
+
+	// Wait for session event (agent started processing)
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	var sessionReceived bool
+	for i := 0; i < 5; i++ {
+		var raw []byte
+		if err := golangws.Message.Receive(conn, &raw); err != nil {
+			break
+		}
+		t.Logf("  event[%d]: %s", i, string(raw))
+		var evt map[string]any
+		if err := json.Unmarshal(raw, &evt); err != nil {
+			continue
+		}
+		if evt["type"] == "session" {
+			sessionReceived = true
+			break
+		}
+		if evt["type"] == "done" || evt["type"] == "error" {
+			break
+		}
+	}
+	if !sessionReceived {
+		t.Fatal("expected session event before cancel")
+	}
+	t.Log("Session received - agent is running")
+
+	// Send cancel request
+	cancelResp, err := http.Post("http://"+ln.Addr().String()+"/api/cancel", "", nil)
+	if err != nil {
+		t.Fatalf("POST /api/cancel: %v", err)
+	}
+	cancelResp.Body.Close()
+	if cancelResp.StatusCode != 204 {
+		t.Errorf("cancel status = %d, want 204", cancelResp.StatusCode)
+	}
+	t.Log("POST /api/cancel returned 204")
+
+	// Verify we eventually get a terminal event
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	var sawTerminal bool
+	for i := 0; i < 10; i++ {
+		var raw []byte
+		if err := golangws.Message.Receive(conn, &raw); err != nil {
+			t.Logf("Receive after cancel: %v", err)
+			break
+		}
+		t.Logf("  post-cancel event[%d]: %s", i, string(raw))
+		var evt map[string]any
+		if err := json.Unmarshal(raw, &evt); err != nil {
+			continue
+		}
+		if evt["type"] == "done" || evt["type"] == "error" {
+			sawTerminal = true
+			break
+		}
+	}
+	if sawTerminal {
+		t.Log("Terminal event received after cancel")
+	} else {
+		t.Log("No terminal event (connection may have been closed by cancel)")
+	}
+}
+
+

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/BackendStack21/kode"
@@ -25,6 +26,10 @@ import (
 
 //go:embed ui/index.html
 var uiFS embed.FS
+
+// currentPromptCancel holds the cancel function for the currently executing
+// prompt. Used by the POST /api/cancel endpoint to abort a running agent.
+var currentPromptCancel atomic.Value
 
 // ── Serve Command ───────────────────────────────────────────────────────
 
@@ -122,6 +127,7 @@ func serveCmd(args []string) error {
 	mux.HandleFunc("/api/resources", handleResourceSearch(resourceReg))
 	mux.HandleFunc("/api/sessions", handleSessionList(store))
 	mux.HandleFunc("/api/sessions/", handleSessionDelete(store))
+	mux.HandleFunc("/api/cancel", handleCancel)
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -396,7 +402,16 @@ func handleWS(store *session.Store, resources *resource.Registry, resolved confi
 		}
 
 		// Run prompt — passes the persistent agent for buffer continuity
-		currentSession = handlePrompt(ctx, conn, store, resources, resolved, agent, currentSession, msg.Content, msg.SessionID, &sessionInputTokens, &sessionOutputTokens)
+		// Create a cancelable context for this prompt (so POST /api/cancel can abort it)
+		promptCtx, promptCancel := context.WithCancel(ctx)
+		currentPromptCancel.Store(promptCancel)
+
+		currentSession = handlePrompt(promptCtx, conn, store, resources, resolved, agent, currentSession, msg.Content, msg.SessionID, &sessionInputTokens, &sessionOutputTokens)
+
+		// Clear cancel on completion — the prompt is no longer running
+		// Use a no-op sentinel to avoid atomic.Value panicking on nil store
+		currentPromptCancel.Store(context.CancelFunc(func() {}))
+		promptCancel()
 	}
 
 	// WebSocket disconnected — extract episode if enough turns
@@ -685,6 +700,23 @@ func handleSessionDelete(store *session.Store) http.HandlerFunc {
 
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// handleCancel cancels the currently running prompt, if any.
+// POST /api/cancel — cancels the current agent execution.
+func handleCancel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if f := currentPromptCancel.Load(); f != nil {
+		if cancel, ok := f.(context.CancelFunc); ok {
+			cancel()
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ── Static Handler ─────────────────────────────────────────────────────
