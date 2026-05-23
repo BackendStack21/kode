@@ -40,8 +40,8 @@ func TestConfigDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if agent.config.Model != "deepseek-chat" {
-		t.Errorf("default model = %q, want %q", agent.config.Model, "deepseek-chat")
+	if agent.config.Model != "deepseek-v4-flash" {
+		t.Errorf("default model = %q, want %q", agent.config.Model, "deepseek-v4-flash")
 	}
 }
 

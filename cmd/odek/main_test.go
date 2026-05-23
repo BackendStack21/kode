@@ -1337,10 +1337,19 @@ func TestParseReplFlags_ExtraArgsIgnored(t *testing.T) {
 // multiTurnServer returns an httptest server that simulates a multi-turn
 // conversation: n terminal tool calls followed by a final text response.
 // Each tool call executes echo step N (safe, no side effects).
+// Handles /models discovery requests from llm.DiscoverModelContext.
 func multiTurnServer(t *testing.T, terminalCalls int) *httptest.Server {
 	t.Helper()
 	callCount := 0
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Handle /models discovery from llm.DiscoverModelContext
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-v4-flash","context_window":131072}]}`))
+			return
+		}
+
 		callCount++
 		w.Header().Set("Content-Type", "application/json")
 		if callCount <= terminalCalls {
