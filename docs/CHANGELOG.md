@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.34.0 (2026-05-23) — secrets.env Auto-Load + File Attachments
+
+### Secrets Management
+- **`~/.odek/secrets.env` auto-loaded** as Layer 0 in the config priority chain — parsed before any config file or env var lookup
+- No more plaintext secrets in `config.json` — use `"api_key": "${ODEK_API_KEY}"` with the value in `secrets.env`
+- Supports `KEY=VALUE` lines, `#` comments, blank lines, and does NOT overwrite existing env vars
+- Missing/unreadable file is silently ignored
+
+### Telegram File Attachments
+- **`sendMedia`** now falls back to `SendDocument` for unknown media types (zip, csv, pdf, etc.)
+- **System prompt** now explicitly instructs the agent about file attachment:
+  - `send_message` tool with `file` parameter for intermediate replies
+  - `MEDIA:document:/path` in final answers for native file delivery
+
+### Domain Migration
+- All `kode.21no.de` → `odek.21no.de` references (defaultSystem, Quick Facts, RuntimeContext)
+
+---
+
 ## v0.33.2 (2026-05-23) — Narrator Integration Complete
 
 ### Telegram Engaging Mode

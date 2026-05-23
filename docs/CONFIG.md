@@ -7,11 +7,19 @@
 Each layer overrides the one below it. Unset fields inherit from the layer below:
 
 ```
-1.  ~/.odek/config.json    ← Global defaults (shared across projects)
-2.  ./odek.json           ← Project-specific overrides
-3.  ODEK_* env vars       ← Runtime/environment overrides
-4.  CLI flags             ← Explicit invocation (highest priority)
+0.  ~/.odek/secrets.env     ← Auto-loaded into process environment on startup
+1.  ~/.odek/config.json     ← Global defaults (shared across projects)
+2.  ./odek.json             ← Project-specific overrides
+3.  ODEK_* env vars         ← Runtime/environment overrides
+4.  CLI flags               ← Explicit invocation (highest priority)
 ```
+
+Layer 0 is unique: it does not hold config fields directly. Instead it injects
+`KEY=VALUE` pairs into the process environment so they're available for:
+
+- **Layer 1–2** `${VAR}` substitution in config files
+- **Layer 3** `ODEK_*` env var lookups (e.g. `ODEK_API_KEY`)
+- **Legacy fallbacks** like `DEEPSEEK_API_KEY` / `OPENAI_API_KEY`
 
 ## Config files
 
@@ -47,6 +55,33 @@ Same schema as global. Only set the fields you want to override:
 ```
 
 Both files are optional. Missing files are silently ignored. String values support `${VAR}` environment variable substitution — useful for API keys without plaintext storage.
+
+## Secrets file (`~/.odek/secrets.env`)
+
+Auto-loaded on every `odek` invocation before any config file or env var is read.
+Each `KEY=VALUE` line is injected into the process environment via `os.Setenv`.
+
+```
+ODEK_API_KEY=sk-...
+GITHUB_TOKEN=ghp_...
+```
+
+Rules:
+- **File format:** `KEY=VALUE` — one per line, no `export` keyword needed
+- **Blank lines and `#` comments** are skipped
+- **Existing env vars are NOT overwritten** — if `ODEK_API_KEY` is already in the environment, the file is ignored for that key
+- **Missing/unreadable file** is silently ignored (not an error)
+- **Permissions:** keep `0600` (`chmod 600 ~/.odek/secrets.env`)
+
+This lets you keep secrets out of config files entirely:
+
+```json
+// ~/.odek/config.json — no plaintext secrets
+{
+  "model": "deepseek-v4-flash",
+  "api_key": "${ODEK_API_KEY}"      // ← resolved from secrets.env at runtime
+}
+```
 
 ## Environment variables
 
@@ -241,8 +276,9 @@ odek init --force
 ## Quick examples
 
 ```bash
-# Set API key via environment variable (recommended — keeps secrets out of config files)
-export ODEK_API_KEY="sk-..."
+# Set API key via secrets.env (recommended — keeps secrets out of config files)
+echo 'ODEK_API_KEY="sk-..."' >> ~/.odek/secrets.env
+chmod 600 ~/.odek/secrets.env
 
 # Global config (model and other settings only, no secrets)
 echo '{"model": "deepseek-v4-flash"}' > ~/.odek/config.json
