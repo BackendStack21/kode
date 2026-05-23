@@ -47,10 +47,11 @@ func replCmd(args []string) error {
 
 	// Resolve config (before session creation so Session.Sandbox is set)
 	resolved := config.LoadConfig(config.CLIFlags{
-		Model:    f.Model,
-		Thinking: f.Thinking,
-		Sandbox:  f.Sandbox,
-		PromptCaching: f.PromptCaching,
+		Model:           f.Model,
+		Thinking:        f.Thinking,
+		Sandbox:         f.Sandbox,
+		PromptCaching:   f.PromptCaching,
+		InteractionMode: f.InteractionMode,
 
 		SandboxImage:    f.SandboxImage,
 		SandboxNetwork:  f.SandboxNetwork,

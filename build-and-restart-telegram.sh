@@ -49,7 +49,7 @@ KILLED=false
 while IFS= read -r pid; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
         echo "   Killing odek telegram (PID $pid)..."
-        kill "$pid" 2>/dev/null || true
+        kill -HUP "$pid" 2>/dev/null || true
         KILLED=true
     fi
 done < <(pgrep -f "odek telegram" 2>/dev/null || true)

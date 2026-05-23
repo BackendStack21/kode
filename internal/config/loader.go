@@ -66,6 +66,11 @@ type CLIFlags struct {
 
 	// GithubRepoUrl is the HTTPS URL of the project's GitHub repository.
 	GithubRepoUrl string
+
+	// InteractionMode controls how tool-call progress is surfaced.
+	// "engaging" (default) = LLM-narrated, emoji-rich explanations.
+	// "verbose" = raw tool names, args, and results.
+	InteractionMode string
 }
 
 // SkillsConfig holds the skills configuration section from JSON files.
@@ -152,6 +157,11 @@ type FileConfig struct {
 	// upstream repo for PRs, issues, and documentation links.
 	// Config: github_repo_url, ODEK_GITHUB_REPO_URL.
 	GithubRepoUrl string `json:"github_repo_url,omitempty"`
+
+	// InteractionMode controls how the agent communicates tool/progress updates.
+	// "engaging" (default) = LLM-narrated, emoji-rich explanations.
+	// "verbose" = raw tool names, args, and results.
+	InteractionMode string `json:"interaction_mode,omitempty"`
 }
 
 // ResolvedConfig is the fully merged result. Every field has a concrete
@@ -237,6 +247,10 @@ type ResolvedConfig struct {
 
 	// GithubRepoUrl is the HTTPS URL of the project's GitHub repository.
 	GithubRepoUrl string
+
+	// InteractionMode is the resolved interaction style.
+	// "engaging" (default) or "verbose".
+	InteractionMode string
 }
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -437,6 +451,11 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		cfg.GithubRepoUrl = v
 	}
 
+	// InteractionMode env var
+	if v := envString("INTERACTION_MODE"); v != "" {
+		cfg.InteractionMode = v
+	}
+
 	// Telegram env overrides: merge env vars on top of file config.
 	baseTelegram := telegram.DefaultConfig()
 	if cfg.Telegram != nil {
@@ -503,6 +522,9 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 	if cli.GithubRepoUrl != "" {
 		cfg.GithubRepoUrl = cli.GithubRepoUrl
 	}
+	if cli.InteractionMode != "" {
+		cfg.InteractionMode = cli.InteractionMode
+	}
 
 	// Build resolved config with concrete values
 	resolved := ResolvedConfig{
@@ -527,6 +549,7 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		Telegram:       resolveTelegram(cfg.Telegram),
 		GithubRepoDirectory: cfg.GithubRepoDirectory,
 		GithubRepoUrl:       cfg.GithubRepoUrl,
+		InteractionMode:     ifZero(cfg.InteractionMode, "engaging"),
 	}
 
 	// MaxConcurrency: default to 3 if not set

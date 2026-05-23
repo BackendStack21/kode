@@ -403,11 +403,12 @@ done:
 // Same resolution model as runFlags: zero/nil = not set,
 // config loader merges file → env → CLI.
 type replFlags struct {
-	ID       string // session ID to resume
-	Model    string
-	Thinking string
-	Sandbox  *bool // nil = not set
-	PromptCaching *bool // nil = not set; true = enable prompt caching
+	ID              string // session ID to resume
+	Model           string
+	Thinking        string
+	Sandbox         *bool // nil = not set
+	PromptCaching   *bool // nil = not set; true = enable prompt caching
+	InteractionMode string
 
 	// Sandbox-specific CLI flags
 	SandboxImage    string
@@ -473,6 +474,9 @@ func parseReplFlags(args []string) (replFlags, error) {
 		case "--prompt-caching":
 			f.PromptCaching = boolPtr(true)
 			i++
+		case "--interaction-mode":
+			f.InteractionMode = args[i+1]
+			i += 2
 		default:
 			// Unrecognized flag or positional — skip it
 			i++

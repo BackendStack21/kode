@@ -326,17 +326,51 @@ The package defines Telegram API types used throughout:
 
 The bot writes its PID to `~/.odek/telegram.pid` on startup. If a stale PID file exists from a previous instance, the new process kills it (SIGTERM → 5s grace → SIGKILL) before taking over. This prevents 409 Conflict errors from dual polling.
 
-### Spawn+Exit Restart
+### Graceful Restart
 
-Restarts use spawn+exit instead of in-place `execve`:
+Restarts use a **three-phase graceful shutdown** before spawning a child process:
 
 ```
-SIGHUP → writeRestartMarker() → spawnChild() → os.Exit(0)
-                                          ↓
-                           child acquireLock() kills parent
-                           child gets fresh HTTP/2 connections
-                           child starts polling Telegram
+Phase 1: NOTIFY + CANCEL          Phase 2: BOUNDED DRAIN       Phase 3: SPAWN + EXIT
+┌─────────────────────────┐       ┌──────────────────────┐     ┌──────────────────────┐
+│ Set restart flag        │       │ activeTaskWG.Wait()  │     │ writeRestartMarker()  │
+│ Iterate active chats:   │  ──►  │   with 15s timeout   │ ──► │   (with active chat   │
+│   • Send "restarting"   │       │   (or all done)      │     │    IDs)               │
+│   • Cancel ctx          │       │                      │     │ spawnChild()          │
+└─────────────────────────┘       └──────────────────────┘     │ os.Exit(0)            │
+                                                                └──────────────────────┘
 ```
+
+The restart is triggered by:
+- **`/restart` command** — sends `SIGHUP` to self
+- **`SIGHUP` signal** — external `kill -HUP <pid>`
+- **`build-and-restart-telegram.sh`** — sends `SIGHUP`, waits for old process to exit
+
+During restart:
+
+1. **Active tasks are notified** — each chat with a running agent receives "🔄 Bot restarting — your current task was interrupted." The message includes a prompt to use `/new` after restart.
+
+2. **Agent contexts are cancelled** — the same cancel mechanism used by `/stop`. Each agent loop's `RunWithMessages` returns with `context.Canceled`, the partial session is saved, and the goroutine exits cleanly.
+
+3. **New messages are rejected** — any message arriving while restart is in progress gets "⏳ Bot is restarting — please try again in a few seconds." The message is not lost (it remains in the Telegram server).
+
+4. **Bounded drain** — the process waits up to 15 seconds for all agent goroutines to finish. If a task is stuck (e.g., a long HTTP call that ignores context), the child process takes over and the parent is killed by the singleton lock.
+
+5. **Post-restart notification** — when the new instance starts, it reads the restart marker file and sends "🔄 Bot restarted" to each chat that was active during the restart.
+
+### Spawn+Exit Mechanism
+
+The actual process handoff uses the same spawn+exit mechanism:
+
+```
+SIGHUP → gracefulRestart() → writeRestartMarker() → spawnChild() → os.Exit(0)
+                                                                   ↓
+                                                child acquireLock() kills parent
+                                                child gets fresh HTTP/2 connections
+                                                child starts polling Telegram
+```
+
+The child process inherits environment variables and command-line arguments. `acquireLock` ensures the old process is dead before the new one starts polling. The restart marker at `~/.odek/restart.json` carries the list of chat IDs that had active agent runs.
 
 This avoids binary overwrite races, stale HTTP/2 connections, and session context loops that plagued `syscall.Exec`. The restart marker (`~/.odek/restart.json`) enables the new instance to notify users that a restart occurred.
 

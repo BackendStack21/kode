@@ -176,6 +176,15 @@ func (r *Renderer) Thinking(text string) {
 	fmt.Fprintln(r.w, r.style(dim+italic, "🧠 "+text))
 }
 
+// NarratorMessage prints an engaging, human-friendly narration line.
+// Used in "engaging" interaction mode instead of raw tool call output.
+func (r *Renderer) NarratorMessage(msg string) {
+	if r.disable() || msg == "" {
+		return
+	}
+	fmt.Fprintf(r.w, "%s\n", r.style(magenta, "💬 "+msg))
+}
+
 // toolEmoji returns an emoji that visually signals the tool category.
 // Each tool gets an icon matching its domain so users can scan tool traces
 // at a glance without reading every label.

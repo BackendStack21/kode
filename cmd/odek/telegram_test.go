@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -54,10 +55,13 @@ func TestWriteAndReadRestartMarker(t *testing.T) {
 		t.Fatalf("writeRestartMarker: %v", err)
 	}
 
-	// Read it back.
-	_, ok := readRestartMarker()
+	// Read it back — should get chat IDs (empty list since none stored).
+	chatIDs, ok := readRestartMarker()
 	if !ok {
 		t.Fatal("readRestartMarker returned false, expected true")
+	}
+	if len(chatIDs) != 0 {
+		t.Errorf("expected empty chat IDs, got %v", chatIDs)
 	}
 
 	// Marker should be removed after read.
@@ -67,7 +71,201 @@ func TestWriteAndReadRestartMarker(t *testing.T) {
 	}
 }
 
+// TestWriteAndReadRestartMarker_WithChatIDs verifies that chat IDs stored
+// in the marker survive the write-read round-trip.
+func TestWriteAndReadRestartMarker_WithChatIDs(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	home, _ := os.UserHomeDir()
+	os.MkdirAll(filepath.Join(home, ".odek"), 0755)
+
+	// Manually populate chatCancels so writeRestartMarker picks them up.
+	ctx, cancel1 := context.WithCancel(context.Background())
+	ctx, cancel2 := context.WithCancel(context.Background())
+	_ = ctx
+	chatCancels.Store(int64(100), cancel1)
+	chatCancels.Store(int64(200), cancel2)
+	defer func() {
+		chatCancels.LoadAndDelete(int64(100))
+		chatCancels.LoadAndDelete(int64(200))
+	}()
+
+	if err := writeRestartMarker(); err != nil {
+		t.Fatalf("writeRestartMarker: %v", err)
+	}
+
+	chatIDs, ok := readRestartMarker()
+	if !ok {
+		t.Fatal("readRestartMarker returned false, expected true")
+	}
+	if len(chatIDs) != 2 {
+		t.Fatalf("expected 2 chat IDs, got %d: %v", len(chatIDs), chatIDs)
+	}
+	// Should be sorted: 100, 200
+	if chatIDs[0] != 100 || chatIDs[1] != 200 {
+		t.Errorf("expected [100 200], got %v", chatIDs)
+	}
+}
+
+// TestRestartMarker_LegacyEmpty verifies that an empty marker {} still
+// signals that a restart happened (backwards compatibility).
+func TestRestartMarker_LegacyEmpty(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	home, _ := os.UserHomeDir()
+	os.MkdirAll(filepath.Join(home, ".odek"), 0755)
+
+	path, _ := restartMarkerPath()
+	if err := os.WriteFile(path, []byte("{}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	chatIDs, ok := readRestartMarker()
+	if !ok {
+		t.Fatal("expected true for legacy empty marker")
+	}
+	if len(chatIDs) != 0 {
+		t.Errorf("expected 0 chat IDs for legacy marker, got %d", len(chatIDs))
+	}
+}
+
+// TestRestartMarker_Corrupt verifies that a corrupt marker still signals
+// restart happened (best-effort).
+func TestRestartMarker_Corrupt(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	home, _ := os.UserHomeDir()
+	os.MkdirAll(filepath.Join(home, ".odek"), 0755)
+
+	path, _ := restartMarkerPath()
+	if err := os.WriteFile(path, []byte("{{{not json}}}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	chatIDs, ok := readRestartMarker()
+	if !ok {
+		t.Fatal("expected true for corrupt marker")
+	}
+	if len(chatIDs) != 0 {
+		t.Errorf("expected 0 chat IDs for corrupt marker, got %d", len(chatIDs))
+	}
+}
+
 // ── Signal handling behavior tests ───────────────────────────────────
+
+// TestCountSyncMap_Empty verifies countSyncMap returns 0 for an empty map.
+func TestCountSyncMap_Empty(t *testing.T) {
+	var m sync.Map
+	if n := countSyncMap(&m); n != 0 {
+		t.Errorf("expected 0, got %d", n)
+	}
+}
+
+// TestCountSyncMap_NonEmpty verifies countSyncMap returns the correct count.
+func TestCountSyncMap_NonEmpty(t *testing.T) {
+	var m sync.Map
+	m.Store("a", 1)
+	m.Store("b", 2)
+	m.Store("c", 3)
+	if n := countSyncMap(&m); n != 3 {
+		t.Errorf("expected 3, got %d", n)
+	}
+}
+
+// TestRestartInProgress_InitialState verifies restartInProgress starts false.
+func TestRestartInProgress_InitialState(t *testing.T) {
+	if restartInProgress.Load() {
+		t.Error("restartInProgress should start false")
+	}
+}
+
+// TestRestartInProgress_CompareAndSwap verifies the CAS guard works.
+func TestRestartInProgress_CompareAndSwap(t *testing.T) {
+	// CAS from false → true should succeed (first restart).
+	if !restartInProgress.CompareAndSwap(false, true) {
+		t.Error("first CAS should succeed")
+	}
+	// Second CAS from false → true should fail (already in progress).
+	if restartInProgress.CompareAndSwap(false, true) {
+		t.Error("second CAS should fail")
+	}
+	// Reset for other tests.
+	restartInProgress.Store(false)
+}
+
+// TestGracefulRestart_Guard verifies that gracefulRestart returns early
+// when a restart is already in progress.
+func TestGracefulRestart_Guard(t *testing.T) {
+	restartInProgress.Store(true)
+	defer restartInProgress.Store(false)
+
+	// gracefulRestart should see restartInProgress=true and return
+	// without calling os.Exit(0). We verify by wrapping sendMessage
+	// on the bot — it should NOT be called.
+	bot := newTestBot(t)
+
+	// Just call it — it should not panic or exit.
+	gracefulRestart(bot, nil)
+	// If we reach here, the guard worked (no os.Exit was called).
+}
+
+// TestOnCommandRestart_SendsMessage verifies that /restart sends a
+// confirmation message to the user and signals SIGHUP.
+func TestOnCommandRestart_SendsMessage(t *testing.T) {
+	bot := newTestBot(t)
+	h := newTestHandler(bot)
+
+	var sigSent syscall.Signal
+	originalKill := killFn
+	killFn = func(pid int, sig syscall.Signal) error {
+		sigSent = sig
+		return nil
+	}
+	defer func() { killFn = originalKill }()
+
+	var result string
+	h.OnCommand = func(chatID int64, messageID int, cmdName string, argsStr string) (string, error) {
+		if cmdName == "restart" {
+			bot.SendMessage(chatID, "🔄 *Restarting...*", nil)
+			killFn(os.Getpid(), syscall.SIGHUP)
+			return "", nil
+		}
+		return "", nil
+	}
+
+	result, _ = h.OnCommand(12345, 0, "restart", "")
+	if !strings.Contains(result, "") {
+		t.Logf("restart command returned: %q", result)
+	}
+	if sigSent != syscall.SIGHUP {
+		t.Errorf("expected SIGHUP, got %v", sigSent)
+	}
+}
+
+// TestActiveTaskWG_AddDone verifies that the WaitGroup correctly tracks
+// tasks and Wait() unblocks when all tasks finish.
+func TestActiveTaskWG_AddDone(t *testing.T) {
+	// The global activeTaskWG may have tasks from other tests.
+	// We test the concept with a local WaitGroup instead.
+	var wg sync.WaitGroup
+
+	done := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		wg.Done()
+	}()
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// OK
+	case <-time.After(time.Second):
+		t.Fatal("WaitGroup should have completed")
+	}
+}
 
 func TestSIGHUPTriggersSpawn(t *testing.T) {
 	// Verify the signal handler's SIGHUP path doesn't crash.

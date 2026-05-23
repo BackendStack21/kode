@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/kode/internal/narrate"
 	"github.com/BackendStack21/kode/internal/redact"
 	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/tool"
@@ -64,6 +65,10 @@ type Engine struct {
 	episodeCtx   EpisodeContextFunc // optional: per-turn episode search
 
 	toolEventHandler ToolEventHandler // optional: fires during tool execution
+
+	// narrator produces engaging, human-friendly progress messages
+	// instead of raw tool call output. nil = verbose mode (default).
+	narrator *narrate.Narrator
 
 	// iterationCallback is an optional callback fired after each iteration.
 	iterationCallback IterationCallback
@@ -137,6 +142,10 @@ func (e *Engine) SetMemoryPromptFunc(fn func() string) {
 
 // SetToolEventHandler sets the optional tool event callback for live streaming.
 func (e *Engine) SetToolEventHandler(cb ToolEventHandler) { e.toolEventHandler = cb }
+
+// SetNarrator sets the optional narrator for engaging mode.
+// When nil (the default), tools render in verbose mode via the Renderer.
+func (e *Engine) SetNarrator(n *narrate.Narrator) { e.narrator = n }
 
 // SetIterationCallback sets the iteration progress callback.
 // If nil, no callback is fired.
@@ -523,7 +532,14 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 		}
 
 		// Render the model's thinking (reasoning before tool calls)
-		if e.renderer != nil && result.Content != "" {
+		// In engaging mode, narrate the thinking; in verbose mode, show raw content.
+		if e.narrator != nil && result.Content != "" {
+			if msg := e.narrator.ThinkingMessage(result.Content); msg != "" {
+				if e.renderer != nil {
+					e.renderer.NarratorMessage(msg)
+				}
+			}
+		} else if e.renderer != nil && result.Content != "" {
 			e.renderer.Thinking(result.Content)
 		}
 
@@ -540,7 +556,15 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 		toolNames := make([]string, 0, len(result.ToolCalls))
 		for _, tc := range result.ToolCalls {
 			toolNames = append(toolNames, tc.Function.Name)
-			if e.renderer != nil {
+
+			// Render tool call: engaging mode uses narrator, verbose mode uses renderer.
+			if e.narrator != nil {
+				if msg := e.narrator.ToolCallMessage(tc.Function.Name, tc.Function.Arguments); msg != "" {
+					if e.renderer != nil {
+						e.renderer.NarratorMessage(msg)
+					}
+				}
+			} else if e.renderer != nil {
 				e.renderer.ToolCall(tc.Function.Name, tc.Function.Arguments)
 			}
 			if e.toolEventHandler != nil {
@@ -558,7 +582,8 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 				}
 			}
 
-			if e.renderer != nil {
+			// Tool results: only shown in verbose mode.
+			if e.narrator == nil && e.renderer != nil {
 				e.renderer.ToolResult(output)
 			}
 			if e.toolEventHandler != nil {

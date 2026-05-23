@@ -136,6 +136,8 @@ func stopHandler(args string) (string, error) {
 func modeHandler(args string) (string, error) {
 	return "⚙️ *Agent Modes*\n\n" +
 		"Modes are set at startup via `odek.json` or CLI flags:\n" +
+		"• `interaction_mode: engaging` — emoji-rich narration (default)\n" +
+		"• `interaction_mode: verbose` — raw tool call output\n" +
 		"• `sandbox: true` — run in Docker isolation\n" +
 		"• `skills.verbose: true` — show skill learning details\n\n" +
 		"Restart the bot after changing config.", nil

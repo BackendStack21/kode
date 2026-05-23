@@ -241,19 +241,20 @@ func newServeAgent(resolved config.ResolvedConfig, system string, sendFn func(v 
 	}
 
 	agent, err := odek.New(odek.Config{
-		Model:          resolved.Model,
-		BaseURL:        resolved.BaseURL,
-		APIKey:         resolved.APIKey,
-		MaxIterations:  resolved.MaxIter,
-		SystemMessage:  system,
-		NoProjectFile:  resolved.NoAgents,
-		Thinking:       resolved.Thinking,
-		Tools:          tools,
-		SandboxCleanup: sandboxCleanup,
-		Renderer:       nil, // silent — we stream via WebSocket
-		Skills:         &resolved.Skills,
-		SkillManager:   sm,
-		MemoryConfig:   resolved.Memory,
+		Model:           resolved.Model,
+		BaseURL:         resolved.BaseURL,
+		APIKey:          resolved.APIKey,
+		MaxIterations:   resolved.MaxIter,
+		SystemMessage:   system,
+		NoProjectFile:   resolved.NoAgents,
+		Thinking:        resolved.Thinking,
+		InteractionMode: resolved.InteractionMode,
+		Tools:           tools,
+		SandboxCleanup:  sandboxCleanup,
+		Renderer:        nil, // silent — we stream via WebSocket
+		Skills:          &resolved.Skills,
+		SkillManager:    sm,
+		MemoryConfig:    resolved.Memory,
 		ToolEventHandler: func(event, name, data string) {
 			sendFn(map[string]any{
 				"type":  event,

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -42,6 +45,25 @@ var chatRunInfos sync.Map // map[int64]loop.IterationInfo
 // awaiting user approval via inline keyboard callbacks.
 var pendingSuggestions sync.Map // map[string]skills.SkillSuggestion
 
+// activeTaskWG tracks in-flight handleChatMessage goroutines that are running
+// the agent loop. Graceful restart waits on this WaitGroup before spawning the
+// child process, ensuring in-progress tasks finish (or hit the drain timeout).
+var activeTaskWG sync.WaitGroup
+
+// restartInProgress is set atomically during graceful restart to prevent new
+// agent runs from starting. handleChatMessage checks this flag after acquiring
+// the per-chat mutex; if set, it sends a "try again" message and returns
+// without running the agent.
+var restartInProgress atomic.Bool
+
+// resolvedAPIKey holds the API key after config loading, for use by
+// spawnChild during graceful restart (the config loader clears env vars).
+var resolvedAPIKey string
+
+// killFn is used to signal processes (SIGHUP for restart, SIGTERM for
+// shutdown). Override in tests to avoid killing the test process.
+var killFn = syscall.Kill
+
 // getChatMutex returns the per-chat mutex for the given chat ID.
 func getChatMutex(chatID int64) *sync.Mutex {
 	v, _ := chatMu.LoadOrStore(chatID, &sync.Mutex{})
@@ -64,6 +86,9 @@ func telegramCmd(args []string) error {
 	if resolved.APIKey == "" {
 		return fmt.Errorf("no API key configured — set ODEK_API_KEY, DEEPSEEK_API_KEY, or configure in odek.json")
 	}
+	// Store for spawnChild: config loader clears ODEK_API_KEY from env,
+	// so the child process needs us to re-inject it.
+	resolvedAPIKey = resolved.APIKey
 
 	// 3. Load and validate Telegram config.
 	cfg := resolved.Telegram
@@ -163,16 +188,16 @@ func telegramCmd(args []string) error {
 			return fmt.Sprintf("Unknown command: /%s", cmdName), nil
 		}
 
-		// Handle /restart — send confirmation, then signal SIGHUP.
-		// The signal handler spawns a child and exits.
+		// Handle /restart — return confirmation message, then signal SIGHUP.
+		// The message is sent through the standard response pipeline (MarkdownV2 +
+		// retry logic). SIGHUP fires asynchronously after a short delay so the
+		// pipeline has time to dispatch before graceful restart begins.
 		if cmdName == "restart" {
-			if _, err := bot.SendMessage(chatID,
-				"🔄 *Restarting...*\n\nThe bot will restart momentarily. This may take a few seconds.",
-				nil); err != nil {
-				handlerLog.Error("send restart message failed", "chat_id", chatID, "error", err)
-			}
-			syscall.Kill(os.Getpid(), syscall.SIGHUP)
-			return "", nil
+			go func() {
+				time.Sleep(500 * time.Millisecond)
+				killFn(os.Getpid(), syscall.SIGHUP)
+			}()
+			return "🔄 *Restarting...*\n\nThe bot will restart momentarily. This may take a few seconds.", nil
 		}
 
 		// Handle /new — clear session and reset trust in the approver.
@@ -487,28 +512,32 @@ func telegramCmd(args []string) error {
 	}
 
 	// 15. Handle SIGINT/SIGTERM/SIGHUP.
-	//     SIGHUP spawns a child process then exits (used by /restart and
-	//     agent-triggered restarts). The child's acquireLock kills this
-	//     process if it's still alive. SIGINT/SIGTERM do a graceful shutdown.
-	sigCh := make(chan os.Signal, 1)
+	//     SIGHUP triggers gracefulRestart (docs at "Restart (spawn + exit)"
+	//     above). SIGINT/SIGTERM do a graceful shutdown (cancel context →
+	//     poller eventually stops → main update loop exits).
+	sigCh := make(chan os.Signal, 3)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	go func() {
-		sig := <-sigCh
-		if sig == syscall.SIGHUP {
-			fmt.Fprintf(os.Stderr, "\nodek telegram: restart requested — spawning child...\n")
-			writeRestartMarker()
-			if err := spawnChild(); err != nil {
-				fmt.Fprintf(os.Stderr, "odek telegram: spawn failed: %v\n", err)
+		for sig := range sigCh {
+			if sig == syscall.SIGHUP {
+				gracefulRestart(bot, cancel)
+				continue
 			}
-			os.Exit(0)
+			fmt.Fprintf(os.Stderr, "\nodek telegram: shutting down...\n")
+			cancel()
+			return
 		}
-		fmt.Fprintf(os.Stderr, "\nodek telegram: shutting down...\n")
-		cancel()
 	}()
 
-	// 15b. Check for restart marker from previous instance and notify.
-	if chatID, ok := readRestartMarker(); ok && chatID != 0 {
-		bot.SendMessage(chatID, "🔄 *Bot restarted*\n\nA new instance is now running. Use `/new` if you experience any context issues.", &telegram.SendOpts{ParseMode: "Markdown"})
+	// 15b. Check for restart marker from previous instance and notify any
+	// chats that had active runs when the old instance restarted.
+	if chatIDs, ok := readRestartMarker(); ok {
+		msg := "🔄 *Bot restarted*\n\nA new instance is now running. Use `/new` if you experience any context issues."
+		for _, chatID := range chatIDs {
+			if _, err := bot.SendMessage(chatID, msg, &telegram.SendOpts{ParseMode: "Markdown"}); err != nil {
+				fmt.Fprintf(os.Stderr, "odek telegram: restart notify chat %d: %v\n", chatID, err)
+			}
+		}
 	}
 
 	// 16. Start polling in a background goroutine.
@@ -531,9 +560,96 @@ func telegramCmd(args []string) error {
 
 // ── Restart (spawn + exit) ─────────────────────────────────────────────
 //
-// Instead of syscall.Exec (binary race, stale HTTP/2 connections, session
-// loops), we spawn a child process and exit. The child's acquireLock kills
-// the old process if it's still alive.
+// RESTART ARCHITECTURE
+//
+// The /restart Telegram command triggers a three-phase graceful restart
+// that minimizes disruption to active users while avoiding the race
+// conditions of in-process exec():
+//
+//   [1] /restart command (OnCommand handler, telegram.go:191-201)
+//       └─ returns "Restarting…" message to Telegram
+//       └─ after 500ms delay, sends SIGHUP to self
+//
+//   [2] SIGHUP handler (step 15, telegram.go:524-526)
+//       └─ calls gracefulRestart()
+//
+//   [3] gracefulRestart() (telegram.go:665-729)
+//       ├─ Phase 1: Notify + Cancel
+//       │  ├─ sets restartInProgress flag (blocks new agent runs)
+//       │  ├─ notifies all active chats via Telegram message
+//       │  └─ cancels all running agent contexts
+//       ├─ Phase 2: Bounded Drain
+//       │  ├─ waits for activeTaskWG (all handleChatMessage goroutines)
+//       │  └─ 15s timeout — force proceeds even if tasks hang
+//       └─ Phase 3: Marker + Spawn → Exit
+//          ├─ writes restart.json marker (chat IDs for post-startup notify)
+//          ├─ spawnChild() → new process via os.StartProcess()
+//          └─ os.Exit(0) — child is independent, this process is done
+//
+//   [4] New (child) process startup
+//       ├─ acquireLock() reads ~/.odek/telegram.pid
+//       │  └─ finds stale PID (old process is already dead from os.Exit)
+//       │  └─ writes own PID — lock acquired
+//       ├─ reads restart.json marker (written in step 3)
+//       ├─ notifies previously active chats: "Bot restarted"
+//       └─ begins polling Telegram for updates
+//
+// WHY spawn+exit INSTEAD OF syscall.Exec
+//
+// syscall.Exec replaces the current process image — it reuses the same PID,
+// same process group, same TCP connections. This causes:
+//   * Binary race: the old binary file must stay intact while exec reads it
+//     (impossible during `go build` → restart)
+//   * Stale HTTP/2 connections: the HTTP client's connection pool is in an
+//     indeterminate state after exec
+//   * Session loops: open file descriptors leak into the new image
+//
+// Instead, os.StartProcess creates a fully independent child. The parent
+// exits immediately (os.Exit(0)). The child gets a fresh PID, fresh process
+// group, fresh network connections. The child's acquireLock handles the PID
+// file race naturally (see acquireLock docs below).
+//
+// WHY os.Exit(0) INSTEAD OF cancel()
+//
+// The poller calls GetUpdates with a 30s long-poll timeout to Telegram's
+// API (poller.go:71, bot.go:415-426). The underlying HTTP client uses
+// http.Client.Post() which does NOT respect context.Context cancellation
+// (bot.go:95). So when gracefulRestart calls cancel():
+//
+//   cancel() → polls' ctx.Done() fires
+//            → but the poller goroutine is blocked on GetUpdates
+//            → GetUpdates() ignores the cancelled context
+//            → poller can't close the updates channel for up to 30s
+//            → main goroutine stuck in for upd := range updates
+//            → process stays alive, fully unresponsive
+//            → only the child's acquireLock SIGTERM→5s→SIGKILL kills it
+//
+// Result: 5-35 seconds of unresponsiveness for what should be an instant
+// restart. The root fix would be to make GetUpdates/Bot.doJSON accept a
+// context.Context and pass it to http.NewRequestWithContext. Until then,
+// os.Exit(0) is the correct escape: the child is already an independent
+// process, so the parent has no reason to linger.
+//
+// EDGE CASES
+//
+// 1. spawnChild() fails (e.g. binary deleted mid-restart):
+//    → restartInProgress is reset, bot continues running
+//    → users see "Restarting…" but bot stays alive — no data loss
+//
+// 2. os.Exit(0) skips deferred cleanup (lock.release removes PID file):
+//    → the stale PID file remains in ~/.odek/telegram.pid
+//    → child's acquireLock reads it, finds old PID dead
+//    → writes own PID — clean takeover with no race
+//
+// 3. Concurrent /restart calls:
+//    → restartInProgress atomic bool guards against double-restart
+//    → second call returns immediately (CAS false→true fails)
+//
+// 4. Agent run in progress during restart:
+//    → Phase 1 cancels agent context
+//    → Phase 2 waits for handleChatMessage to complete (15s max)
+//    → session is saved to disk before the goroutine exits
+//    → user can resume after restart via /resume
 
 // restartMarkerPath returns the path to the restart marker file.
 func restartMarkerPath() (string, error) {
@@ -544,34 +660,164 @@ func restartMarkerPath() (string, error) {
 	return filepath.Join(home, ".odek", "restart.json"), nil
 }
 
+// restartMarker holds structured data written before a restart and read by
+// the new instance. Fields tells the new instance which chats were active.
+type restartMarker struct {
+	ChatIDs []int64 `json:"chat_ids,omitempty"`
+}
+
 // writeRestartMarker writes a marker so the next instance knows a restart
-// just happened. Currently writes an empty marker (global restart).
+// just happened. It records the chat IDs of any active agent runs so the
+// new instance can notify those users.
 func writeRestartMarker() error {
+	marker := restartMarker{}
+	chatCancels.Range(func(key, value any) bool {
+		marker.ChatIDs = append(marker.ChatIDs, key.(int64))
+		return true
+	})
+	// Sort for deterministic output.
+	sort.Slice(marker.ChatIDs, func(i, j int) bool {
+		return marker.ChatIDs[i] < marker.ChatIDs[j]
+	})
+
+	// Marshal — fallback to empty marker on error (non-fatal).
+	data, err := json.Marshal(marker)
+	if err != nil {
+		data = []byte("{}\n")
+	}
+
 	path, err := restartMarkerPath()
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte("{}\n"), 0644)
+	return os.WriteFile(path, data, 0644)
 }
 
-// readRestartMarker reads and removes the restart marker. Returns true
-// if a marker existed, along with the chat_id (0 if none specified).
-func readRestartMarker() (int64, bool) {
+// readRestartMarker reads and removes the restart marker. Returns the list
+// of chat IDs that had active agent runs at restart time, and true if a
+// marker existed.
+func readRestartMarker() ([]int64, bool) {
 	path, err := restartMarkerPath()
 	if err != nil {
-		return 0, false
+		return nil, false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, false
+		return nil, false
 	}
 	os.Remove(path)
-	// Future: parse chat_id from JSON. For now, just signal restart happened.
-	_ = data
-	return 0, true
+
+	var marker restartMarker
+	if err := json.Unmarshal(data, &marker); err != nil {
+		// Legacy empty marker or corrupt — signal restart happened.
+		return nil, true
+	}
+	return marker.ChatIDs, true
+}
+
+// countSyncMap returns the number of entries in a sync.Map.
+func countSyncMap(m *sync.Map) int {
+	n := 0
+	m.Range(func(_, _ any) bool { n++; return true })
+	return n
+}
+
+// gracefulRestart performs a three-phase graceful restart:
+//
+// Phase 1: Notify + Cancel
+//
+//	Sets restart flag to block new tasks, notifies all active chats
+//	about the imminent restart, cancels their agent contexts.
+//
+// Phase 2: Bounded Drain
+//
+//	Waits for all handleChatMessage goroutines to finish (bounded
+//	to 15 seconds). Context cancellation makes RunWithMessages return,
+//	which triggers deferred cleanup (session save, lock release) in
+//	each goroutine.
+//
+// Phase 3: Marker + Spawn → Exit
+//
+//	Writes the restart marker (with active chat IDs for post-startup
+//	notification) and spawns a child process via os.StartProcess.
+//	On success, the parent calls os.Exit(0) immediately instead of
+//	waiting for graceful shutdown to propagate through the poller
+//	(which is blocked on a 30s long-poll GetUpdates call that does
+//	not respect context cancellation — see the "WHY os.Exit(0)"
+//	section in the file header).
+//	On spawn failure, resets restartInProgress, logs the error, and
+//	returns so the current instance continues running. The bot stays
+//	alive and users can retry /restart.
+//
+// Must be called from the SIGHUP handler goroutine only.
+func gracefulRestart(bot *telegram.Bot, cancel context.CancelFunc) {
+	// Guard: only one restart at a time.
+	if !restartInProgress.CompareAndSwap(false, true) {
+		return
+	}
+
+	activeCount := countSyncMap(&chatCancels)
+	fmt.Fprintf(os.Stderr, "odek telegram: graceful restart — phase 1: notifying %d active chat(s)...\n", activeCount)
+
+	// ── Phase 1: Notify + Cancel ──────────────────────────────────────
+	chatCancels.Range(func(key, value any) bool {
+		chatID := key.(int64)
+		cancel := value.(context.CancelFunc)
+
+		// Best-effort notification — the API call might fail during shutdown.
+		if _, err := bot.SendMessage(chatID,
+			"🔄 *Bot restarting* — your current task was interrupted.\n\n"+
+				"Your conversation has been saved. The new instance will be ready "+
+				"in a few seconds. Use `/new` to start fresh.",
+			&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2}); err != nil {
+			fmt.Fprintf(os.Stderr, "odek telegram: restart notify chat %d: %v\n", chatID, err)
+		}
+
+		cancel()
+		return true
+	})
+
+	// ── Phase 2: Bounded Drain ─────────────────────────────────────────
+	fmt.Fprintf(os.Stderr, "odek telegram: graceful restart — phase 2: draining tasks...\n")
+	waitCh := make(chan struct{})
+	go func() {
+		activeTaskWG.Wait()
+		close(waitCh)
+	}()
+
+	select {
+	case <-waitCh:
+		fmt.Fprintf(os.Stderr, "odek telegram: all tasks finished cleanly\n")
+	case <-time.After(15 * time.Second):
+		fmt.Fprintf(os.Stderr, "odek telegram: drain timeout (15s), force-restarting\n")
+	}
+
+	// ── Phase 3: Marker + Spawn → Exit or Recover ──────────────────────
+	fmt.Fprintf(os.Stderr, "odek telegram: graceful restart — phase 3: spawning child...\n")
+	writeRestartMarker()
+	if err := spawnChild(); err != nil {
+		fmt.Fprintf(os.Stderr, "odek telegram: spawn failed: %v\n", err)
+		restartInProgress.Store(false) // allow new tasks to start
+		return
+	}
+
+	// Child spawned successfully — exit immediately.
+	//
+	// cancel()+graceful shutdown would wait for the poller's long-poll
+	// GetUpdates HTTP call to return (up to 30s), during which the bot is
+	// unresponsive. The child's acquireLock does send SIGTERM→5s→SIGKILL,
+	// but that's a 5-35s window of unresponsiveness — a poor UX for what
+	// should be an instant restart.
+	//
+	// Since the child is an independent process already running via
+	// os.StartProcess, the cleanest path is to exit right here. The child's
+	// acquireLock reads the stale PID file, finds this PID is dead,
+	// and writes its own without issue.
+	os.Exit(0)
 }
 
 // spawnChild starts a new odek telegram process detached from the parent.
+// Stderr is redirected to /tmp/odek-telegram.log so startup errors are visible.
 func spawnChild() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -582,11 +828,25 @@ func spawnChild() error {
 	copy(argv, os.Args)
 	argv[0] = exe
 
+	// Open stderr log file for the child so startup errors aren't lost.
+	stderr, err := os.OpenFile("/tmp/odek-telegram.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		stderr = nil // fallback: child gets /dev/null
+	}
+
+	// Build child environment: parent env + re-injected API key.
+	// config.LoadConfig clears ODEK_API_KEY from the environment, so it's
+	// missing from os.Environ(). Re-inject it so the child can start.
+	childEnv := os.Environ()
+	if resolvedAPIKey != "" {
+		childEnv = append(childEnv, "ODEK_API_KEY="+resolvedAPIKey)
+	}
+
 	attr := &os.ProcAttr{
-		Env: os.Environ(),
-		// Detach: nil files so child gets its own stdin/stdout/stderr.
-		// The child process will be reparented to init when we exit.
-		Files: []*os.File{nil, nil, nil},
+		Env: childEnv,
+		// Detach: nil stdin/stdout so child is reparented to init.
+		// Stderr is captured to the log file for debugging.
+		Files: []*os.File{nil, nil, stderr},
 	}
 	_, err = os.StartProcess(exe, argv, attr)
 	return err
@@ -626,6 +886,24 @@ func handleChatMessage(
 			))
 		}
 	}()
+
+	// ── Restart guard ─────────────────────────────────────────────────
+	// If a graceful restart is in progress, don't start new agent runs.
+	// The user can resend their message after restart completes.
+	if restartInProgress.Load() {
+		bot.SendMessage(chatID,
+			"⏳ Bot is restarting — please try again in a few seconds.",
+			&telegram.SendOpts{ReplyToMessageID: messageID})
+		return
+	}
+
+	// Register as an active task so graceful shutdown waits for us.
+	// NOTE: Must happen AFTER the restartInProgress check so we never
+	// Add() when bailing out. When restartInProgress is true, the
+	// goroutine returns without ever calling RunWithMessages, so there's
+	// no task to wait for.
+	activeTaskWG.Add(1)
+	defer activeTaskWG.Done()
 
 	// Create a per-chat TelegramApprover for inline keyboard approval.
 	approver := telegram.NewTelegramApprover(bot, chatID)
@@ -773,18 +1051,23 @@ func handleChatMessage(
 	}
 
 	agentCfg := odek.Config{
-		Model:          resolved.Model,
-		BaseURL:        resolved.BaseURL,
-		APIKey:         resolved.APIKey,
-		MaxIterations:  resolved.MaxIter,
-		SystemMessage:  systemMessage,
-		RuntimeContext: odek.BuildRuntimeContext("telegram"),
-		NoProjectFile:  resolved.NoAgents,
-		Skills:        skillsCfg,
-		Thinking:      resolved.Thinking,
-		Tools:         agentTools,
-		Renderer:      rend,
+		Model:           resolved.Model,
+		BaseURL:         resolved.BaseURL,
+		APIKey:          resolved.APIKey,
+		MaxIterations:   resolved.MaxIter,
+		SystemMessage:   systemMessage,
+		RuntimeContext:  odek.BuildRuntimeContext("telegram"),
+		InteractionMode: resolved.InteractionMode,
+		NoProjectFile:   resolved.NoAgents,
+		Skills:          skillsCfg,
+		Thinking:        resolved.Thinking,
+		Tools:           agentTools,
+		Renderer:        rend,
 		ToolEventHandler: func(event string, name string, data string) {
+			// In engaging mode, skip the raw tool trace — narrator handles it.
+			if resolved.InteractionMode != "verbose" {
+				return
+			}
 			traceMu.Lock()
 			defer traceMu.Unlock()
 
@@ -908,6 +1191,19 @@ func handleChatMessage(
 			bot.DeleteMessage(chatID, traceMsgID)
 			traceMsgID = 0
 		}
+
+		// If the context was cancelled (by /stop or restart), don't send
+		// a redundant error message — the canceller already notified the
+		// user with a summary or restart notification.
+		if errors.Is(err, context.Canceled) {
+			// Save partial session state so the conversation isn't lost.
+			cs.LastActive = time.Now()
+			if saveErr := sessionManager.Save(chatID, cs.Messages); saveErr != nil {
+				log.Error("save session after cancel", "chat_id", chatID, "error", saveErr)
+			}
+			return
+		}
+
 		reportError(bot, chatID, messageID, "Agent error: "+err.Error())
 		return
 	}
@@ -1147,8 +1443,27 @@ func sendAsync(bot *telegram.Bot, chatID int64, text string, opts *telegram.Send
 //
 // Prevents two bot instances from polling Telegram simultaneously (which
 // causes 409 Conflict errors). Uses a PID file at ~/.odek/telegram.pid.
-// On startup, if a stale PID file exists, the old process is killed before
-// the new one starts.
+//
+// LIFECYCLE
+//
+// Normal startup (no previous instance):
+//
+//	acquireLock() → PID file doesn't exist → writes own PID → OK
+//
+// Competing startup (existing instance still alive):
+//
+//	acquireLock() → reads PID file → kills old process (SIGTERM→5s→SIGKILL)
+//	               → old process dies → writes own PID → OK
+//
+// Restart (child starts after parent's os.Exit(0)):
+//
+//	acquireLock() → reads PID file → finds old (dead) PID
+//	               → syscall.Kill(pid, 0) fails (process gone)
+//	               → writes own PID → OK
+//
+// Note: During restart, the parent's deferred lock.release() never runs
+// (os.Exit(0) skips defers). The stale PID file is harmless — the child's
+// acquireLock simply finds a dead PID and overwrites it.
 
 type instanceLock struct {
 	pidFile string

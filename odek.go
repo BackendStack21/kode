@@ -31,6 +31,7 @@ import (
 	"github.com/BackendStack21/kode/internal/llm"
 	"github.com/BackendStack21/kode/internal/loop"
 	"github.com/BackendStack21/kode/internal/memory"
+	"github.com/BackendStack21/kode/internal/narrate"
 	"github.com/BackendStack21/kode/internal/render"
 	"github.com/BackendStack21/kode/internal/skills"
 	"github.com/BackendStack21/kode/internal/tool"
@@ -112,6 +113,9 @@ type Config struct {
 	// during the agent loop. Fires "tool_call" before and "tool_result"
 	// after each tool invocation. Used by the WebUI for live streaming.
 	ToolEventHandler func(event string, name string, data string)
+
+	// InteractionMode controls tool-call rendering: "engaging" (default) or "verbose".
+	InteractionMode string
 
 	// IterationCallback, if set, is invoked after each iteration of the
 	// agent loop with progress info (turn number, tokens, tools called).
@@ -532,6 +536,12 @@ func New(cfg Config) (*Agent, error) {
 	// Wire iteration callback for progress reporting
 	if cfg.IterationCallback != nil {
 		engine.SetIterationCallback(cfg.IterationCallback)
+	}
+
+	// Wire narrator for engaging interaction mode (default).
+	// In verbose mode, narrator stays nil → existing renderer behavior.
+	if cfg.InteractionMode == "" || cfg.InteractionMode == "engaging" {
+		engine.SetNarrator(narrate.New(true))
 	}
 
 	// Wire per-turn episode search — searches past session episodes
