@@ -23,7 +23,7 @@ odek repl --sandbox --sandbox-image python:3.12
 
 ```json
 {
-  "model": "deepseek-chat",
+  "model": "deepseek-v4-flash",
   "max_iterations": 30,
   "sandbox": true,
   "sandbox_image": "alpine:latest",

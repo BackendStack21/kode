@@ -95,7 +95,7 @@ All configuration for an agent instance. Zero values fall back to sensible defau
 ```go
 type Config struct {
     // Model identifier (e.g. "deepseek-v4-flash", "gpt-4o").
-    // Default: "deepseek-chat"
+    // Default: "deepseek-v4-flash"
     Model string
 
     // OpenAI-compatible API endpoint.
@@ -258,7 +258,7 @@ The agent loop:
 
 ```go
 agent, err := odek.New(odek.Config{
-    Model:  "deepseek-chat",
+    Model:  "deepseek-v4-flash",
     APIKey: os.Getenv("ODEK_API_KEY"),
     Tools:  []odek.Tool{&slackNotifier{}},
 })
@@ -306,7 +306,7 @@ odek's `session.Store` handles persistence. Use it to save and resume sessions:
 import "github.com/BackendStack21/kode/internal/session"
 
 store, _ := session.NewStore()
-sess, _ := store.Create(messages, "deepseek-chat", "Refactor auth")
+sess, _ := store.Create(messages, "deepseek-v4-flash", "Refactor auth")
 
 // Later...
 sess, _ := store.Load("20260520-abc123")
@@ -391,7 +391,7 @@ func (t *gitLogTool) Call(args string) (string, error) {
 
 ```go
 agent, _ := odek.New(odek.Config{
-    Model: "deepseek-chat",
+    Model: "deepseek-v4-flash",
     APIKey: os.Getenv("ODEK_API_KEY"),
     Tools:  []odek.Tool{&gitLogTool{}},
 })
@@ -470,7 +470,7 @@ Memory is enabled by default when odek loads a config file with memory settings.
 
 ```go
 agent, _ := odek.New(odek.Config{
-    Model:  "deepseek-chat",
+    Model:  "deepseek-v4-flash",
     APIKey: os.Getenv("ODEK_API_KEY"),
     // Memory is enabled via config file (~/.odek/config.json or ./odek.json)
     // In CLI mode, the --memory flag enables it automatically
@@ -587,7 +587,7 @@ fmt.Printf("Session total: %d tokens\n", sessionInput+sessionOutput)
 
 ```go
 agent, err := odek.New(odek.Config{
-    Model:  "deepseek-chat",
+    Model:  "deepseek-v4-flash",
     APIKey: "", // missing!
 })
 // err: "odek: no API key provided (set ODEK_API_KEY, DEEPSEEK_API_KEY, or OPENAI_API_KEY)"

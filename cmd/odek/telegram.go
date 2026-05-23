@@ -947,7 +947,7 @@ func handleChatMessage(
 
 	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {
-		modelLabel = "deepseek-chat"
+		modelLabel = "deepseek-v4-flash"
 	}
 
 	rend := render.New(os.Stderr, false).WithModel(modelLabel)

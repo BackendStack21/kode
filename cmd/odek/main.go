@@ -633,7 +633,7 @@ Init flags:
   --force, -f         Overwrite existing file without prompting
 
 Run flags:
-  --model <name>       LLM model (default: deepseek-chat)
+  --model <name>       LLM model (default: deepseek-v4-flash)
                        Known profiles: deepseek-v4-flash, deepseek-v4-pro
                        Profiles auto-set thinking/timeout defaults.
   --base-url <url>     API endpoint (default: https://api.deepseek.com/v1)
@@ -1037,7 +1037,7 @@ func run(args []string) error {
 	// Create terminal renderer for colored step-by-step output.
 	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {
-		modelLabel = "deepseek-chat"
+		modelLabel = "deepseek-v4-flash"
 	}
 	color := !resolved.NoColor && render.ColorEnabled()
 	rend := render.New(os.Stderr, color).WithModel(modelLabel)
@@ -1980,7 +1980,7 @@ func continueCmd(args []string) error {
 	// Renderer
 	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {
-		modelLabel = "deepseek-chat"
+		modelLabel = "deepseek-v4-flash"
 	}
 	color := !resolved.NoColor && render.ColorEnabled()
 	rend := render.New(os.Stderr, color).WithModel(modelLabel)

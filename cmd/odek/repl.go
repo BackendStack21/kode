@@ -116,7 +116,7 @@ func replCmd(args []string) error {
 	// Renderer
 	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {
-		modelLabel = "deepseek-chat"
+		modelLabel = "deepseek-v4-flash"
 	}
 	color := !resolved.NoColor && render.ColorEnabled()
 	rend := render.New(os.Stderr, color).WithModel(modelLabel)

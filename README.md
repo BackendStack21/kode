@@ -175,7 +175,7 @@ odek run "@README.md what does this project do?"
 import "github.com/BackendStack21/kode"
 
 agent, err := odek.New(odek.Config{
-    Model:          "deepseek-chat",
+    Model:          "deepseek-v4-flash",
     APIKey:         os.Getenv("ODEK_API_KEY"),
     MaxIterations:  30,
     Tools:          []odek.Tool{&myCustomTool{}},

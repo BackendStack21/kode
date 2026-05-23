@@ -311,7 +311,7 @@ func LoadProjectFile() string {
 
 const (
 	defaultBaseURL    = "https://api.deepseek.com/v1"
-	defaultModel      = "deepseek-chat"
+	defaultModel      = "deepseek-v4-flash"
 	defaultMaxIter    = 90
 	defaultHTTPTimout = 120 // seconds
 )
