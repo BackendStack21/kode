@@ -327,15 +327,24 @@ func parseRunFlags(args []string) (runFlags, error) {
 	var f runFlags
 
 	i := 0
-	for i < len(args)-1 {
+	for i < len(args) {
 		switch args[i] {
 		case "--model":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--model requires a value")
+			}
 			f.Model = args[i+1]
 			i += 2
 		case "--base-url":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--base-url requires a value")
+			}
 			f.BaseURL = args[i+1]
 			i += 2
 		case "--max-iter":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--max-iter requires a value")
+			}
 			var n int
 			fmt.Sscanf(args[i+1], "%d", &n)
 			if n > 0 {
@@ -343,12 +352,21 @@ func parseRunFlags(args []string) (runFlags, error) {
 			}
 			i += 2
 		case "--system":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--system requires a value")
+			}
 			f.System = args[i+1]
 			i += 2
 		case "--thinking":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--thinking requires a value")
+			}
 			f.Thinking = args[i+1]
 			i += 2
 		case "--temperature":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--temperature requires a value")
+			}
 			var t float64
 			fmt.Sscanf(args[i+1], "%f", &t)
 			f.Temp = t
@@ -375,42 +393,110 @@ func parseRunFlags(args []string) (runFlags, error) {
 			f.Session = boolPtr(true)
 			i++
 		case "--sandbox-image":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--sandbox-image requires a value")
+			}
 			f.SandboxImage = args[i+1]
 			i += 2
 		case "--sandbox-network":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--sandbox-network requires a value")
+			}
 			f.SandboxNetwork = args[i+1]
 			i += 2
 		case "--sandbox-readonly":
 			f.SandboxReadonly = boolPtr(true)
 			i++
 		case "--sandbox-memory":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--sandbox-memory requires a value")
+			}
 			f.SandboxMemory = args[i+1]
 			i += 2
 		case "--sandbox-cpus":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--sandbox-cpus requires a value")
+			}
 			f.SandboxCPUs = args[i+1]
 			i += 2
 		case "--sandbox-user":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--sandbox-user requires a value")
+			}
 			f.SandboxUser = args[i+1]
 			i += 2
 		case "--github-repo-dir":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--github-repo-dir requires a value")
+			}
 			f.GithubRepoDirectory = args[i+1]
 			i += 2
 		case "--github-repo-url":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--github-repo-url requires a value")
+			}
 			f.GithubRepoUrl = args[i+1]
 			i += 2
 		case "--ctx", "-c":
+			if i+1 >= len(args) {
+				return f, fmt.Errorf("--ctx requires a value")
+			}
 			f.Ctx = strings.Split(args[i+1], ",")
 			i += 2
-			case "--deliver":
-				f.Deliver = boolPtr(true)
-				i++
+		case "--deliver":
+			f.Deliver = boolPtr(true)
+			i++
 		default:
 			// Not a flag — treat remaining as the task
 			goto done
 		}
 	}
 done:
-	f.Task = strings.Join(args[i:], " ")
+	// Scan remaining args for standalone flags that may appear after the
+	// task phrase (e.g. "odek run 'hello' --deliver"). This allows flags
+	// without values to be placed anywhere on the command line.
+	taskArgs := args[i:]
+	for j := 0; j < len(taskArgs); j++ {
+		switch taskArgs[j] {
+		case "--deliver":
+			f.Deliver = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--sandbox":
+			f.Sandbox = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--session":
+			f.Session = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--no-color":
+			f.NoColor = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--no-agents":
+			f.NoAgents = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--no-learn":
+			f.Learn = boolPtr(false)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--learn":
+			f.Learn = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--prompt-caching":
+			f.PromptCaching = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		case "--sandbox-readonly":
+			f.SandboxReadonly = boolPtr(true)
+			taskArgs = append(taskArgs[:j], taskArgs[j+1:]...)
+			j--
+		}
+	}
+	f.Task = strings.Join(taskArgs, " ")
 	if f.Task == "" {
 		return f, fmt.Errorf("no task provided")
 	}
@@ -1102,7 +1188,7 @@ func deliverToTelegram(text string, resolved config.ResolvedConfig) error {
 		return fmt.Errorf("telegram default_chat_id not configured")
 	}
 	bot := telegram.NewBot(resolved.Telegram.Token)
-	_, err := bot.SendMessage(chatID, text, &telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
+	_, err := bot.SendMessage(chatID, text, nil)
 	if err != nil {
 		return fmt.Errorf("send telegram message: %w", err)
 	}

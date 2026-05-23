@@ -788,6 +788,9 @@ func resolveTelegram(cfg *telegram.TelegramConfig) telegram.TelegramConfig {
 	if cfg.LogFile != "" {
 		base.LogFile = cfg.LogFile
 	}
+	if cfg.DefaultChatID != 0 {
+		base.DefaultChatID = cfg.DefaultChatID
+	}
 	return base
 }
 

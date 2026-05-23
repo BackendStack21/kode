@@ -563,8 +563,11 @@ func TestParseRunFlags_EdgeCases(t *testing.T) {
 			name: "flags after task",
 			args: []string{"my task", "--sandbox"},
 			check: func(t *testing.T, f runFlags) {
-				if f.Task != "my task --sandbox" {
+				if f.Task != "my task" {
 					t.Errorf("task = %q", f.Task)
+				}
+				if f.Sandbox == nil || !*f.Sandbox {
+					t.Error("Sandbox should be true (parsed from post-task flag)")
 				}
 			},
 		},
