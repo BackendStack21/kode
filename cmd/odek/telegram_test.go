@@ -489,8 +489,8 @@ func TestEngagingMode_UsesEdits(t *testing.T) {
 	}
 
 	iterCallback := func(info loop.IterationInfo) {
+		_ = &toolMsgIDs
 		_ = truncateWords
-		_ = toolMsgIDs
 		_ = truncate
 		if info.IsPreTool && info.ReasoningContent != "" {
 			bot.SendMessage(chatID, "💭 "+truncateWords(info.ReasoningContent, 50),
