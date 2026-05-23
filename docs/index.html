@@ -3,18 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>odek · ~8 MB, zero-framework Go agent runtime</title>
+  <title>odek · ~12 MB, zero-framework Go agent runtime</title>
   <meta name="description" content="odek — the fastest, minimal Go autonomous agent runtime. One binary. One loop. Zero frameworks.">
   <link rel="canonical" href="https://odek.21no.de/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://odek.21no.de/">
   <meta property="og:title" content="odek — Go Autonomous Agent Runtime">
-  <meta property="og:description" content="The fastest, minimal Go autonomous agent runtime. ~8 MB static binary, zero frameworks. ReAct agent with persistent memory, MCP, sandbox, and Web UI.">
+  <meta property="og:description" content="The fastest, minimal Go autonomous agent runtime. ~12 MB static binary, zero frameworks. ReAct agent with persistent memory, MCP, sandbox, Web UI, and Telegram bot.">
   <meta property="og:image" content="https://odek.21no.de/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="odek — Go Autonomous Agent Runtime">
-  <meta name="twitter:description" content="The fastest, minimal Go autonomous agent runtime. ~8 MB static binary, zero frameworks.">
-  <meta name="keywords" content="Go, autonomous agent, AI agent, LLM, ReAct, MCP, Docker sandbox, CLI, minimal-dependencies, open-source">
+  <meta name="twitter:description" content="The fastest, minimal Go autonomous agent runtime. ~12 MB static binary, zero frameworks.">
+  <meta name="keywords" content="Go, autonomous agent, AI agent, LLM, ReAct, MCP, parallel execution, interaction modes, Telegram bot, Docker sandbox, CLI, benchmark, open-source">
   <meta name="robots" content="index, follow">
   <link rel="stylesheet" href="https://assets.21no.de/fonts/fonts.css">
   <link rel="stylesheet" href="https://assets.21no.de/css/tokens.css">
@@ -286,7 +286,7 @@
   "name": "odek",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS",
-  "description": "The fastest, minimal Go autonomous agent runtime. One binary. One loop. Zero frameworks.",
+  "description": "The fastest, minimal Go autonomous agent runtime. ~12 MB static binary, zero frameworks. ReAct agent with parallel tool execution, persistent memory, MCP, sandbox, Web UI, and Telegram bot.",
   "url": "https://odek.21no.de",
   "downloadUrl": "https://github.com/BackendStack21/kode",
   "author": {
@@ -313,7 +313,8 @@
 <section class="hero">
   <div class="container">
     <h1>odek</h1>
-    <p class="sub"><span class="size">~8 MB</span> · Zero frameworks.<br>Think, therefore act.</p>
+    <p class="sub"><span class="size">~12 MB</span> static binary · Zero frameworks.<br>Think, therefore act.</p>
+    <div class="badge" style="margin-top:12px;display:inline-block;background:var(--accent-subtle);border:1px solid rgba(56,189,248,.15);border-radius:6px;padding:5px 12px;font-size:0.8125rem;font-family:var(--font-mono);color:var(--accent);">v0.37.18</div>
 
     <div class="install-block">
       <code>go install github.com/BackendStack21/kode/cmd/odek@latest</code>
@@ -331,7 +332,7 @@
   <ul class="whys">
     <li>
       <span class="q">Why?</span>
-      <span class="a">Because every AI agent framework today ships a <strong>200-package dependency tree</strong> and a 200 MB Python venv. odek is an <strong>~8 MB static binary</strong> with <strong>minimal dependencies</strong> — everything else is Go stdlib.</span>
+      <span class="a">Because every AI agent framework today ships a <strong>200-package dependency tree</strong> and a 200 MB Python venv. odek is an <strong>~12 MB static binary</strong> with <strong>minimal dependencies</strong> — everything else is Go stdlib.</span>
     </li>
     <li>
       <span class="q">Why?</span>
@@ -425,7 +426,7 @@
       <div class="slide">
         <span class="info"># MCP server mode</span><br>
         <span class="prompt">$ odek mcp</span><br>
-        <span class="info">odek mcp ⚡  MCP server starting (v0.14.3)</span><br>
+        <span class="info">odek mcp ⚡  MCP server starting (v0.37.18)</span><br>
         <span class="output">Connected by Claude Code. Exposing 8 tools:</span><br>
         <span class="output">  • read_file    — read files with line numbers</span><br>
         <span class="output">  • write_file   — write files safely</span><br>
@@ -449,6 +450,20 @@
         <span class="output">│  Agent: Let me check the source directory.     │</span><br>
         <span class="output">│         ⚡ 2.1s · ⌂ 456 · ⎇ 89                │</span><br>
         <span class="info">└───────────────────────────────────────────────┘</span>
+      </div>
+
+      <!-- Slide 7 -->
+      <div class="slide">
+        <span class="info"># AIEB v2.0 Benchmark</span><br>
+        <span class="info">odek scores <strong>80.3%</strong> on the Autonomous</span><br>
+        <span class="info">Intelligence Engineering Benchmark v2.0</span><br>
+        <span class="output">Tier 1 — Code Generation: multi-location</span><br>
+        <span class="output">  refactoring, format-tolerant scoring</span><br>
+        <span class="output">Tier 2 — Tool Use: 8 native tools</span><br>
+        <span class="output">Tier 3 — Memory: 3-tier persistence</span><br>
+        <span class="output">Tier 4 — Speed: parallel execution,</span><br>
+        <span class="output">  speed-weighted scoring</span><br>
+        <span class="info">🏆 80.3% — highest published agent score</span>
       </div>
 
     </div>
@@ -516,6 +531,24 @@
       <p>Built-in read_file, write_file, search_files, patch, shell, and browser. All gated by a unified security layer — classify operations as allow / deny / prompt per risk class.</p>
     </div>
 
+    <div class="card">
+      <div class="icon">⚡</div>
+      <h4>Parallel Tool Execution</h4>
+      <p>Tools run concurrently with bounded concurrency. <code>read_file</code>, <code>search_files</code>, and <code>shell</code> calls execute in parallel — cutting iteration time by 40–60%. Batch approval gate shows all risky operations at once.</p>
+    </div>
+
+    <div class="card">
+      <div class="icon">💬</div>
+      <h4>Interaction Modes</h4>
+      <p>Three modes: <strong>engaging</strong> (emoji-rich LLM narration), <strong>enhance</strong> (narration persists after response), and <strong>verbose</strong> (raw tool traces). Per-tool trace messages with LLM reasoning content. Works across CLI, Telegram, and Web UI.</p>
+    </div>
+
+    <div class="card">
+      <div class="icon">🤖</div>
+      <h4>Telegram Bot</h4>
+      <p>Full-featured Telegram bot with <code>odek telegram</code>. MarkdownV2 messages, inline keyboards, file attachments, <code>send_message</code> tool, and <code>--deliver</code> flag for cron integration. Interaction mode-aware with per-tool progress traces.</p>
+    </div>
+
   </div>
 </section>
 
@@ -529,10 +562,12 @@
     </thead>
     <tbody>
       <tr><td>Direct dependencies</td><td class="win">Minimal — stdlib + 4 focused pkgs</td><td>200+ packages</td></tr>
-      <tr><td>Binary size</td><td class="win">~8 MB static</td><td>50–200 MB (venv)</td></tr>
+      <tr><td>Binary size</td><td class="win">~12 MB static</td><td>50–200 MB (venv)</td></tr>
       <tr><td>Startup</td><td class="win">Instant</td><td>2–10 seconds</td></tr>
       <tr><td>Sandbox</td><td class="win"><code>--sandbox</code> flag</td><td>Manual Docker setup</td></tr>
       <tr><td>Tool interface</td><td class="win">One interface, one method</td><td>Class hierarchies + decorators</td></tr>
+      <tr><td>Parallel tools</td><td class="win">Built-in bounded concurrency</td><td>Sequential only</td></tr>
+      <tr><td>Telegram bot</td><td class="win">Full bot with keyboard, files, --deliver</td><td>Third-party adapters</td></tr>
       <tr><td>MCP</td><td class="win">Bidirectional (server + client)</td><td>Client-only or adapter needed</td></tr>
       <tr><td>Language</td><td class="win">Go — native binary</td><td>Python — interpreter required</td></tr>
     </tbody>
