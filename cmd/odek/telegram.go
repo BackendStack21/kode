@@ -837,15 +837,23 @@ func handleChatMessage(
 		SkillEventHandler: func(event skills.SkillEvent) {
 			switch event.Type {
 		case "loaded":
-			names := strings.Join(event.Skills, ", ")
-			sendAsync(bot, chatID, "📚 Loaded skill: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
+			if skillsCfg != nil && skillsCfg.Verbose {
+				names := strings.Join(event.Skills, ", ")
+				sendAsync(bot, chatID, "📚 Loaded skill: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
+			}
 		case "autoloaded":
-			names := strings.Join(event.Skills, ", ")
-			sendAsync(bot, chatID, "📚 Auto-loaded skills: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
+			if skillsCfg != nil && skillsCfg.Verbose {
+				names := strings.Join(event.Skills, ", ")
+				sendAsync(bot, chatID, "📚 Auto-loaded skills: "+names, &telegram.SendOpts{ReplyToMessageID: messageID})
+			}
 		case "saved":
-			sendAsync(bot, chatID, fmt.Sprintf("✓ Saved skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
+			if skillsCfg != nil && skillsCfg.Verbose {
+				sendAsync(bot, chatID, fmt.Sprintf("✓ Saved skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
+			}
 		case "deleted":
-			sendAsync(bot, chatID, fmt.Sprintf("✗ Deleted skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
+			if skillsCfg != nil && skillsCfg.Verbose {
+				sendAsync(bot, chatID, fmt.Sprintf("✗ Deleted skill %q", event.SkillName), &telegram.SendOpts{ReplyToMessageID: messageID})
+			}
 			case "suggested":
 				replyMarkup := &telegram.InlineKeyboardMarkup{
 					InlineKeyboard: [][]telegram.InlineKeyboardButton{
