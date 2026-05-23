@@ -12,11 +12,13 @@
 package config
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/BackendStack21/kode/internal/danger"
 	"github.com/BackendStack21/kode/internal/mcpclient"
@@ -367,6 +369,11 @@ func envInt(key string) int {
 // API key has an additional fallback: if none of the four layers provides
 // one, it falls back to DEEPSEEK_API_KEY → OPENAI_API_KEY (legacy env vars).
 func LoadConfig(cli CLIFlags) ResolvedConfig {
+	// Layer 0: load ~/.odek/secrets.env into the process environment.
+	// This makes secrets available as env vars for ${VAR} substitution
+	// in config files and for ODEK_* env var lookups.
+	loadSecretsEnv()
+
 	// Layer 1: global (~/.odek/config.json)
 	global := loadFile(GlobalConfigPath())
 
@@ -848,4 +855,46 @@ func overlayFile(base, override FileConfig) FileConfig {
 		base.GithubRepoUrl = override.GithubRepoUrl
 	}
 	return base
+}
+
+// secretsEnvPath returns the path to the secrets environment file.
+func secretsEnvPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".odek", "secrets.env")
+}
+
+// loadSecretsEnv reads ~/.odek/secrets.env and injects each KEY=VALUE pair
+// into the process environment via os.Setenv. This makes secrets available
+// for ${VAR} substitution in config files and for ODEK_* env var lookups.
+//
+// Missing or unreadable files are silently ignored — not an error.
+// Lines that don't match KEY=VALUE are silently skipped.
+func loadSecretsEnv() {
+	path := secretsEnvPath()
+	if path == "" {
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok || k == "" {
+			continue
+		}
+		if os.Getenv(k) == "" {
+			os.Setenv(k, v)
+		}
+	}
 }
