@@ -1025,12 +1025,11 @@ func handleChatMessage(
 	}()
 
 	// ── Tool Tracing ───────────────────────────────────────────────
-	// Single editable message showing live tool execution progress.
-	// In verbose mode this shows raw tool names/results; in engaging
-	// mode it's replaced by the narrator progress message above.
-	var traceMsgID int
-	var traceMu sync.Mutex
-	traceLines := make([]string, 0, 8)
+	// Individual messages per tool call so the user can follow the
+	// agent's journey step by step. Reasoning is shown before tool
+	// calls. All trace messages are deleted after the agent responds.
+	// toolMsgIDs tracks per-turn tool message IDs for editing on result.
+	var toolMsgIDs sync.Map // map[string]int
 
 	// truncate shortens a string for display, appending "…" if trimmed.
 	truncate := func(s string, max int) string {
@@ -1038,6 +1037,15 @@ func handleChatMessage(
 			return s[:max] + "…"
 		}
 		return s
+	}
+
+	// truncateWords limits text to maxWords, appending "…" if trimmed.
+	truncateWords := func(s string, maxWords int) string {
+		words := strings.Fields(s)
+		if len(words) <= maxWords {
+			return s
+		}
+		return strings.Join(words[:maxWords], " ") + "…"
 	}
 
 	// Collect agent run stats via the iteration callback.
@@ -1127,9 +1135,7 @@ func handleChatMessage(
 		Renderer:        rend,
 		ToolEventHandler: func(event string, name string, data string) {
 			// Engaging mode: update the progress message with narrated tool
-			// descriptions instead of raw traces. We skip tool_result events
-			// here — the next tool_call will overwrite the message anyway,
-			// keeping the chat scannable and avoiding flash edits.
+			// descriptions instead of raw traces.
 			if resolved.InteractionMode != "verbose" {
 				if progressMsgID != 0 && event == "tool_call" && narrator != nil {
 					if msg := narrator.ToolCallMessage(name, data); msg != "" {
@@ -1138,41 +1144,43 @@ func handleChatMessage(
 				}
 				return
 			}
-			traceMu.Lock()
-			defer traceMu.Unlock()
 
-			// Lazy-init: create the trace message on the first tool call.
-			if traceMsgID == 0 && event == "tool_call" {
-				if msg, err := bot.SendMessage(chatID, "🔧 …", nil); err == nil {
-					traceMsgID = msg.ID
-				} else {
-					return
-				}
-			}
-			if traceMsgID == 0 {
-				return
-			}
-
+			// Verbose mode: individual messages per tool call so the user
+			// can follow the agent's journey step by step.
 			switch event {
 			case "tool_call":
 				args := truncate(data, 150)
-				line := fmt.Sprintf("%s %s(%s)  ⏳", render.ToolEmoji(name), name, args)
-				traceLines = append(traceLines, line)
-				bot.EditMessageText(chatID, traceMsgID, strings.Join(traceLines, "\n"), nil)
+				line := fmt.Sprintf("%s `%s` %s", render.ToolEmoji(name), name, args)
+				if msg, err := bot.SendMessage(chatID, line, nil); err == nil {
+					toolMsgIDs.Store(name, msg.ID)
+				}
 
 			case "tool_result":
-				sizeLabel := fmt.Sprintf("%dB", len(data))
-				if len(data) > 1024 {
-					sizeLabel = fmt.Sprintf("%dKB", len(data)/1024)
-				}
-				if len(traceLines) > 0 {
-					last := traceLines[len(traceLines)-1]
-					traceLines[len(traceLines)-1] = strings.Replace(last, " ⏳", " ✅ ("+sizeLabel+")", 1)
-					bot.EditMessageText(chatID, traceMsgID, strings.Join(traceLines, "\n"), nil)
+				if msgIDVal, ok := toolMsgIDs.Load(name); ok {
+					msgID := msgIDVal.(int)
+					sizeLabel := fmt.Sprintf("%dB", len(data))
+					if len(data) > 1024 {
+						sizeLabel = fmt.Sprintf("%dKB", len(data)/1024)
+					}
+					bot.EditMessageText(chatID, msgID,
+						fmt.Sprintf("%s `%s` ✅ (%s)", render.ToolEmoji(name), name, sizeLabel), nil)
 				}
 			}
 		},
 		IterationCallback: func(info loop.IterationInfo) {
+			// Pre-tool callback: show LLM reasoning before tools run.
+			if info.IsPreTool {
+				if info.ReasoningContent != "" {
+					reasoning := truncateWords(info.ReasoningContent, 50)
+					if reasoning != "" {
+						bot.SendMessage(chatID, "💭 "+reasoning,
+							&telegram.SendOpts{ReplyToMessageID: messageID})
+					}
+				}
+				return
+			}
+
+			// Post-tool / final-answer callback: collect tool stats.
 			allToolsMu.Lock()
 			for _, name := range info.ToolNames {
 				if _, ok := allTools[name]; !ok {
@@ -1257,11 +1265,8 @@ func handleChatMessage(
 	// Run the agent with the full message history (multi-turn).
 	response, updatedMessages, err := agent.RunWithMessages(agentCtx, cs.Messages)
 	if err != nil {
-		// Clean up trace message on error too.
-		if traceMsgID != 0 {
-			bot.DeleteMessage(chatID, traceMsgID)
-			traceMsgID = 0
-		}
+		// Clean up any tool trace messages on error.
+		deleteToolTraceMessages(bot, chatID, &toolMsgIDs)
 
 		// If the context was cancelled (by /stop or restart), save partial
 		// state and notify the user with a cancellation summary.
@@ -1314,13 +1319,8 @@ func handleChatMessage(
 	if response != "" {
 		handler.SendResponse(chatID, response, messageID)
 
-		// Clean up the tool trace message — it's stale after the response.
-		if traceMsgID != 0 {
-			if err := bot.DeleteMessage(chatID, traceMsgID); err != nil {
-				log.Debug("delete trace message failed", "chat_id", chatID, "msg_id", traceMsgID, "error", err)
-			}
-			traceMsgID = 0
-		}
+		// Clean up all tool trace messages — they're stale after the response.
+		deleteToolTraceMessages(bot, chatID, &toolMsgIDs)
 
 		// Send run stats as a separate message directly via Bot.SendMessage
 		// (bypassing SendResponse/FormatResponse) so MarkdownV2 backtick code
@@ -1658,4 +1658,18 @@ func buttonsToMarkup(buttons [][]map[string]string) *telegram.InlineKeyboardMark
 		}
 	}
 	return markup
+}
+
+// deleteToolTraceMessages deletes all individual tool trace messages for a chat.
+// Used to clean up after the agent finishes (success or error).
+func deleteToolTraceMessages(bot *telegram.Bot, chatID int64, msgIDs *sync.Map) {
+	msgIDs.Range(func(key, value any) bool {
+		if msgID, ok := value.(int); ok {
+			if err := bot.DeleteMessage(chatID, msgID); err != nil {
+				fmt.Fprintf(os.Stderr, "odek telegram: delete tool message failed: %v\n", err)
+			}
+		}
+		msgIDs.Delete(key)
+		return true
+	})
 }

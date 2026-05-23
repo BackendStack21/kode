@@ -45,6 +45,8 @@ type IterationInfo struct {
 	CachedTokens          int           // cumulative cached tokens (OpenAI)
 	TotalLatency          time.Duration // cumulative wall time
 	HasFinalAnswer        bool          // true when the agent reached a final answer
+	ReasoningContent      string        // LLM reasoning before tool calls (empty if none)
+	IsPreTool             bool          // true when fired BEFORE tool execution (shows reasoning + tools)
 }
 
 // IterationCallback is an optional callback invoked after each iteration
@@ -582,11 +584,31 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 
 		// ACT: execute each tool call in parallel with bounded concurrency
 		toolNames := make([]string, 0, len(result.ToolCalls))
+		for _, tc := range result.ToolCalls {
+			toolNames = append(toolNames, tc.Function.Name)
+		}
+
+		// Fire iteration callback BEFORE tool execution so UIs can show
+		// the LLM's reasoning and which tools are about to run.
+		if e.iterationCallback != nil {
+			e.iterationCallback(IterationInfo{
+				Turn:                i + 1,
+				MaxTurns:            e.maxIter,
+				ToolNames:           toolNames,
+				InputTokens:         e.TotalInputTokens,
+				OutputTokens:        e.TotalOutputTokens,
+				CacheCreationTokens: e.TotalCacheCreationTokens,
+				CacheReadTokens:     e.TotalCacheReadTokens,
+				CachedTokens:        e.TotalCachedTokens,
+				TotalLatency:        time.Since(startTime),
+				HasFinalAnswer:      false,
+				ReasoningContent:    result.Content,
+				IsPreTool:           true,
+			})
+		}
 
 		// Phase 1: fire all tool_call events synchronously (rendering + events)
 		for _, tc := range result.ToolCalls {
-			toolNames = append(toolNames, tc.Function.Name)
-
 			if e.narrator != nil {
 				if msg := e.narrator.ToolCallMessage(tc.Function.Name, tc.Function.Arguments); msg != "" {
 					if e.renderer != nil {
