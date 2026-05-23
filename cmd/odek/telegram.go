@@ -21,6 +21,7 @@ import (
 	"github.com/BackendStack21/kode/internal/llm"
 	"github.com/BackendStack21/kode/internal/loop"
 	"github.com/BackendStack21/kode/internal/render"
+	"github.com/BackendStack21/kode/internal/narrate"
 	"github.com/BackendStack21/kode/internal/session"
 	"github.com/BackendStack21/kode/internal/skills"
 	"github.com/BackendStack21/kode/internal/telegram"
@@ -987,11 +988,38 @@ func handleChatMessage(
 			}
 		}
 	}()
+	
+	// ── Engaging Mode: Immediate Progress ──────────────────────────
+	// Send an instant "working on it" message so the user sees feedback
+	// within milliseconds, not seconds. This message gets updated with
+	// narrator-style progress on each tool call, then deleted when the
+	// final answer arrives.
+	var narrator *narrate.Narrator
+	isEngaging := resolved.InteractionMode != "verbose"
+	if isEngaging {
+		narrator = narrate.New(true)
+	}
+	var progressMsgID int
+	if isEngaging {
+		msg, err := bot.SendMessage(chatID, "🤔 Looking into that...",
+			&telegram.SendOpts{ReplyToMessageID: messageID})
+		if err == nil {
+			progressMsgID = msg.ID
+		}
+	}
+	defer func() {
+		// Clean up the progress message when the task finishes.
+		// The final answer replaces it entirely — this avoids cluttering
+		// the chat with a stale "thinking" message.
+		if progressMsgID != 0 {
+			bot.DeleteMessage(chatID, progressMsgID)
+		}
+	}()
 
 	// ── Tool Tracing ───────────────────────────────────────────────
 	// Single editable message showing live tool execution progress.
-	// The message is created lazily — only when the first tool call
-	// fires, not before. This avoids the premature "🤔 Thinking…" spam.
+	// In verbose mode this shows raw tool names/results; in engaging
+	// mode it's replaced by the narrator progress message above.
 	var traceMsgID int
 	var traceMu sync.Mutex
 	traceLines := make([]string, 0, 8)
@@ -1064,8 +1092,16 @@ func handleChatMessage(
 		Tools:           agentTools,
 		Renderer:        rend,
 		ToolEventHandler: func(event string, name string, data string) {
-			// In engaging mode, skip the raw tool trace — narrator handles it.
+			// Engaging mode: update the progress message with narrated tool
+			// descriptions instead of raw traces. We skip tool_result events
+			// here — the next tool_call will overwrite the message anyway,
+			// keeping the chat scannable and avoiding flash edits.
 			if resolved.InteractionMode != "verbose" {
+				if progressMsgID != 0 && event == "tool_call" && narrator != nil {
+					if msg := narrator.ToolCallMessage(name, data); msg != "" {
+						bot.EditMessageText(chatID, progressMsgID, msg, nil)
+					}
+				}
 				return
 			}
 			traceMu.Lock()

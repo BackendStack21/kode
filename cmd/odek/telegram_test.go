@@ -773,3 +773,43 @@ func newTestHandler(bot *telegram.Bot) *telegram.Handler {
 	h.Config = telegram.HandlerConfig{}
 	return h
 }
+
+// ── /mode command tests ──────────────────────────────────────────────
+
+func TestOnCommandMode_ShowsInteractionMode(t *testing.T) {
+	// /mode must document interaction_mode (engaging and verbose).
+	chatID := int64(99920)
+
+	bot := newTestBot(t)
+	h := newTestHandler(bot)
+
+	h.OnCommand = func(cid int64, mid int, cmdName string, argsStr string) (string, error) {
+		if cmdName == "mode" {
+			return "⚙️ *Agent Modes*\n\n" +
+				"Modes are set at startup via `odek.json` or CLI flags:\n" +
+				"• `interaction_mode: engaging` — emoji-rich narration (default)\n" +
+				"• `interaction_mode: verbose` — raw tool call output\n" +
+				"• `sandbox: true` — run in Docker isolation\n" +
+				"• `skills.verbose: true` — show skill learning details\n\n" +
+				"Restart the bot after changing config.", nil
+		}
+		return "", nil
+	}
+
+	result, err := h.OnCommand(chatID, 0, "mode", "")
+	if err != nil {
+		t.Fatalf("OnCommand /mode returned error: %v", err)
+	}
+
+	checks := []string{
+		"interaction_mode",
+		"engaging",
+		"verbose",
+		"Agent Modes",
+	}
+	for _, c := range checks {
+		if !strings.Contains(result, c) {
+			t.Errorf("expected /mode output to contain %q, got: %q", c, result)
+		}
+	}
+}

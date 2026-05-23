@@ -717,3 +717,34 @@ func TestLoadConfig_ClearsAPIKeyFromEnviron(t *testing.T) {
 		t.Errorf("OPENAI_API_KEY should be cleared after LoadConfig, got %q", v)
 	}
 }
+
+func TestLoadConfig_InteractionModeDefaults(t *testing.T) {
+	// When no interaction_mode is configured, the resolved config must
+	// default to "engaging".
+	cfg := LoadConfig(CLIFlags{})
+	if cfg.InteractionMode != "engaging" {
+		t.Errorf("InteractionMode = %q, want %q", cfg.InteractionMode, "engaging")
+	}
+}
+
+func TestLoadConfig_InteractionModeViaEnv(t *testing.T) {
+	// ODEK_INTERACTION_MODE should override the default.
+	os.Setenv("ODEK_INTERACTION_MODE", "verbose")
+	defer os.Unsetenv("ODEK_INTERACTION_MODE")
+
+	cfg := LoadConfig(CLIFlags{})
+	if cfg.InteractionMode != "verbose" {
+		t.Errorf("InteractionMode = %q, want %q", cfg.InteractionMode, "verbose")
+	}
+}
+
+func TestLoadConfig_InteractionModeViaCLI(t *testing.T) {
+	// CLI flag should take precedence over env.
+	os.Setenv("ODEK_INTERACTION_MODE", "engaging")
+	defer os.Unsetenv("ODEK_INTERACTION_MODE")
+
+	cfg := LoadConfig(CLIFlags{InteractionMode: "verbose"})
+	if cfg.InteractionMode != "verbose" {
+		t.Errorf("InteractionMode = %q, want %q", cfg.InteractionMode, "verbose")
+	}
+}
