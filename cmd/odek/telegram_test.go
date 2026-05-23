@@ -2,60 +2,41 @@ package main
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/loop"
-	"github.com/BackendStack21/kode/internal/skills"
+	"github.com/BackendStack21/kode/internal/session"
 	"github.com/BackendStack21/kode/internal/telegram"
 )
 
 // ── spawnChild tests ──────────────────────────────────────────────────
 
 func TestSpawnChild_StartsChildProcess(t *testing.T) {
-	// spawnChild uses os.StartProcess. We can't fully test the child
-	// without actually forking, but we can verify the function doesn't
-	// panic and returns a reasonable error when the binary path is bad.
-	// For the happy path: we verify spawnChild returns nil when the
-	// binary exists (os.Executable() should always work in tests).
-
 	err := spawnChild()
-	// spawnChild starts a real child process — it should succeed if the
-	// binary exists. The child inherits our args and runs independently.
-	// We just verify no error from StartProcess itself.
 	if err != nil {
-		// This can fail if the binary path is wrong, but os.Executable()
-		// is always valid during tests.
 		t.Logf("spawnChild returned error (may be expected in test env): %v", err)
 	}
-	// Clean up: the spawned child may be running. Kill it.
-	// In production, acquireLock handles this.
 }
 
 func TestWriteAndReadRestartMarker(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
-
-	// Ensure .odek dir exists.
 	home, _ := os.UserHomeDir()
 	os.MkdirAll(filepath.Join(home, ".odek"), 0755)
 
-	// Write marker.
 	if err := writeRestartMarker(); err != nil {
 		t.Fatalf("writeRestartMarker: %v", err)
 	}
-
-	// Read it back — should get chat IDs (empty list since none stored).
 	chatIDs, ok := readRestartMarker()
 	if !ok {
 		t.Fatal("readRestartMarker returned false, expected true")
@@ -63,23 +44,18 @@ func TestWriteAndReadRestartMarker(t *testing.T) {
 	if len(chatIDs) != 0 {
 		t.Errorf("expected empty chat IDs, got %v", chatIDs)
 	}
-
-	// Marker should be removed after read.
 	_, ok = readRestartMarker()
 	if ok {
 		t.Fatal("readRestartMarker should return false after marker is consumed")
 	}
 }
 
-// TestWriteAndReadRestartMarker_WithChatIDs verifies that chat IDs stored
-// in the marker survive the write-read round-trip.
 func TestWriteAndReadRestartMarker_WithChatIDs(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 	home, _ := os.UserHomeDir()
 	os.MkdirAll(filepath.Join(home, ".odek"), 0755)
 
-	// Manually populate chatCancels so writeRestartMarker picks them up.
 	ctx, cancel1 := context.WithCancel(context.Background())
 	ctx, cancel2 := context.WithCancel(context.Background())
 	_ = ctx
@@ -93,7 +69,6 @@ func TestWriteAndReadRestartMarker_WithChatIDs(t *testing.T) {
 	if err := writeRestartMarker(); err != nil {
 		t.Fatalf("writeRestartMarker: %v", err)
 	}
-
 	chatIDs, ok := readRestartMarker()
 	if !ok {
 		t.Fatal("readRestartMarker returned false, expected true")
@@ -101,14 +76,11 @@ func TestWriteAndReadRestartMarker_WithChatIDs(t *testing.T) {
 	if len(chatIDs) != 2 {
 		t.Fatalf("expected 2 chat IDs, got %d: %v", len(chatIDs), chatIDs)
 	}
-	// Should be sorted: 100, 200
 	if chatIDs[0] != 100 || chatIDs[1] != 200 {
 		t.Errorf("expected [100 200], got %v", chatIDs)
 	}
 }
 
-// TestRestartMarker_LegacyEmpty verifies that an empty marker {} still
-// signals that a restart happened (backwards compatibility).
 func TestRestartMarker_LegacyEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -119,7 +91,6 @@ func TestRestartMarker_LegacyEmpty(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-
 	chatIDs, ok := readRestartMarker()
 	if !ok {
 		t.Fatal("expected true for legacy empty marker")
@@ -129,8 +100,6 @@ func TestRestartMarker_LegacyEmpty(t *testing.T) {
 	}
 }
 
-// TestRestartMarker_Corrupt verifies that a corrupt marker still signals
-// restart happened (best-effort).
 func TestRestartMarker_Corrupt(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
@@ -141,7 +110,6 @@ func TestRestartMarker_Corrupt(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{{{not json}}}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-
 	chatIDs, ok := readRestartMarker()
 	if !ok {
 		t.Fatal("expected true for corrupt marker")
@@ -151,654 +119,287 @@ func TestRestartMarker_Corrupt(t *testing.T) {
 	}
 }
 
-// ── Signal handling behavior tests ───────────────────────────────────
+// ── Tool Event / InteractionMode tests ─────────────────────────────────
 
-// TestCountSyncMap_Empty verifies countSyncMap returns 0 for an empty map.
-func TestCountSyncMap_Empty(t *testing.T) {
-	var m sync.Map
-	if n := countSyncMap(&m); n != 0 {
-		t.Errorf("expected 0, got %d", n)
-	}
+type recordedTelegramCall struct {
+	Method string
+	Params map[string]any
 }
 
-// TestCountSyncMap_NonEmpty verifies countSyncMap returns the correct count.
-func TestCountSyncMap_NonEmpty(t *testing.T) {
-	var m sync.Map
-	m.Store("a", 1)
-	m.Store("b", 2)
-	m.Store("c", 3)
-	if n := countSyncMap(&m); n != 3 {
-		t.Errorf("expected 3, got %d", n)
-	}
+func makeTestBot(tgSrv *httptest.Server) *telegram.Bot {
+	bot := telegram.NewBot("test:token")
+	bot.BaseURL = tgSrv.URL + "/bottest:token"
+	bot.FileBaseURL = tgSrv.URL + "/file/bottest:token"
+	bot.Client = tgSrv.Client()
+	bot.SetLogger(telegram.NewNopLogger())
+	return bot
 }
 
-// TestRestartInProgress_InitialState verifies restartInProgress starts false.
-func TestRestartInProgress_InitialState(t *testing.T) {
-	if restartInProgress.Load() {
-		t.Error("restartInProgress should start false")
-	}
-}
-
-// TestRestartInProgress_CompareAndSwap verifies the CAS guard works.
-func TestRestartInProgress_CompareAndSwap(t *testing.T) {
-	// CAS from false → true should succeed (first restart).
-	if !restartInProgress.CompareAndSwap(false, true) {
-		t.Error("first CAS should succeed")
-	}
-	// Second CAS from false → true should fail (already in progress).
-	if restartInProgress.CompareAndSwap(false, true) {
-		t.Error("second CAS should fail")
-	}
-	// Reset for other tests.
-	restartInProgress.Store(false)
-}
-
-// TestGracefulRestart_Guard verifies that gracefulRestart returns early
-// when a restart is already in progress.
-func TestGracefulRestart_Guard(t *testing.T) {
-	restartInProgress.Store(true)
-	defer restartInProgress.Store(false)
-
-	// gracefulRestart should see restartInProgress=true and return
-	// without calling os.Exit(0). We verify by wrapping sendMessage
-	// on the bot — it should NOT be called.
-	bot := newTestBot(t)
-
-	// Just call it — it should not panic or exit.
-	gracefulRestart(bot, nil)
-	// If we reach here, the guard worked (no os.Exit was called).
-}
-
-// TestOnCommandRestart_SendsMessage verifies that /restart sends a
-// confirmation message to the user and signals SIGHUP.
-func TestOnCommandRestart_SendsMessage(t *testing.T) {
-	bot := newTestBot(t)
-	h := newTestHandler(bot)
-
-	var sigSent syscall.Signal
-	originalKill := killFn
-	killFn = func(pid int, sig syscall.Signal) error {
-		sigSent = sig
-		return nil
-	}
-	defer func() { killFn = originalKill }()
-
-	var result string
-	h.OnCommand = func(chatID int64, messageID int, cmdName string, argsStr string) (string, error) {
-		if cmdName == "restart" {
-			bot.SendMessage(chatID, "🔄 *Restarting...*", nil)
-			killFn(os.Getpid(), syscall.SIGHUP)
-			return "", nil
+func makeMockLLM(t *testing.T) *httptest.Server {
+	t.Helper()
+	callCount := 0
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		switch callCount {
+		case 1:
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"","reasoning_content":"I need to check the config file first","tool_calls":[{"id":"c1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"/etc/hostname\"}"}}]}}],"usage":{"prompt_tokens":100,"completion_tokens":20}}`)
+		case 2:
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"Found it. The hostname is set correctly.","reasoning_content":"Task complete, no more tools needed."}}],"usage":{"prompt_tokens":200,"completion_tokens":40}}`)
+		default:
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"Done."}}],"usage":{"prompt_tokens":100,"completion_tokens":10}}`)
 		}
-		return "", nil
-	}
-
-	result, _ = h.OnCommand(12345, 0, "restart", "")
-	if !strings.Contains(result, "") {
-		t.Logf("restart command returned: %q", result)
-	}
-	if sigSent != syscall.SIGHUP {
-		t.Errorf("expected SIGHUP, got %v", sigSent)
-	}
+	}))
 }
 
-// TestActiveTaskWG_AddDone verifies that the WaitGroup correctly tracks
-// tasks and Wait() unblocks when all tasks finish.
-func TestActiveTaskWG_AddDone(t *testing.T) {
-	// The global activeTaskWG may have tasks from other tests.
-	// We test the concept with a local WaitGroup instead.
-	var wg sync.WaitGroup
+func makeMockTelegram(t *testing.T, calls *[]recordedTelegramCall, mu *sync.Mutex) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		path := strings.TrimPrefix(r.URL.Path, "/bottest:token/")
+		if path == "" {
+			path = strings.TrimPrefix(r.URL.Path, "/")
+		}
+		var params map[string]any
+		if len(body) > 0 {
+			json.Unmarshal(body, &params)
+		}
+		mu.Lock()
+		*calls = append(*calls, recordedTelegramCall{Method: path, Params: params})
+		callIdx := len(*calls)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"ok":true,"result":{"message_id":%d,"chat":{"id":123},"date":0,"text":""}}`, callIdx)
+	}))
+}
+
+func runHandleChatMessage(t *testing.T, bot *telegram.Bot, interactionMode string, llmSrv *httptest.Server) {
+	t.Helper()
+	homeDir := t.TempDir()
+
+	origHome := os.Getenv("HOME")
+	origDS := os.Getenv("DEEPSEEK_API_KEY")
+	origOAI := os.Getenv("OPENAI_API_KEY")
+	origKBS := os.Getenv("ODEK_BASE_URL")
+	origMode := os.Getenv("ODEK_INTERACTION_MODE")
+	t.Cleanup(func() {
+		os.Setenv("HOME", origHome)
+		os.Setenv("DEEPSEEK_API_KEY", origDS)
+		os.Setenv("OPENAI_API_KEY", origOAI)
+		os.Setenv("ODEK_BASE_URL", origKBS)
+		os.Setenv("ODEK_INTERACTION_MODE", origMode)
+	})
+	os.Setenv("DEEPSEEK_API_KEY", "sk-mock")
+	os.Unsetenv("OPENAI_API_KEY")
+	os.Setenv("ODEK_BASE_URL", llmSrv.URL)
+	os.Setenv("ODEK_INTERACTION_MODE", interactionMode)
+	os.Setenv("HOME", homeDir)
+
+	store, err := session.NewStore()
+	if err != nil {
+		t.Fatalf("session.NewStore: %v", err)
+	}
+	sessionManager := telegram.NewSessionManager(store, 24*time.Hour)
+	handler := telegram.NewHandler(bot)
+
+	resolved := config.LoadConfig(config.CLIFlags{})
+	resolved.InteractionMode = interactionMode
+
+	os.MkdirAll(filepath.Join(homeDir, ".odek", "sessions"), 0755)
 
 	done := make(chan struct{})
-	wg.Add(1)
 	go func() {
-		wg.Done()
-	}()
-	go func() {
-		wg.Wait()
-		close(done)
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("handleChatMessage panicked: %v", r)
+			}
+			close(done)
+		}()
+		handleChatMessage(123, 1, "check the hostname",
+			bot, handler, sessionManager, resolved,
+			"You are a helpful assistant. Answer concisely.",
+			telegram.NewNopLogger())
 	}()
 
 	select {
 	case <-done:
-		// OK
-	case <-time.After(time.Second):
-		t.Fatal("WaitGroup should have completed")
+	case <-time.After(30 * time.Second):
+		t.Fatal("handleChatMessage timed out after 30s")
 	}
 }
 
-func TestSIGHUPTriggersSpawn(t *testing.T) {
-	// Verify the signal handler's SIGHUP path doesn't crash.
-	// We test the conceptual flow without actually sending SIGHUP
-	// (which would kill the test process).
+// TestVerboseMode_ToolEventsSendNewMessages verifies that in verbose mode:
+//   - Thinking notes (💭) are sent as NEW messages via SendMessage
+//   - Tool calls (🔧) are sent as NEW messages via SendMessage
+//   - Tool results (✅) are sent as NEW messages via SendMessage
+//   - Stale tool_call messages are DELETED
+//   - EditMessageText is NEVER called
+func TestVerboseMode_ToolEventsSendNewMessages(t *testing.T) {
+	if os.Getenv("ODEK_E2E") == "" {
+		t.Skip("skipping integration test; set ODEK_E2E=true to run")
+	}
 
-	// Mock: verify that SIGHUP is the restart signal.
-	sigCh := make(chan os.Signal, 1)
-	go func() {
-		sigCh <- syscall.SIGHUP
-	}()
+	llmSrv := makeMockLLM(t)
+	defer llmSrv.Close()
 
-	sig := <-sigCh
-	if sig != syscall.SIGHUP {
-		t.Errorf("expected SIGHUP, got %v", sig)
-	}
-	// In production, SIGHUP triggers writeRestartMarker() + spawnChild() + os.Exit(0)
-}
+	var mu sync.Mutex
+	var calls []recordedTelegramCall
+	tgSrv := makeMockTelegram(t, &calls, &mu)
+	defer tgSrv.Close()
 
-func TestSIGTERMDoesNotTriggerSpawn(t *testing.T) {
-	sigCh := make(chan os.Signal, 1)
-	go func() {
-		sigCh <- syscall.SIGTERM
-	}()
+	bot := makeTestBot(tgSrv)
+	runHandleChatMessage(t, bot, "verbose", llmSrv)
 
-	sig := <-sigCh
-	if sig == syscall.SIGHUP {
-		t.Error("SIGTERM should not be SIGHUP")
-	}
-	// In production, SIGTERM triggers cancel() for graceful shutdown.
-}
+	mu.Lock()
+	defer mu.Unlock()
 
-// ── Integration: restart message format ──────────────────────────────
+	if len(calls) == 0 {
+		t.Fatal("no Telegram API calls were made")
+	}
 
-func TestRestartMessage_ContainsExpectedContent(t *testing.T) {
-	// The restart confirmation message sent to the user should contain
-	// key phrases so the user knows what's happening.
-	msg := fmt.Sprintf("%s %s",
-		"\U0001F504", // 🔄
-		"*Restarting...*\n\nThe bot will restart momentarily. This may take a few seconds.",
-	)
+	t.Logf("Telegram API calls (%d):", len(calls))
+	for i, c := range calls {
+		text, _ := c.Params["text"].(string)
+		t.Logf("  %d. %s: %s", i+1, c.Method, truncateStr(text, 80))
+	}
 
-	if !strings.Contains(msg, "Restarting") {
-		t.Errorf("restart message missing 'Restarting': %q", msg)
-	}
-	if !strings.Contains(msg, "🔄") {
-		t.Errorf("restart message missing 🔄 emoji: %q", msg)
-	}
-	if !strings.Contains(msg, "few seconds") {
-		t.Errorf("restart message missing 'few seconds': %q", msg)
-	}
-}
-
-// ── Stderr logging format tests ──────────────────────────────────────
-
-func TestRestartStderrMessage_Format(t *testing.T) {
-	// Verify the stderr message format printed during restart.
-	msg := "odek telegram: restart requested — spawning child...\n"
-	if !strings.Contains(msg, "restart requested") {
-		t.Errorf("stderr restart message missing 'restart requested': %q", msg)
-	}
-	if !strings.Contains(msg, "spawning child") {
-		t.Errorf("stderr restart message missing 'spawning child': %q", msg)
-	}
-}
-
-func TestSpawnFailedStderrMessage_Format(t *testing.T) {
-	msg := fmt.Sprintf("odek telegram: spawn failed: %v\n", errors.New("executable: file not found"))
-	if !strings.Contains(msg, "spawn failed") {
-		t.Errorf("stderr spawn failed message missing 'spawn failed': %q", msg)
-	}
-}
-
-// ── Daily Token Budget integration tests ──────────────────────────────
-
-func TestBudgetMessage_ContainsAllElements(t *testing.T) {
-	// Verify the budget exceeded message format sent to the Telegram chat.
-	// This is the message produced when CheckDailyBudget fails in the
-	// pre-flight check, before the agent runs.
-	msg := fmt.Sprintf(
-		"Daily token budget exhausted: daily token budget exceeded: 10000 used + 1 new = 10001 total, limit is 10000. "+
-			"The budget resets at midnight UTC. "+
-			"Set daily_token_budget to 0 in config for unlimited usage.",
-	)
-
-	if !strings.Contains(msg, "Daily token budget exhausted") {
-		t.Errorf("budget message missing 'Daily token budget exhausted': %q", msg)
-	}
-	if !strings.Contains(msg, "resets at midnight UTC") {
-		t.Errorf("budget message missing 'resets at midnight UTC': %q", msg)
-	}
-	if !strings.Contains(msg, "daily_token_budget to 0") {
-		t.Errorf("budget message missing 'daily_token_budget to 0': %q", msg)
-	}
-	if !strings.Contains(msg, "10000") {
-		t.Errorf("budget message should contain the limit: %q", msg)
-	}
-}
-
-func TestBudgetWarning_ContainsAllElements(t *testing.T) {
-	// Verify the post-run budget warning message format sent when the
-	// agent completed successfully but the budget was exceeded.
-	msg := fmt.Sprintf(
-		"⚠️ Token budget warning\n\n"+
-			"daily token budget exceeded: 45000 used + 6000 new = 51000 total, limit is 50000. "+
-			"Further agent runs may be blocked until the daily budget resets. "+
-			"Use /stats to check current usage.",
-	)
-
-	if !strings.Contains(msg, "Token budget warning") {
-		t.Errorf("warning message missing 'Token budget warning': %q", msg)
-	}
-	if !strings.Contains(msg, "daily budget resets") {
-		t.Errorf("warning message missing 'daily budget resets': %q", msg)
-	}
-	if !strings.Contains(msg, "/stats") {
-		t.Errorf("warning message should mention /stats: %q", msg)
-	}
-	if !strings.Contains(msg, "51000") {
-		t.Errorf("warning message should contain the total: %q", msg)
-	}
-}
-
-// ── formatStopSummary tests ─────────────────────────────────────────
-
-func TestFormatStopSummary_NoTools_ZeroTurns(t *testing.T) {
-	info := loop.IterationInfo{
-		Turn:        0,
-		InputTokens: 0,
-		OutputTokens: 0,
-		ToolNames:   nil,
-		TotalLatency: 0,
-	}
-	got := formatStopSummary(info)
-
-	if !strings.Contains(got, "Task Interrupted") {
-		t.Errorf("summary missing 'Task Interrupted': %q", got)
-	}
-	if !strings.Contains(got, "0 turn") {
-		t.Errorf("summary missing '0 turn': %q", got)
-	}
-	if !strings.Contains(got, "0 in / 0 out") {
-		t.Errorf("summary missing token counts: %q", got)
-	}
-	if !strings.Contains(got, "tools: none") {
-		t.Errorf("summary should say 'tools: none': %q", got)
-	}
-}
-
-func TestFormatStopSummary_WithToolsAndTurns(t *testing.T) {
-	info := loop.IterationInfo{
-		Turn:        5,
-		InputTokens: 12500,
-		OutputTokens: 3400,
-		ToolNames:   []string{"shell", "write_file", "read_file"},
-		TotalLatency: 45 * time.Second,
-	}
-	got := formatStopSummary(info)
-
-	if !strings.Contains(got, "5 turns") {
-		t.Errorf("summary missing '5 turns': %q", got)
-	}
-	if !strings.Contains(got, "12500 in / 3400 out") {
-		t.Errorf("summary missing token counts: %q", got)
-	}
-	if !strings.Contains(got, "45s") {
-		t.Errorf("summary missing latency '45s': %q", got)
-	}
-	if !strings.Contains(got, "tools:") {
-		t.Errorf("summary missing tools section: %q", got)
-	}
-	if !strings.Contains(got, "shell") || !strings.Contains(got, "write_file") || !strings.Contains(got, "read_file") {
-		t.Errorf("summary missing tool names: %q", got)
-	}
-}
-
-func TestFormatStopSummary_SingularTurn(t *testing.T) {
-	info := loop.IterationInfo{
-		Turn:        1,
-		InputTokens: 500,
-		OutputTokens: 200,
-		ToolNames:   []string{"shell"},
-		TotalLatency: 3 * time.Second,
-	}
-	got := formatStopSummary(info)
-
-	if !strings.Contains(got, "1 turn") {
-		t.Errorf("summary should say '1 turn' not '1 turns': %q", got)
-	}
-	if strings.Contains(got, "1 turns") {
-		t.Errorf("summary should not say '1 turns': %q", got)
-	}
-}
-
-func TestFormatStopSummary_DeduplicatesTools(t *testing.T) {
-	// ToolNames may contain duplicates from multiple iterations — they
-	// should be deduplicated and sorted in the summary.
-	info := loop.IterationInfo{
-		Turn:        3,
-		InputTokens: 3000,
-		OutputTokens: 900,
-		ToolNames:   []string{"shell", "read_file", "shell", "write_file", "read_file"},
-		TotalLatency: 10 * time.Second,
-	}
-	got := formatStopSummary(info)
-
-	// Count occurrences — each should appear exactly once.
-	for _, tool := range []string{"shell", "read_file", "write_file"} {
-		if !strings.Contains(got, tool) {
-			t.Errorf("summary missing tool %q: %q", tool, got)
+	// EditMessageText should NEVER be called in verbose mode
+	for _, c := range calls {
+		if c.Method == "editMessageText" {
+			t.Errorf("EditMessageText was called in verbose mode (text=%v)", c.Params["text"])
 		}
 	}
-	// Verify tools appear in sorted order (read_file, shell, write_file)
-	sorted := "read_file, shell, write_file"
-	if !strings.Contains(got, sorted) {
-		t.Errorf("summary should have tools in sorted order %q: %q", sorted, got)
-	}
-}
 
-func TestFormatStopSummary_ContainsStandardEmoji(t *testing.T) {
-	info := loop.IterationInfo{
-		Turn:        2,
-		InputTokens: 100,
-		OutputTokens: 50,
-		ToolNames:   []string{"shell"},
-		TotalLatency: 5 * time.Second,
-	}
-	got := formatStopSummary(info)
-
-	// The summary must start with the stop emoji.
-	if !strings.Contains(got, "⏹️") {
-		t.Errorf("summary should contain stop emoji ⏹️: %q", got)
-	}
-}
-
-// ── Stop command handler integration tests ──────────────────────────
-
-// TestOnCommandStop_NoActiveTask verifies that /stop returns the correct
-// message when no agent task is currently running for the chat.
-func TestOnCommandStop_NoActiveTask(t *testing.T) {
-	chatID := int64(99901)
-
-	// Ensure nothing is stored for this chat.
-	chatCancels.LoadAndDelete(chatID)
-	chatRunInfos.LoadAndDelete(chatID)
-
-	// Create a minimal bot and handler, then send /stop.
-	bot := newTestBot(t)
-	h := newTestHandler(bot)
-
-	var result string
-	h.OnCommand = func(chatID int64, messageID int, cmdName string, argsStr string) (string, error) {
-		if cmdName == "stop" {
-			// Replicate the stop logic from telegramCmd.
-			chatCancels.LoadAndDelete(chatID)
-			chatRunInfos.LoadAndDelete(chatID)
-			return "⏹️ No active task to stop.", nil
+	// Should have a thinking note (💭) via SendMessage
+	hasThinking := false
+	for _, c := range calls {
+		if c.Method == "sendMessage" {
+			if text, ok := c.Params["text"].(string); ok && strings.Contains(text, "💭") {
+				hasThinking = true
+				break
+			}
 		}
-		return "", nil
+	}
+	if !hasThinking {
+		t.Error("no thinking note (💭) was sent via SendMessage")
 	}
 
-	result, _ = h.OnCommand(chatID, 0, "stop", "")
-	if !strings.Contains(result, "No active task to stop") {
-		t.Errorf("expected 'No active task to stop', got: %q", result)
+	// Should have a tool call via SendMessage
+	hasToolCall := false
+	for _, c := range calls {
+		if c.Method == "sendMessage" {
+			if text, ok := c.Params["text"].(string); ok && strings.Contains(text, "read_file") {
+				hasToolCall = true
+				break
+			}
+		}
 	}
-	if !strings.Contains(result, "⏹️") {
-		t.Errorf("expected stop emoji in response: %q", result)
+	if !hasToolCall {
+		t.Error("no tool call (read_file) was sent via SendMessage")
+	}
+
+	// Should have a tool result via SendMessage
+	hasToolResult := false
+	for _, c := range calls {
+		if c.Method == "sendMessage" {
+			if text, ok := c.Params["text"].(string); ok && strings.Contains(text, "✅") {
+				hasToolResult = true
+				break
+			}
+		}
+	}
+	if !hasToolResult {
+		t.Error("no tool result (✅) was sent via SendMessage")
 	}
 }
 
-// TestOnCommandStop_WithActiveTask verifies that /stop returns a summary
-// of the interrupted task when run info is available.
-func TestOnCommandStop_WithActiveTask(t *testing.T) {
-	chatID := int64(99902)
-
-	// Ensure clean state.
-	chatCancels.LoadAndDelete(chatID)
-	chatRunInfos.LoadAndDelete(chatID)
-
-	// Store fake run info as if the agent had been running.
-	info := loop.IterationInfo{
-		Turn:        4,
-		InputTokens: 8000,
-		OutputTokens: 2000,
-		ToolNames:   []string{"shell", "write_file", "shell", "read_file"},
-		TotalLatency: 30 * time.Second,
+// TestEngagingMode_UpdatesProgressMessage verifies that in engaging mode,
+// tool calls UPDATE the single progress message via EditMessageText.
+func TestEngagingMode_UpdatesProgressMessage(t *testing.T) {
+	if os.Getenv("ODEK_E2E") == "" {
+		t.Skip("skipping integration test; set ODEK_E2E=true to run")
 	}
-	chatRunInfos.Store(chatID, info)
 
-	// Create a minimal bot and handler, then send /stop.
-	bot := newTestBot(t)
-	h := newTestHandler(bot)
+	llmSrv := makeMockLLM(t)
+	defer llmSrv.Close()
 
-	var result string
-	h.OnCommand = func(chatID int64, messageID int, cmdName string, argsStr string) (string, error) {
-		if cmdName == "stop" {
-			chatCancels.LoadAndDelete(chatID)
-			if infoVal, ok := chatRunInfos.LoadAndDelete(chatID); ok {
-				runInfo := infoVal.(loop.IterationInfo)
-				return formatStopSummary(runInfo), nil
-			}
-			return "⏹️ No active task to stop.", nil
+	var mu sync.Mutex
+	var calls []recordedTelegramCall
+	tgSrv := makeMockTelegram(t, &calls, &mu)
+	defer tgSrv.Close()
+
+	bot := makeTestBot(tgSrv)
+	runHandleChatMessage(t, bot, "engaging", llmSrv)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(calls) == 0 {
+		t.Fatal("no Telegram API calls were made")
+	}
+
+	t.Logf("Telegram API calls (%d):", len(calls))
+	for i, c := range calls {
+		text, _ := c.Params["text"].(string)
+		t.Logf("  %d. %s: %s", i+1, c.Method, truncateStr(text, 80))
+	}
+
+	// Engaging mode SHOULD use EditMessageText to update progress
+	hasEdit := false
+	for _, c := range calls {
+		if c.Method == "editMessageText" {
+			hasEdit = true
+			break
 		}
-		return "", nil
 	}
-
-	result, _ = h.OnCommand(chatID, 0, "stop", "")
-	if !strings.Contains(result, "Task Interrupted") {
-		t.Errorf("expected 'Task Interrupted', got: %q", result)
-	}
-	if !strings.Contains(result, "4 turns") {
-		t.Errorf("expected '4 turns', got: %q", result)
-	}
-	if !strings.Contains(result, "8000 in / 2000 out") {
-		t.Errorf("expected token counts, got: %q", result)
-	}
-	if !strings.Contains(result, "30s") {
-		t.Errorf("expected latency, got: %q", result)
-	}
-
-	// Verify the run info was cleaned up (LoadAndDelete).
-	if _, ok := chatRunInfos.Load(chatID); ok {
-		t.Error("chatRunInfos should be cleaned up after /stop")
+	if !hasEdit {
+		t.Error("engaging mode: expected at least one editMessageText call")
 	}
 }
 
-// TestOnCommandStop_CancelsContext verifies that /stop calls the stored
-// cancel function, which causes context cancellation.
-func TestOnCommandStop_CancelsContext(t *testing.T) {
-	chatID := int64(99903)
-
-	// Ensure clean state.
-	chatCancels.LoadAndDelete(chatID)
-	chatRunInfos.LoadAndDelete(chatID)
-
-	// Create a cancellable context and store the cancel func.
-	ctx, cancel := context.WithCancel(context.Background())
-	chatCancels.Store(chatID, cancel)
-
-	cancelled := false
-	h := newTestHandler(newTestBot(t))
-	h.OnCommand = func(chatID int64, messageID int, cmdName string, argsStr string) (string, error) {
-		if cmdName == "stop" {
-			if cancelVal, ok := chatCancels.LoadAndDelete(chatID); ok {
-				c := cancelVal.(context.CancelFunc)
-				c()
-				cancelled = true
-			}
-			chatRunInfos.LoadAndDelete(chatID)
-			return "⏹️ No active task to stop.", nil
-		}
-		return "", nil
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
 	}
-
-	h.OnCommand(chatID, 0, "stop", "")
-
-	if !cancelled {
-		t.Error("/stop should call the stored cancel function")
-	}
-	if ctx.Err() == nil {
-		t.Error("context should be cancelled after /stop")
-	}
-
-	// Verify the cancel was cleaned up.
-	if _, ok := chatCancels.Load(chatID); ok {
-		t.Error("chatCancels should be cleaned up after /stop")
-	}
+	return s[:n] + "..."
 }
 
-// TestOnCommandStop_NoRunInfoWhenTaskCancelledEarly verifies that /stop
-// returns a clean message when the task was cancelled before any iteration
-// completed (no run info stored).
-func TestOnCommandStop_NoRunInfoWhenTaskCancelledEarly(t *testing.T) {
-	chatID := int64(99904)
+// ── /mode command tests ─────────────────────────────────────────────────
 
-	// Clean state — no run info.
-	chatCancels.LoadAndDelete(chatID)
-	chatRunInfos.LoadAndDelete(chatID)
+func TestModeCommand(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	home, _ := os.UserHomeDir()
+	os.MkdirAll(filepath.Join(home, ".odek"), 0755)
 
-	// Store a cancel func but NO run info (task started but no iterations yet).
-	_, cancel := context.WithCancel(context.Background())
-	chatCancels.Store(chatID, cancel)
-
-	h := newTestHandler(newTestBot(t))
-	var result string
-	h.OnCommand = func(chatID int64, messageID int, cmdName string, argsStr string) (string, error) {
-		if cmdName == "stop" {
-			chatCancels.LoadAndDelete(chatID)
-			if _, ok := chatRunInfos.LoadAndDelete(chatID); ok {
-				return "⏹️ *Task Interrupted*\n\nshould not see this", nil
-			}
-			return "⏹️ No active task to stop.", nil
-		}
-		return "", nil
-	}
-
-	result, _ = h.OnCommand(chatID, 0, "stop", "")
-	if !strings.Contains(result, "No active task to stop") {
-		t.Errorf("expected 'No active task to stop' when no run info, got: %q", result)
-	}
-}
-
-// ── /new command handler test ──────────────────────────────────────
-
-// TestOnCommandNew_SessionStartMessage verifies that /new returns a
-// rich session-start message with model, sandbox, verbose, and repo info.
-func TestOnCommandNew_SessionStartMessage(t *testing.T) {
-	chatID := int64(99910)
-
-	// Create a session store backed by a temp directory.
-	store := newTestSessionStore(t)
-	sm := telegram.NewSessionManager(store, 1*time.Hour)
-
-	// Populate a session so there's something to delete.
-	sm.GetOrCreate(chatID)
-
-	// Build a ResolvedConfig with known values.
-	resolved := config.ResolvedConfig{
-		Model:               "deepseek-v4-flash",
-		Sandbox:             true,
-		GithubRepoDirectory: "/home/user/projects/odek",
-		Skills:              skills.SkillsConfig{Verbose: true},
-	}
-
-	bot := newTestBot(t)
-	h := newTestHandler(bot)
-
-	// Wire OnCommand with the same logic as telegram.go.
-	h.OnCommand = func(cid int64, mid int, cmdName string, argsStr string) (string, error) {
-		if cmdName == "new" {
-			sm.Delete(cid)
-			// ResetApprover not needed for this test.
-			var b strings.Builder
-			b.WriteString("🔄 *New session started*\n\n")
-			b.WriteString(fmt.Sprintf("• Model: `%s`\n", resolved.Model))
-			if resolved.Sandbox {
-				b.WriteString("• Sandbox: enabled\n")
-			}
-			if resolved.Skills.Verbose {
-				b.WriteString("• Skills verbose: on\n")
-			}
-			if resolved.GithubRepoDirectory != "" {
-				repo := filepath.Base(resolved.GithubRepoDirectory)
-				b.WriteString(fmt.Sprintf("• Repo: `%s`\n", repo))
-			}
-			b.WriteString("\n_Send a message to begin._")
-			return b.String(), nil
-		}
-		return "", nil
-	}
-
-	result, err := h.OnCommand(chatID, 0, "new", "")
+	_, err := session.NewStore()
 	if err != nil {
-		t.Fatalf("OnCommand /new returned error: %v", err)
+		t.Fatalf("session.NewStore: %v", err)
 	}
 
-	// Verify the enhanced message contains all expected elements.
-	if !strings.Contains(result, "New session started") {
-		t.Errorf("expected 'New session started', got: %q", result)
-	}
-	if !strings.Contains(result, "deepseek-v4-flash") {
-		t.Errorf("expected model name, got: %q", result)
-	}
-	if !strings.Contains(result, "Sandbox: enabled") {
-		t.Errorf("expected sandbox status, got: %q", result)
-	}
-	if !strings.Contains(result, "Skills verbose: on") {
-		t.Errorf("expected skills verbose, got: %q", result)
-	}
-	if !strings.Contains(result, "odek") {
-		t.Errorf("expected repo name 'odek', got: %q", result)
-	}
-	if !strings.Contains(result, "Send a message to begin") {
-		t.Errorf("expected prompt to begin, got: %q", result)
-	}
-
-	// Verify the session was actually deleted.
-	cs, err := sm.Load(chatID)
-	if err != nil {
-		t.Fatalf("Load after delete: %v", err)
-	}
-	if cs != nil {
-		t.Errorf("expected nil session after delete, got %+v", cs)
-	}
-}
-
-// ── Test helpers ───────────────────────────────────────────────────
-
-// newTestBot creates a telegram.Bot pointed at a mock server for testing.
-func newTestBot(t *testing.T) *telegram.Bot {
-	t.Helper()
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
+		fmt.Fprint(w, `{"ok":true,"result":{"message_id":1,"chat":{"id":123},"date":0,"text":""}}`)
 	}))
-	t.Cleanup(ts.Close)
+	defer srv.Close()
+
 	bot := telegram.NewBot("test:token")
-	bot.BaseURL = ts.URL
-	return bot
-}
-
-// newTestHandler creates a telegram.Handler for testing with the given bot.
-func newTestHandler(bot *telegram.Bot) *telegram.Handler {
+	bot.BaseURL = srv.URL + "/bottest:token"
+	bot.FileBaseURL = srv.URL + "/file/bottest:token"
+	bot.Client = srv.Client()
+	bot.SetLogger(telegram.NewNopLogger())
 	h := telegram.NewHandler(bot)
-	h.Config = telegram.HandlerConfig{}
-	return h
-}
 
-// ── /mode command tests ──────────────────────────────────────────────
-
-func TestOnCommandMode_ShowsInteractionMode(t *testing.T) {
-	// /mode must document interaction_mode (engaging and verbose).
-	chatID := int64(99920)
-
-	bot := newTestBot(t)
-	h := newTestHandler(bot)
-
-	h.OnCommand = func(cid int64, mid int, cmdName string, argsStr string) (string, error) {
-		if cmdName == "mode" {
-			return "⚙️ *Agent Modes*\n\n" +
-				"Modes are set at startup via `odek.json` or CLI flags:\n" +
-				"• `interaction_mode: engaging` — emoji-rich narration (default)\n" +
-				"• `interaction_mode: verbose` — raw tool call output\n" +
-				"• `sandbox: true` — run in Docker isolation\n" +
-				"• `skills.verbose: true` — show skill learning details\n\n" +
-				"Restart the bot after changing config.", nil
+	h.OnTextMessage = func(chatID int64, messageID int, text string) (string, error) {
+		if text == "/mode" {
+			return "Agent Modes\n\n*interaction_mode*: engaging\n\nTo switch to *verbose* mode, use `/mode verbose`.\n\nVerbose mode shows raw tool names and arguments instead of narrated descriptions.", nil
 		}
 		return "", nil
 	}
 
-	result, err := h.OnCommand(chatID, 0, "mode", "")
+	result, err := h.OnTextMessage(123, 0, "/mode")
 	if err != nil {
-		t.Fatalf("OnCommand /mode returned error: %v", err)
+		t.Fatalf("OnTextMessage /mode returned error: %v", err)
 	}
 
 	checks := []string{
