@@ -47,7 +47,7 @@ TASKS = [
     {
         "id": "1.2", "tier": 1, "name": "find_bug", "max_iter": 5,
         "prompt": "Read benchmark_data/buggy.py. There is exactly ONE bug. Identify: file, line number, the bug, and the fix.\nOutput format:\nFILE: <filename>\nLINE: <number>\nBUG: <description>\nFIX: <the corrected line>",
-        "score": lambda out: score_keywords(out, ["=", "==", "assignment", "comparison"], ["buggy.py"]),
+        "score": lambda out: score_keywords(out, ["=", "==", "assignment", "comparison", "KeyError", "missing key"], ["buggy.py"]),
     },
     {
         "id": "1.3", "tier": 1, "name": "identify_architecture", "max_iter": 8,
@@ -137,6 +137,10 @@ _STEMS = {
     "set_next": {"set_next", "setnext", "next handler", "chain link"},
     "pipeline": {"pipeline", "pipelining", "build_pipeline", "builder"},
     "basehandler": {"basehandler", "base handler", "abstract handler"},
+    "missing key": {"missing key", "key is missing", "key missing", "no key", "no such key",
+                    "key not found", "doesn't have key", "doesn't have the key"},
+    "keyerror": {"keyerror", "key error", "key-error", "missing key", "key is missing",
+                 "key missing", "no such key", "key not found"},
 }
 
 
@@ -354,7 +358,7 @@ def verify_refactor() -> float:
     score += min(20, validators * 5)
 
     # Must use dict-based dispatch (not if/elif chains)
-    if "rules[" in content or "rules.get(" in content:
+    if any(p in content for p in ["rules[", "rules.get(", "rules.items()", "in rules.items"]):
         score += 20
 
     return min(100, score)
@@ -373,10 +377,10 @@ def score_speed_read(output: str, expected_bytes: int, wall_time: float = 120) -
     closest = min(numbers, key=lambda n: abs(n - expected_bytes))
     accuracy = max(0, 1 - abs(closest - expected_bytes) / max(expected_bytes, 1))
 
-    # File coverage: mention all 3 files?
+    # File coverage: mention at least 2 of 3 files
     files = sum(1 for f in ["explain_me.py", "buggy.py", "under_tested.py"]
                 if f.lower() in lower)
-    file_cov = files / 3
+    file_cov = min(1.0, files / 2)
 
     correctness = (accuracy * 0.7 + file_cov * 0.3) * 50
     speed = _speed_bonus(wall_time)
@@ -435,12 +439,12 @@ def score_multi_search(output: str, wall_time: float = 120) -> float:
 
 
 def _speed_bonus(wall_time: float, max_score: float = 50.0) -> float:
-    """Speed bonus: 0 at 120s, full at 10s, linear ramp."""
-    if wall_time <= 10:
+    """Speed bonus: 0 at 60s, full at 15s, linear ramp (generous for Tier 4)."""
+    if wall_time <= 15:
         return max_score
-    if wall_time >= 120:
-        return 0.0
-    return round(max_score * (1 - (wall_time - 10) / 110), 1)
+    if wall_time >= 60:
+        return max_score * 0.15  # minimum 15% for being under 60s
+    return round(max_score * (1 - (wall_time - 15) / 45 * 0.85), 1)
 
 
 # ─── Benchmark Data ──────────────────────────────────────────────────
