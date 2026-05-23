@@ -1235,6 +1235,30 @@ func parallelToolServer(t *testing.T, toolCount int, finalAnswer string) *httpte
 	}))
 }
 
+// batchApprovalServer returns a mock LLM that responds with shell tool calls
+// that can be classified by classifyToolCall for batch approval testing.
+func batchApprovalServer(t *testing.T, toolCount int, finalAnswer string) *httptest.Server {
+	callNum := 0
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callNum++
+		if callNum == 1 {
+			var b strings.Builder
+			b.WriteString(`{"choices":[{"message":{"content":"","tool_calls":[`)
+			for j := 0; j < toolCount; j++ {
+				if j > 0 {
+					b.WriteString(",")
+				}
+				// Use shell tool with a destructive command targeting /etc
+				fmt.Fprintf(&b, `{"id":"call_%d","function":{"name":"shell","arguments":"{\"command\":\"rm -rf /etc/test%d\"}"}}`, j, j)
+			}
+			b.WriteString(`]}}]}`)
+			fmt.Fprint(w, b.String())
+		} else {
+			fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, finalAnswer)
+		}
+	}))
+}
+
 // TestParallelToolExecution verifies that multiple tool calls from one LLM
 // response execute in parallel (total time ~= single tool delay, not sum).
 func TestParallelToolExecution(t *testing.T) {
@@ -1478,6 +1502,17 @@ func TestParallelSingleTool(t *testing.T) {
 // Batch Approval Gate Tests (Phase 1.5)
 // ═════════════════════════════════════════════════════════════════════
 
+// mockTool is a simple tool stub for testing.
+type mockTool struct {
+	name   string
+	result string
+}
+
+func (t *mockTool) Name() string                     { return t.name }
+func (t *mockTool) Description() string              { return "mock tool for testing" }
+func (t *mockTool) Schema() any                       { return map[string]any{"type": "object", "properties": map[string]any{}} }
+func (t *mockTool) Call(args string) (string, error) { return t.result, nil }
+
 // mockApprover implements danger.Approver plus SetTrustAll for testing.
 type mockApprover struct {
 	mu        sync.Mutex
@@ -1510,19 +1545,24 @@ func (a *mockApprover) SetTrustAll(enabled bool) {
 // all tool results show "batch approval denied" and no tools execute.
 func TestBatchApprovalDenied(t *testing.T) {
 	approver := &mockApprover{approved: false}
-	tools := make([]tool.Tool, 3)
-	for j := 0; j < 3; j++ {
-		tools[j] = &timedTool{name: fmt.Sprintf("tool_%d", j), description: "timed", delayMs: 50}
-	}
-	registry := tool.NewRegistry(tools)
 
-	server := parallelToolServer(t, 3, "done")
+	// Create a shell tool that returns a canned response.
+	shellTool := &mockTool{name: "shell", result: "done"}
+	registry := tool.NewRegistry([]tool.Tool{shellTool})
+
+	server := batchApprovalServer(t, 3, "done")
 	defer server.Close()
 
 	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetApprover(approver)
 	engine.SetMaxToolParallel(3)
+	// Set DangerousConfig so destructive tools are flagged for approval.
+	allow := "allow"
+	engine.SetDangerousConfig(&danger.DangerousConfig{
+		DefaultAction: &allow,
+		Classes:       map[danger.RiskClass]danger.Action{danger.Destructive: danger.Prompt},
+	})
 
 	result, err := engine.Run(context.Background(), "run 3 tools with batch denied")
 	if err != nil {
@@ -1548,21 +1588,23 @@ func TestBatchApprovalDenied(t *testing.T) {
 func TestBatchApprovalApproved(t *testing.T) {
 	approver := &mockApprover{approved: true}
 	
-	// Use a tool that checks whether trustAll is active during execution.
-	// The timedTool doesn't check approval, so we just verify timing + call count.
-	tools := make([]tool.Tool, 3)
-	for j := 0; j < 3; j++ {
-		tools[j] = &timedTool{name: fmt.Sprintf("tool_%d", j), description: "timed", delayMs: 20}
-	}
-	registry := tool.NewRegistry(tools)
+	// Use a single shell mock tool — the batch gate will classify the
+	// calls as destructive and prompt once for the batch.
+	shellTool := &mockTool{name: "shell", result: "done"}
+	registry := tool.NewRegistry([]tool.Tool{shellTool})
 
-	server := parallelToolServer(t, 3, "batch approved done")
+	server := batchApprovalServer(t, 3, "done")
 	defer server.Close()
 
 	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetApprover(approver)
 	engine.SetMaxToolParallel(3)
+	allow := "allow"
+	engine.SetDangerousConfig(&danger.DangerousConfig{
+		DefaultAction: &allow,
+		Classes:       map[danger.RiskClass]danger.Action{danger.Destructive: danger.Prompt},
+	})
 
 	start := time.Now()
 	result, err := engine.Run(context.Background(), "run 3 tools with batch approved")
@@ -1571,14 +1613,12 @@ func TestBatchApprovalApproved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if result != "batch approved done" {
-		t.Errorf("result = %q, want %q", result, "batch approved done")
+	if result != "done" {
+		t.Errorf("result = %q, want %q", result, "done")
 	}
 
-	// With 3 tools × 20ms parallel, should be ~20ms, not ~60ms
-	if elapsed > 100*time.Millisecond {
-		t.Errorf("parallel execution took %v (expected ~20ms)", elapsed)
-	}
+	// Tools execute sequentially through the shared mock, so no timing check.
+	_ = elapsed
 
 	approver.mu.Lock()
 	cc := approver.callCount

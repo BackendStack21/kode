@@ -168,6 +168,12 @@ type Config struct {
 	// for that iteration. If approved, individual tool-level PromptCommand
 	// calls are bypassed via SetTrustAll.
 	Approver danger.Approver
+
+	// DangerousConfig holds the user's risk class configuration (Allow/Deny/
+	// Prompt per risk class). Used by the batch gate to decide whether a
+	// tool call needs approval before showing the prompt. When nil, the
+	// batch gate plays safe and shows the prompt for any classified tool.
+	DangerousConfig *danger.DangerousConfig
 }
 
 // Agent is the agent loop runtime.
@@ -493,6 +499,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Approver != nil {
 		engine.SetApprover(cfg.Approver)
+	}
+	if cfg.DangerousConfig != nil {
+		engine.SetDangerousConfig(cfg.DangerousConfig)
 	}
 
 	// Set skill verbosity: condensed by default, full banners when verbose.

@@ -1265,7 +1265,8 @@ func handleChatMessage(
 				&telegram.SendOpts{ReplyMarkup: replyMarkup, ParseMode: "Markdown", ReplyToMessageID: messageID})
 			}
 		},
-		Approver: approver,
+		Approver:        approver,
+		DangerousConfig: &resolved.Dangerous,
 	}
 
 	agent, err := odek.New(agentCfg)

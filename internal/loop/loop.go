@@ -3,6 +3,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -104,11 +105,13 @@ type Engine struct {
 
 	// approver gates dangerous operations. When set and the LLM returns
 	// multiple tool calls in one iteration, a single batch approval prompt
-	// is shown before any tool executes. If the batch is denied, no tools
-	// run for that iteration. If approved, SetTrustAll(true) is called on
-	// the approver (if supported) so individual tool-level PromptCommand
-	// calls auto-approve.
-	approver danger.Approver
+	// is shown before any tool executes, but ONLY for tools whose risk
+	// class requires approval according to dangerousCfg. If the batch is
+	// denied, no tools run for that iteration. If approved, SetTrustAll(true)
+	// is called on the approver (if supported) so individual tool-level
+	// PromptCommand calls auto-approve.
+	approver     danger.Approver
+	dangerousCfg *danger.DangerousConfig // used by batch gate to pre-check risk
 
 	// Token accounting — accumulated across all iterations of the most recent run.
 	// Reset on each Run/RunWithMessages call and read by callers (e.g. WebUI).
@@ -180,6 +183,11 @@ func (e *Engine) SetMaxToolParallel(n int) { e.MaxToolParallel = n }
 // is bypassed when the batch is approved (if the approver supports
 // SetTrustAll).
 func (e *Engine) SetApprover(a danger.Approver) { e.approver = a }
+
+// SetDangerousConfig provides the DangerousConfig for batch gate
+// pre-classification. Without it, the batch gate cannot know which
+// risk classes require approval and would skip pre-checking.
+func (e *Engine) SetDangerousConfig(cfg *danger.DangerousConfig) { e.dangerousCfg = cfg }
 
 // ── Token Estimation ─────────────────────────────────────────────────
 //
@@ -623,39 +631,75 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 			}
 		}
 
-		// Phase 1.5: batch approval gate
-		// When an approver is set and the LLM returned multiple tool calls,
-		// present a single approval prompt for the entire batch instead of
-		// N individual prompts. If denied, all tool calls are rejected
-		// without executing anything. If approved, the approver's trustAll
-		// flag is set so individual tool-level PromptCommand calls auto-pass.
-		batchDenied := false
-		if e.approver != nil && len(result.ToolCalls) > 1 {
-			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("Execute %d tool calls in parallel?\n\n", len(result.ToolCalls)))
-			for i, tc := range result.ToolCalls {
-				args := tc.Function.Arguments
-				if len(args) > 120 {
-					args = args[:120] + "…"
-				}
-				sb.WriteString(fmt.Sprintf("  %d. %s(%s)\n", i+1, tc.Function.Name, args))
-			}
-			description := sb.String()
 
-			// Single approval prompt for the entire batch.
-			if err := e.approver.PromptCommand("tool_batch", description, ""); err != nil {
-				batchDenied = true
-			}
+// Phase 1.5: batch approval gate
+// When an approver is set and the LLM returned multiple tool calls,
+// present a single approval prompt for the entire batch instead of
+// N individual prompts, but ONLY for tools that actually require
+// approval. If denied, all tool calls are rejected without executing
+// anything. If approved, the approver's trustAll flag is set so
+// individual tool-level PromptCommand calls auto-pass.
+batchDenied := false
+if e.approver != nil && len(result.ToolCalls) > 1 {
+	// Classify each tool call and filter to only those needing approval.
+	type riskyCall struct {
+		idx      int
+		name     string
+		args     string
+		risk     danger.RiskClass
+		resource string
+	}
+	var risky []riskyCall
+	for i, tc := range result.ToolCalls {
+		risk, resource := classifyToolCall(tc.Function.Name, tc.Function.Arguments)
+		if risk == "" {
+			continue // tool not classifiable — skip in batch, handled individually
+		}
+		// Check the user's configured action for this risk class.
+		// If the DangerousConfig says Allow, skip it — no approval needed.
+		if e.dangerousCfg != nil && e.dangerousCfg.ActionFor(risk) == danger.Allow {
+			continue // auto-allowed by config, no batch approval needed
+		}
+		// Without DangerousConfig, fall back to blocking: include the tool
+		// so the batch gate plays safe and prompts.
+		risky = append(risky, riskyCall{
+			idx: i, name: tc.Function.Name,
+			args:     tc.Function.Arguments,
+			risk:     risk,
+			resource: resource,
+		})
+	}
 
-			// Approved: set trustAll on the approver if supported, so
-			// individual tool-level PromptCommand calls auto-pass.
-			if !batchDenied {
-				if ta, ok := e.approver.(interface{ SetTrustAll(bool) }); ok {
-					ta.SetTrustAll(true)
-					defer ta.SetTrustAll(false)
-				}
+	if len(risky) > 0 {
+		var sb strings.Builder
+		if len(risky) == 1 {
+			sb.WriteString("⚠️ The following tool action requires approval:\n\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("⚠️ %d tool actions require approval:\n\n", len(risky)))
+		}
+		for i, rc := range risky {
+			resource := rc.resource
+			if len(resource) > 120 {
+				resource = resource[:120] + "…"
+			}
+			sb.WriteString(fmt.Sprintf("  %d. `%s` — `%s`\n", i+1, rc.name, resource))
+		}
+		description := sb.String()
+
+		if err := e.approver.PromptCommand("tool_batch", description, ""); err != nil {
+			batchDenied = true
+		}
+
+		// Approved: set trustAll on the approver if supported, so
+		// individual tool-level PromptCommand calls auto-pass.
+		if !batchDenied {
+			if ta, ok := e.approver.(interface{ SetTrustAll(bool) }); ok {
+				ta.SetTrustAll(true)
+				defer ta.SetTrustAll(false)
 			}
 		}
+	}
+}
 
 		// Phase 2: execute tools in parallel (bounded by semaphore)
 		type execResult struct {
@@ -800,4 +844,41 @@ func (e *Engine) buildToolDefs() []llm.ToolDef {
 		})
 	}
 	return defs
+}
+
+// classifyToolCall attempts to determine the risk class of a tool call
+// based on its name and arguments. Returns the risk class and a
+// human-readable resource identifier, or ("", "") if the tool is
+// classified as safe and does not need approval for this call.
+// This mirrors the classification that the actual tool's Call() method
+// performs, so the batch gate only prompts for tools that would
+// actually require user approval.
+func classifyToolCall(name, args string) (danger.RiskClass, string) {
+	switch name {
+	case "shell", "terminal":
+		// Extract the command from JSON args.
+		var cmd struct {
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal([]byte(args), &cmd); err != nil || cmd.Command == "" {
+			return "", ""
+		}
+		return danger.Classify(cmd.Command), cmd.Command
+	case "read_file", "write_file", "patch", "search_files":
+		// Extract the path from JSON args.
+		var p struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal([]byte(args), &p); err != nil || p.Path == "" {
+			return "", ""
+		}
+		return danger.ClassifyPath(p.Path), p.Path
+	case "browser_navigate", "browser_click", "browser_type":
+		return danger.NetworkEgress, args
+	default:
+		// For unrecognized tools, return empty — they are handled by
+		// the tool's own Call() method individually. The batch gate
+		// will skip them (no pre-classification available).
+		return "", ""
+	}
 }
