@@ -157,7 +157,8 @@ func (t *writeFileTool) Name() string { return "write_file" }
 func (t *writeFileTool) Description() string {
 	return `Write content to a file, completely replacing existing content.
 Creates parent directories automatically. OVERWRITES the entire file.
-Use patch for targeted edits.`
+Use patch for targeted edits.
+CRITICAL: Use the EXACT path specified in the task. Do not simplify or drop directories from the path.`
 }
 
 func (t *writeFileTool) Schema() any {
@@ -166,7 +167,7 @@ func (t *writeFileTool) Schema() any {
 		"properties": map[string]any{
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Path to the file to write (will be created/overwritten).",
+				"description": "Path to the file to write (will be created/overwritten). Use the EXACT path from the task — never drop or simplify directories.",
 			},
 			"content": map[string]any{
 				"type":        "string",
