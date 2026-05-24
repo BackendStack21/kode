@@ -1098,7 +1098,7 @@ func (t *multiGrepTool) searchPattern(pattern, root, fileGlob string, limit int)
 			}
 		}
 
-		f, err := os.Open(path)
+		f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 		if err != nil {
 			return nil
 		}

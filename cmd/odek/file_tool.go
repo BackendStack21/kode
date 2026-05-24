@@ -390,7 +390,7 @@ func (t *searchFilesTool) searchContent(args searchFilesArgs) (string, error) {
 		}
 
 		// Skip binary files — single open for check then search
-		f, err := os.Open(path)
+		f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 		if err != nil {
 			return nil
 		}
