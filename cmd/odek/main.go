@@ -1397,6 +1397,9 @@ func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver d
 		&writeFileTool{dangerousConfig: dc, restrictToCWD: true},
 		&searchFilesTool{dangerousConfig: dc},
 		&patchTool{dangerousConfig: dc},
+		&batchReadTool{dangerousConfig: dc},
+		&globTool{dangerousConfig: dc},
+		&fileInfoTool{dangerousConfig: dc},
 		newBrowserTool(dc),
 	}
 

@@ -1556,4 +1556,318 @@ func TestSearchContent_LimitReached(t *testing.T) {
 	}
 }
 
+// ── BatchRead Tool Tests ──────────────────────────────────────────────
+
+func TestBatchRead_Basic(t *testing.T) {
+	dir := t.TempDir()
+	path1 := filepath.Join(dir, "a.txt")
+	path2 := filepath.Join(dir, "b.txt")
+	os.WriteFile(path1, []byte("line1\nline2\nline3\n"), 0644)
+	os.WriteFile(path2, []byte("hello\nworld\n"), 0644)
+
+	tool := &batchReadTool{}
+	args := fmt.Sprintf(`{"files":[{"path":"%s"},{"path":"%s"}]}`, path1, path2)
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		Results []struct {
+			Path       string `json:"path"`
+			Content    string `json:"content"`
+			TotalLines int    `json:"total_lines"`
+			Error      string `json:"error,omitempty"`
+		} `json:"results"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if len(r.Results) != 2 {
+		t.Fatalf("Results len = %d, want 2", len(r.Results))
+	}
+	if r.Results[0].Error != "" {
+		t.Errorf("file 0 error: %s", r.Results[0].Error)
+	}
+	if r.Results[1].TotalLines != 2 {
+		t.Errorf("file 1 TotalLines = %d, want 2", r.Results[1].TotalLines)
+	}
+	if !strings.Contains(r.Results[1].Content, "hello") {
+		t.Errorf("file 1 missing 'hello': %q", r.Results[1].Content)
+	}
+}
+
+func TestBatchRead_NotFound(t *testing.T) {
+	tool := &batchReadTool{}
+	result := callJSON(t, tool, `{"files":[{"path":"/nonexistent/file.txt"}]}`)
+
+	var r struct {
+		Results []struct {
+			Path  string `json:"path"`
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if len(r.Results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(r.Results))
+	}
+	if r.Results[0].Error == "" {
+		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestBatchRead_MaxFiles(t *testing.T) {
+	tool := &batchReadTool{}
+	// Create a request with more than 10 files
+	files := make([]string, 11)
+	for i := range files {
+		files[i] = fmt.Sprintf(`{"path":"test%d.txt"}`, i)
+	}
+	args := `{"files":[` + strings.Join(files, ",") + `]}`
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		Error string `json:"error"`
+	}
+	mustUnmarshal(t, result, &r)
+	if !strings.Contains(r.Error, "max 10") {
+		t.Errorf("error should mention max 10, got: %s", r.Error)
+	}
+}
+
+func TestBatchRead_PartialFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	os.WriteFile(path, []byte("a\nb\nc\nd\ne\nf\n"), 0644)
+
+	tool := &batchReadTool{}
+	args := fmt.Sprintf(`{"files":[{"path":"%s","offset":2,"limit":2}]}`, path)
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		Results []struct {
+			Content    string `json:"content"`
+			TotalLines int    `json:"total_lines"`
+			Error      string `json:"error,omitempty"`
+		} `json:"results"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if len(r.Results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(r.Results))
+	}
+	if r.Results[0].Error != "" {
+		t.Fatalf("error: %s", r.Results[0].Error)
+	}
+	if r.Results[0].TotalLines != 6 {
+		t.Errorf("TotalLines = %d, want 6", r.Results[0].TotalLines)
+	}
+	if !strings.Contains(r.Results[0].Content, "2|b") {
+		t.Errorf("Content should start at line 2: %q", r.Results[0].Content)
+	}
+	if strings.Contains(r.Results[0].Content, "4|d") {
+		t.Errorf("Content should not contain line 4 (limit=2): %q", r.Results[0].Content)
+	}
+}
+
+func TestBatchRead_Directory(t *testing.T) {
+	dir := t.TempDir()
+	tool := &batchReadTool{}
+	args := fmt.Sprintf(`{"files":[{"path":"%s"}]}`, dir)
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		Results []struct {
+			Error string `json:"error"`
+		} `json:"results"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if len(r.Results) != 1 {
+		t.Fatalf("Results len = %d, want 1", len(r.Results))
+	}
+	if !strings.Contains(r.Results[0].Error, "directory") {
+		t.Errorf("error should mention 'directory', got: %s", r.Results[0].Error)
+	}
+}
+
+func TestBatchRead_EmptyFiles(t *testing.T) {
+	tool := &batchReadTool{}
+	result := callJSON(t, tool, `{"files":[]}`)
+
+	var r struct {
+		Error string `json:"error"`
+	}
+	mustUnmarshal(t, result, &r)
+	if !strings.Contains(r.Error, "at least one file") {
+		t.Errorf("error should mention 'at least one file', got: %s", r.Error)
+	}
+}
+
+func TestBatchRead_InvalidJSON(t *testing.T) {
+	tool := &batchReadTool{}
+	result := callJSON(t, tool, `{invalid}`)
+	var r struct {
+		Error string `json:"error"`
+	}
+	mustUnmarshal(t, result, &r)
+	if !strings.Contains(r.Error, "invalid arguments") {
+		t.Errorf("error should mention 'invalid arguments', got: %s", r.Error)
+	}
+}
+
+// ── Glob Tool Tests ───────────────────────────────────────────────────
+
+func TestGlob_Basic(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte("package a\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "b.go"), []byte("package b\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "c.py"), []byte("print('hello')\n"), 0644)
+
+	tool := &globTool{}
+	args := fmt.Sprintf(`{"pattern":"*.go","path":"%s"}`, dir)
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		Matches []struct {
+			Path  string `json:"path"`
+			Size  int64  `json:"size"`
+			IsDir bool   `json:"is_dir"`
+		} `json:"matches"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if len(r.Matches) != 2 {
+		t.Fatalf("Matches = %d, want 2", len(r.Matches))
+	}
+	for _, m := range r.Matches {
+		if m.IsDir {
+			t.Errorf("%s should not be a directory", m.Path)
+		}
+		if m.Size < 1 {
+			t.Errorf("%s size = %d, want > 0", m.Path, m.Size)
+		}
+	}
+}
+
+func TestGlob_NoMatches(t *testing.T) {
+	dir := t.TempDir()
+	tool := &globTool{}
+	args := fmt.Sprintf(`{"pattern":"*.xyz","path":"%s"}`, dir)
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		Matches []struct {
+			Path string `json:"path"`
+		} `json:"matches"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if len(r.Matches) != 0 {
+		t.Errorf("Matches = %d, want 0", len(r.Matches))
+	}
+}
+
+func TestGlob_EmptyPattern(t *testing.T) {
+	tool := &globTool{}
+	result := callJSON(t, tool, `{"pattern":""}`)
+	var r struct {
+		Error string `json:"error"`
+	}
+	mustUnmarshal(t, result, &r)
+	if !strings.Contains(r.Error, "pattern is required") {
+		t.Errorf("error should mention 'pattern', got: %s", r.Error)
+	}
+}
+
+// ── FileInfo Tool Tests ───────────────────────────────────────────────
+
+func TestFileInfo_File(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.txt")
+	content := []byte("hello world\n")
+	os.WriteFile(path, content, 0644)
+
+	tool := &fileInfoTool{}
+	args := fmt.Sprintf(`{"path":"%s"}`, path)
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		Path      string `json:"path"`
+		Size      int64  `json:"size"`
+		ModTime   string `json:"mod_time"`
+		Mode      string `json:"mode"`
+		IsDir     bool   `json:"is_dir"`
+		IsSymlink bool   `json:"is_symlink"`
+		IsRegular bool   `json:"is_regular"`
+		Error     string `json:"error,omitempty"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if r.Error != "" {
+		t.Fatalf("error: %s", r.Error)
+	}
+	if r.Size != int64(len(content)) {
+		t.Errorf("Size = %d, want %d", r.Size, len(content))
+	}
+	if !r.IsRegular {
+		t.Errorf("IsRegular should be true")
+	}
+	if r.IsDir {
+		t.Errorf("IsDir should be false")
+	}
+	if r.ModTime == "" {
+		t.Errorf("ModTime should not be empty")
+	}
+	if r.Mode == "" {
+		t.Errorf("Mode should not be empty")
+	}
+}
+
+func TestFileInfo_Directory(t *testing.T) {
+	dir := t.TempDir()
+	tool := &fileInfoTool{}
+	args := fmt.Sprintf(`{"path":"%s"}`, dir)
+	result := callJSON(t, tool, args)
+
+	var r struct {
+		IsDir     bool   `json:"is_dir"`
+		IsRegular bool   `json:"is_regular"`
+		IsSymlink bool   `json:"is_symlink"`
+		Error     string `json:"error,omitempty"`
+	}
+	mustUnmarshal(t, result, &r)
+
+	if r.Error != "" {
+		t.Fatalf("error: %s", r.Error)
+	}
+	if !r.IsDir {
+		t.Errorf("IsDir should be true for directory")
+	}
+	if r.IsRegular {
+		t.Errorf("IsRegular should be false for directory")
+	}
+}
+
+func TestFileInfo_NotFound(t *testing.T) {
+	tool := &fileInfoTool{}
+	result := callJSON(t, tool, `{"path":"/nonexistent_path_xyz"}`)
+	var r struct {
+		Error string `json:"error"`
+	}
+	mustUnmarshal(t, result, &r)
+	if !strings.Contains(r.Error, "file not found") {
+		t.Errorf("error should mention 'file not found', got: %s", r.Error)
+	}
+}
+
+func TestFileInfo_EmptyPath(t *testing.T) {
+	tool := &fileInfoTool{}
+	result := callJSON(t, tool, `{"path":""}`)
+	var r struct {
+		Error string `json:"error"`
+	}
+	mustUnmarshal(t, result, &r)
+	if !strings.Contains(r.Error, "path is required") {
+		t.Errorf("error should mention 'path is required', got: %s", r.Error)
+	}
+}
+
 
