@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/BackendStack21/kode"
+	"github.com/BackendStack21/kode/internal/config"
 	"github.com/BackendStack21/kode/internal/danger"
 	"github.com/BackendStack21/kode/internal/llm"
 )
@@ -319,7 +320,7 @@ func TestSubagent_ExitCodeThree(t *testing.T) {
 // ── 4. delegate_tasks Tool Schema ───────────────────────────────────
 
 func TestDelegateTasksTool_Exists(t *testing.T) {
-	tools := builtinTools(danger.DangerousConfig{}, nil, nil, 3)
+	tools := builtinTools(danger.DangerousConfig{}, nil, nil, 3, config.TranscriptionConfig{})
 
 	found := false
 	for _, tool := range tools {
@@ -334,7 +335,7 @@ func TestDelegateTasksTool_Exists(t *testing.T) {
 }
 
 func TestDelegateTasksTool_HasSchema(t *testing.T) {
-	tools := builtinTools(danger.DangerousConfig{}, nil, nil, 3)
+	tools := builtinTools(danger.DangerousConfig{}, nil, nil, 3, config.TranscriptionConfig{})
 
 	var tool odek.Tool
 	for _, t2 := range tools {
@@ -423,7 +424,7 @@ func TestDelegateTasksTool_HasSchema(t *testing.T) {
 }
 
 func TestDelegateTasksTool_Description(t *testing.T) {
-	tools := builtinTools(danger.DangerousConfig{}, nil, nil, 3)
+	tools := builtinTools(danger.DangerousConfig{}, nil, nil, 3, config.TranscriptionConfig{})
 
 	var tool odek.Tool
 	for _, t2 := range tools {

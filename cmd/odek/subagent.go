@@ -307,7 +307,7 @@ func subagentCmd(args []string) error {
 			"./.odek/skills",
 		)
 	}
-	tools := builtinTools(resolved.Dangerous, sm, nil, resolved.MaxConcurrency)
+	tools := builtinTools(resolved.Dangerous, sm, nil, resolved.MaxConcurrency, config.TranscriptionConfig{})
 	var sandboxCleanup func() error
 
 	// MCP server tools

@@ -452,7 +452,7 @@ func telegramCmd(args []string) error {
 	}
 
 	handler.OnVoiceMessage = func(chatID int64, messageID int, fileID string) (string, error) {
-		// Download the voice file so the agent can transcribe it.
+		// Download the voice file.
 		localPath, err := telegram.DownloadVoice(bot, fileID)
 		if err != nil {
 			handlerLog.Warn("voice download failed", "chat_id", chatID, "error", err)
@@ -461,8 +461,30 @@ func telegramCmd(args []string) error {
 				bot, handler, sessionManager, resolved, systemMessage, handlerLog)
 			return "", nil
 		}
+
+		// Auto-transcribe if configured and whisper is available.
+		if resolved.Transcription.AutoTranscribe {
+			tool := newTranscribeTool(resolved.Dangerous, resolved.Transcription)
+			result, err := tool.Call(fmt.Sprintf(`{"path":"%s"}`, localPath))
+			if err == nil {
+				var r struct {
+					Text  string `json:"text"`
+					Error string `json:"error"`
+				}
+				if json.Unmarshal([]byte(result), &r) == nil && r.Error == "" && r.Text != "" {
+					// Transcribed text injected directly as user message
+					go handleChatMessage(chatID, messageID, r.Text,
+						bot, handler, sessionManager, resolved, systemMessage, handlerLog)
+					return "", nil
+				}
+			}
+			// Transcription failed — fall through to file path message
+			handlerLog.Warn("auto-transcribe failed, falling back to path", "chat_id", chatID, "error", err)
+		}
+
+		// Fallback: pass the file path to the agent
 		go handleChatMessage(chatID, messageID,
-			fmt.Sprintf("🎤 Voice message received and saved to %q. Use shell tools (ffmpeg, whisper) to transcribe and respond.", localPath),
+			fmt.Sprintf("🎤 Voice message saved to %q. Use transcribe() tool to get the text.", localPath),
 			bot, handler, sessionManager, resolved, systemMessage, handlerLog)
 		return "", nil
 	}
@@ -943,7 +965,7 @@ func handleChatMessage(
 	cs.LastActive = time.Now()
 
 	// Build the agent with Telegram approver.
-	tools := builtinTools(resolved.Dangerous, nil, approver, resolved.MaxConcurrency)
+	tools := builtinTools(resolved.Dangerous, nil, approver, resolved.MaxConcurrency, config.TranscriptionConfig{})
 
 	modelLabel := odek.ProfileLabel(resolved.Model)
 	if modelLabel == "" {

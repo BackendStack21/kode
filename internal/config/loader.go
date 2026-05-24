@@ -90,6 +90,16 @@ type SkillsConfig struct {
 	Verbose      *bool                       `json:"verbose,omitempty"`
 }
 
+// TranscriptionConfig controls the transcribe tool (local whisper.cpp).
+// Populated from the "transcription" section of odek.json.
+type TranscriptionConfig struct {
+	Model          string `json:"model,omitempty"`
+	Language       string `json:"language,omitempty"`
+	AutoTranscribe bool   `json:"auto_transcribe,omitempty"`
+	ModelsDir      string `json:"models_dir,omitempty"`
+	BinaryPath     string `json:"binary_path,omitempty"`
+}
+
 // FileConfig is the JSON schema used by ~/.odek/config.json and ./odek.json.
 // Pointer booleans distinguish "explicitly set to false" from "not set".
 type FileConfig struct {
@@ -153,6 +163,9 @@ type FileConfig struct {
 
 	// Telegram configures the Telegram bot integration.
 	Telegram *telegram.TelegramConfig `json:"telegram,omitempty"`
+
+	// Transcription configures local audio transcription (whisper.cpp).
+	Transcription *TranscriptionConfig `json:"transcription,omitempty"`
 
 	// GithubRepoDirectory is the path to the local clone of the project
 	// repository. Injected into the system prompt so the agent knows
@@ -254,6 +267,10 @@ type ResolvedConfig struct {
 
 	// Telegram is the resolved Telegram bot configuration.
 	Telegram telegram.TelegramConfig
+
+	// Transcription is the resolved transcription config.
+	// Default: auto_transcribe=true, model="tiny", language="", no binary_path.
+	Transcription TranscriptionConfig
 
 	// GithubRepoDirectory is the path to the local clone of the project
 	// repository. Injected into the system prompt.
@@ -566,6 +583,7 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		Memory:         resolveMemory(cfg.Memory),
 		MCPServers:     cfg.MCPServers,
 		Telegram:       resolveTelegram(cfg.Telegram),
+		Transcription:  resolveTranscription(cfg.Transcription),
 		GithubRepoDirectory: cfg.GithubRepoDirectory,
 		GithubRepoUrl:       cfg.GithubRepoUrl,
 		InteractionMode:     ifZero(cfg.InteractionMode, "engaging"),
@@ -792,6 +810,18 @@ func resolveTelegram(cfg *telegram.TelegramConfig) telegram.TelegramConfig {
 		base.DefaultChatID = cfg.DefaultChatID
 	}
 	return base
+}
+
+// resolveTranscription returns the resolved transcription config.
+// If the file config is nil, returns sensible defaults.
+func resolveTranscription(cfg *TranscriptionConfig) TranscriptionConfig {
+	if cfg != nil {
+		return *cfg
+	}
+	return TranscriptionConfig{
+		Model:          "tiny",
+		AutoTranscribe: true,
+	}
 }
 
 // overlayFile overlays a higher-priority FileConfig onto a lower-priority one.
