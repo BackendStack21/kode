@@ -1400,6 +1400,16 @@ func builtinTools(dc danger.DangerousConfig, sm *skills.SkillManager, approver d
 		&batchReadTool{dangerousConfig: dc},
 		&globTool{dangerousConfig: dc},
 		&fileInfoTool{dangerousConfig: dc},
+		&batchPatchTool{dangerousConfig: dc},
+		&parallelShellTool{dangerousConfig: dc, approver: approver},
+		newHTTPBatchTool(dc),
+		&mathEvalTool{},
+		&diffTool{dangerousConfig: dc},
+		&countLinesTool{dangerousConfig: dc},
+		&multiGrepTool{dangerousConfig: dc},
+		&jsonQueryTool{dangerousConfig: dc},
+		&treeTool{dangerousConfig: dc},
+		&checksumTool{dangerousConfig: dc},
 		newBrowserTool(dc),
 	}
 

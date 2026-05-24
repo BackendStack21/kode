@@ -855,7 +855,7 @@ func (e *Engine) buildToolDefs() []llm.ToolDef {
 // actually require user approval.
 func classifyToolCall(name, args string) (danger.RiskClass, string) {
 	switch name {
-	case "shell", "terminal":
+	case "shell", "terminal", "parallel_shell":
 		// Extract the command from JSON args.
 		var cmd struct {
 			Command string `json:"command"`
@@ -864,7 +864,8 @@ func classifyToolCall(name, args string) (danger.RiskClass, string) {
 			return "", ""
 		}
 		return danger.Classify(cmd.Command), cmd.Command
-	case "read_file", "write_file", "patch", "search_files", "batch_read", "file_info", "glob":
+	case "read_file", "write_file", "patch", "search_files", "batch_read", "file_info", "glob",
+		"diff", "multi_grep", "json_query", "tree", "batch_patch", "count_lines", "checksum":
 		// Extract the path from JSON args.
 		var p struct {
 			Path string `json:"path"`
@@ -873,7 +874,7 @@ func classifyToolCall(name, args string) (danger.RiskClass, string) {
 			return "", ""
 		}
 		return danger.ClassifyPath(p.Path), p.Path
-	case "browser_navigate", "browser_click", "browser_type":
+	case "browser_navigate", "browser_click", "browser_type", "http_batch":
 		return danger.NetworkEgress, args
 	default:
 		// For unrecognized tools, return empty — they are handled by
