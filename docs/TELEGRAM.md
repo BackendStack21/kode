@@ -307,6 +307,33 @@ Voice message received → DownloadVoice (OGG Opus to disk)
 
 **Fallback:** If auto-transcribe fails (ffmpeg unavailable, corrupt audio, whisper error), the agent receives the file path with a suggestion to use the `transcribe()` tool manually.
 
+### Tool Progress (Narrator)
+
+Tool progress shows what the agent is doing in real time. Controlled by the `tool_progress` config field (independent from `interaction_mode`):
+
+| Mode | Behavior |
+|------|----------|
+| `all` (default) | Single editable progress bubble with smart previews — e.g. `📝 read_file: "main.go"`. With edit throttling (1.5s), dedup (`×N` counter), and flood-control fallback |
+| `new` | Like `all` but only updates when the tool name changes — skips consecutive same-tool repeats |
+| `verbose` | Raw tool arguments as separate messages — `📝 `read_file` {"path":"main.go"}` then `📝 `read_file` ✅ (2KB)` on completion |
+| `off` | No per-tool progress messages — just the thinking preamble and final answer |
+
+**Key features:**
+- **Smart previews** — extracts meaningful context: filename for file tools, command for shell, URL for browser, query for memory, filename for transcribe
+- **Edit throttling** — 1.5s minimum between edits prevents Telegram flood control (429 errors)
+- **Tool dedup** — if the same tool runs N times in a row (common with parallel batches), shows `📝 read_file: "main.go" (×5)` instead of 5 identical lines
+- **Flood fallback** — if an edit fails with "flood" or "retry after", automatically switches to sending new messages
+- **Content reset** — when `send_message` fires mid-run, the progress bubble resets below the sent content
+- **Cleanup** — progress message deleted after final answer (configurable via `tool_progress_cleanup: false`)
+
+Config example:
+```json
+{
+  "tool_progress": "all",
+  "tool_progress_cleanup": true
+}
+```
+
 ## Types (`types.go`)
 
 The package defines Telegram API types used throughout:

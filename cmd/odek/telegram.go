@@ -21,7 +21,6 @@ import (
 	"github.com/BackendStack21/kode/internal/llm"
 	"github.com/BackendStack21/kode/internal/loop"
 	"github.com/BackendStack21/kode/internal/render"
-	"github.com/BackendStack21/kode/internal/narrate"
 	"github.com/BackendStack21/kode/internal/session"
 	"github.com/BackendStack21/kode/internal/skills"
 	"github.com/BackendStack21/kode/internal/telegram"
@@ -1032,52 +1031,119 @@ func handleChatMessage(
 	}()
 	
 	// ── Progress Mode Setup ───────────────────────────────────────
-	// Send an instant "working on it" message so the user sees feedback
-	// within milliseconds, not seconds.
+	// The tool_progress config controls Telegram progress bubbles:
+	//   "all"     — single editable bubble with smart previews, throttled edits,
+	//               dedup counter, and flood-control fallback (recommended default)
+	//   "new"     — like "all" but only updates when the tool name changes
+	//   "verbose" — raw tool args in per-tool messages with result replacement
+	//   "off"     — no per-tool progress (just thinking + final answer)
 	//
-	//   engaging: updated with narrated tool descriptions (edits), then
-	//             deleted when the final answer arrives.
-	//   enhance:  kept as a per-iteration header; narrated tool messages
-	//             are appended below it as new messages (no edits).
-	//   verbose:  no progress message — uses raw tool traces instead.
-	var narrator *narrate.Narrator
-	isEngaging := resolved.InteractionMode == "engaging"
+	// When interaction_mode is "enhance", the old per-tool narrated-message
+	// behavior is used regardless of tool_progress (preserves existing UX).
+	toolProgress := resolved.ToolProgress
 	isEnhance := resolved.InteractionMode == "enhance"
-	if isEngaging || isEnhance {
-		narrator = narrate.New(true)
+	if isEnhance {
+		toolProgress = "enhance"
 	}
+
 	var progressMsgID int
-	if isEngaging || isEnhance {
+	var progressLines []string
+	var lastProgressMsg string
+	var repeatCount int
+	var canEdit = true
+	var lastEditTime time.Time
+	const editThrottle = 1500 * time.Millisecond
+
+	// Send an initial "working on it" message for all modes except "off".
+	if toolProgress != "off" {
 		msg, err := bot.SendMessage(chatID, "🤔 Looking into that...",
 			&telegram.SendOpts{ReplyToMessageID: messageID})
 		if err == nil {
 			progressMsgID = msg.ID
 		}
 	}
+	// Cleanup progress messages when the task finishes.
 	defer func() {
-		// Clean up the progress message when the task finishes.
-		// In engaging mode, deletes the stale "thinking" message.
-		// In enhance mode, preserves it as a per-iteration header
-		// with the narrated tool messages below it.
-		if progressMsgID != 0 && isEngaging {
+		if progressMsgID != 0 && resolved.ToolProgressCleanup {
 			bot.DeleteMessage(chatID, progressMsgID)
 		}
 	}()
 
-	// ── Tool Tracing ───────────────────────────────────────────────
-	// Individual messages per tool call so the user can follow the
-	// agent's journey step by step. Reasoning is shown before tool
-	// calls. All trace messages are deleted after the agent responds.
-	// toolMsgIDs tracks per-turn tool message IDs for editing on result.
+	// ── Tool Tracing (legacy verbose mode fallback) ──────────────
+	// Used when interaction_mode is "verbose" AND tool_progress is NOT set
+	// (or set to something other than "verbose"). These per-tool trace
+	// messages are preserved for the old verbose interaction mode.
 	var toolMsgIDs sync.Map // map[string]int
 
-	// truncate shortens a string for display, appending "…" if trimmed.
-	truncate := func(s string, max int) string {
-		if len(s) > max {
-			return s[:max] + "…"
+	// Helper: build a progress line for a tool call.
+	buildProgressLine := func(name, data string) string {
+		emoji := render.ToolEmoji(name)
+		preview := render.ToolPreview(name, data)
+		if preview != "" {
+			return fmt.Sprintf("%s %s: \"%s\"", emoji, name, preview)
 		}
-		return s
+		return fmt.Sprintf("%s %s...", emoji, name)
 	}
+
+	// Helper: send or edit the progress bubble.
+	sendProgress := func(line string) {
+		if toolProgress == "off" || progressMsgID == 0 {
+			return
+		}
+
+		// "new" mode: only show a new message when the tool changes.
+		if toolProgress == "new" && len(progressLines) > 0 && line == lastProgressMsg {
+			return
+		}
+
+		// Dedup: collapse consecutive identical messages.
+		if line == lastProgressMsg {
+			repeatCount++
+			if len(progressLines) > 0 {
+				progressLines[len(progressLines)-1] = fmt.Sprintf("%s (×%d)", line, repeatCount+1)
+			}
+		} else {
+			lastProgressMsg = line
+			repeatCount = 0
+			progressLines = append(progressLines, line)
+		}
+
+		fullText := strings.Join(progressLines, "\n")
+
+		// Throttle edits to avoid Telegram flood control.
+		if time.Since(lastEditTime) < editThrottle {
+			return // will be flushed on next non-throttled tick
+		}
+
+		if canEdit {
+			err := bot.EditMessageText(chatID, progressMsgID, fullText, nil)
+			if err != nil {
+				errStr := err.Error()
+				if strings.Contains(errStr, "flood") || strings.Contains(errStr, "retry after") {
+					canEdit = false
+					// Fallback: send as new message
+					msg, err2 := bot.SendMessage(chatID, line,
+						&telegram.SendOpts{ReplyToMessageID: messageID})
+					if err2 == nil {
+						progressMsgID = msg.ID
+					}
+				}
+			}
+			lastEditTime = time.Now()
+		} else {
+			// Editing failed previously — send new messages
+			msg, err := bot.SendMessage(chatID, line,
+				&telegram.SendOpts{ReplyToMessageID: messageID})
+			if err == nil {
+				progressMsgID = msg.ID
+			}
+		}
+	}
+
+	// Collect agent run stats via the iteration callback.
+	var runInfo loop.IterationInfo
+	var allToolsMu sync.Mutex
+	allTools := make(map[string]int)
 
 	// truncateWords limits text to maxWords, appending "…" if trimmed.
 	truncateWords := func(s string, maxWords int) string {
@@ -1087,11 +1153,6 @@ func handleChatMessage(
 		}
 		return strings.Join(words[:maxWords], " ") + "…"
 	}
-
-	// Collect agent run stats via the iteration callback.
-	var runInfo loop.IterationInfo
-	var allToolsMu sync.Mutex
-	allTools := make(map[string]int)
 
 	// ── Clarify Tool ───────────────────────────────────────────────
 	// Wire the clarify tool with a Telegram-native answer function.
@@ -1178,62 +1239,60 @@ func handleChatMessage(
 		Renderer:        rend,
 		ToolEventHandler: func(event string, name string, data string) {
 			// Enhance mode: send new messages with narrated descriptions.
-			// Each tool call gets its own message (no edits, no cleanup).
 			if isEnhance {
+				// Content reset: interim messages reset the progress bubble.
+				if event == "tool_call" && name == "send_message" {
+					progressMsgID = 0
+					progressLines = nil
+					lastProgressMsg = ""
+					repeatCount = 0
+					return
+				}
 				switch event {
 				case "tool_call":
-					if narrator != nil {
-						if msg := narrator.ToolCallMessage(name, data); msg != "" {
-							escapedMsg := telegram.EscapeMarkdown(msg)
-							bot.SendMessage(chatID, escapedMsg,
-								&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
-						}
-					}
-				case "tool_result":
-					// silent in enhance mode -- the narrated tool_call
-					// message already describes what's happening.
+					line := buildProgressLine(name, data)
+					bot.SendMessage(chatID, telegram.EscapeMarkdown(line),
+						&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
 				}
 				return
 			}
 
-			// Engaging mode: update the progress message with narrated tool
-			// descriptions instead of raw traces.
-			if isEngaging {
-				if progressMsgID != 0 && event == "tool_call" && narrator != nil {
-					if msg := narrator.ToolCallMessage(name, data); msg != "" {
-						bot.EditMessageText(chatID, progressMsgID, msg, nil)
-					}
-				}
-				return
-			}
-
-			// Verbose mode: individual messages per tool call so the user
-			// can follow the agent's journey step by step.
+			// Progress modes: "all", "new", "verbose", "off".
 			switch event {
 			case "tool_call":
-				args := truncate(data, 150)
-				line := fmt.Sprintf("%s `%s` %s", render.ToolEmoji(name), name, args)
-				line = telegram.EscapeMarkdown(line)
-				if msg, err := bot.SendMessage(chatID, line, &telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2}); err == nil {
-					toolMsgIDs.Store(name, msg.ID)
+				// Content reset: if send_message fires mid-run, reset the
+				// progress bubble so it appears below the sent message.
+				if name == "send_message" {
+					progressMsgID = 0
+					progressLines = nil
+					lastProgressMsg = ""
+					repeatCount = 0
+					return
+				}
+
+				if toolProgress == "verbose" {
+					line := fmt.Sprintf("%s `%s` %s", render.ToolEmoji(name), name, data)
+					line = telegram.EscapeMarkdown(line)
+					bot.SendMessage(chatID, line,
+						&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
+				} else {
+					line := buildProgressLine(name, data)
+					sendProgress(line)
 				}
 
 			case "tool_result":
-				// Send a new message for the result so the full timeline
-				// is preserved in chat history.
-				sizeLabel := fmt.Sprintf("%dB", len(data))
-				if len(data) > 1024 {
-					sizeLabel = fmt.Sprintf("%dKB", len(data)/1024)
+				if toolProgress == "verbose" {
+					sizeLabel := fmt.Sprintf("%dB", len(data))
+					if len(data) > 1024 {
+						sizeLabel = fmt.Sprintf("%dKB", len(data)/1024)
+					}
+					line := fmt.Sprintf("%s `%s` ✅ (%s)", render.ToolEmoji(name), name, sizeLabel)
+					line = telegram.EscapeMarkdown(line)
+					bot.SendMessage(chatID, line,
+						&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
 				}
-				line := fmt.Sprintf("%s `%s` ✅ (%s)", render.ToolEmoji(name), name, sizeLabel)
-				line = telegram.EscapeMarkdown(line)
-				bot.SendMessage(chatID, line,
-					&telegram.SendOpts{ParseMode: telegram.ParseModeMarkdownV2})
-				// Clean up the initial tool_call message — it's stale now.
-				if msgIDVal, ok := toolMsgIDs.Load(name); ok {
-					bot.DeleteMessage(chatID, msgIDVal.(int))
-				}
-				toolMsgIDs.Delete(name)
+				// "all"/"new" modes: tool_result is silent (progress
+				// bubble already shows the narrated tool call).
 			}
 		},
 		IterationCallback: func(info loop.IterationInfo) {

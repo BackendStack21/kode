@@ -194,6 +194,94 @@ func ToolEmoji(name string) string {
 	return toolEmoji(name)
 }
 
+// ToolPreview extracts a meaningful short preview from a tool call's JSON args.
+// Returns a human-readable snippet like "main.go" for read_file, or
+// "go test ./..." for shell. Falls back to a truncated command description.
+func ToolPreview(name, args string) string {
+	switch name {
+	case "read_file", "write_file", "patch", "file_info", "glob":
+		if p := extractJSONField(args, "path"); p != "" {
+			if lastSlash := strings.LastIndex(p, "/"); lastSlash >= 0 {
+				return p[lastSlash+1:]
+			}
+			return p
+		}
+		return "file"
+	case "search_files":
+		if p := extractJSONField(args, "pattern"); p != "" {
+			if len(p) > 40 {
+				p = p[:37] + "..."
+			}
+			return p
+		}
+		return ""
+	case "shell", "terminal":
+		if cmd := extractJSONField(args, "command"); cmd != "" {
+			if len(cmd) > 60 {
+				cmd = cmd[:57] + "..."
+			}
+			return cmd
+		}
+		return ""
+	case "batch_read", "batch_patch", "parallel_shell":
+		return ""
+	case "http_batch", "browser":
+		if u := extractJSONField(args, "url"); u != "" {
+			if len(u) > 60 {
+				u = u[:57] + "..."
+			}
+			return u
+		}
+		return ""
+	case "memory":
+		if q := extractJSONField(args, "query"); q != "" {
+			if len(q) > 40 {
+				q = q[:37] + "..."
+			}
+			return q
+		}
+		return ""
+	case "transcribe":
+		if p := extractJSONField(args, "path"); p != "" {
+			if lastSlash := strings.LastIndex(p, "/"); lastSlash >= 0 {
+				return p[lastSlash+1:]
+			}
+			return p
+		}
+		return ""
+	case "send_message":
+		if t := extractJSONField(args, "text"); t != "" {
+			if len(t) > 60 {
+				t = t[:57] + "..."
+			}
+			return t
+		}
+		return ""
+	case "session_search":
+		if q := extractJSONField(args, "query"); q != "" {
+			if len(q) > 40 {
+				q = q[:37] + "..."
+			}
+			return q
+		}
+		return ""
+	}
+	return ""
+}
+
+// extractJSONField extracts the value of a top-level string field from a JSON blob.
+func extractJSONField(jsonStr, field string) string {
+	prefix := `"` + field + `": "`
+	if idx := strings.Index(jsonStr, prefix); idx >= 0 {
+		rest := jsonStr[idx+len(prefix):]
+		if end := strings.Index(rest, `"`); end >= 0 {
+			return rest[:end]
+		}
+	}
+	return ""
+}
+
+// toolEmoji returns an emoji that visually signals the tool category.
 func toolEmoji(name string) string {
 	switch {
 	// File / code operations

@@ -102,6 +102,7 @@ Every config knob has a `ODEK_*` counterpart:
 | `ODEK_SYSTEM` | `--system` | string |
 | `ODEK_SKILLS_LEARN` | `skills.learn` | bool |
 | `ODEK_PROMPT_CACHING` | `prompt_caching` | bool |
+| `ODEK_TOOL_PROGRESS` | `tool_progress` | string (all\|new\|verbose\|off) |
 | `ODEK_SANDBOX_IMAGE` | `--sandbox-image` | string |
 | `ODEK_SANDBOX_NETWORK` | `--sandbox-network` | string |
 | `ODEK_SANDBOX_READONLY` | `--sandbox-readonly` | bool |

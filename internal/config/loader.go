@@ -184,6 +184,17 @@ type FileConfig struct {
 	// "enhance" = per-tool narrated messages, progress header kept.
 	// "verbose" = raw tool names, args, and results.
 	InteractionMode string `json:"interaction_mode,omitempty"`
+
+	// ToolProgress controls per-tool progress messages for the Telegram bot.
+	//   "all"     (default) — show every tool call
+	//   "new"     — only when the tool name changes (dedup consecutive same-tool)
+	//   "verbose" — full tool arguments in progress messages
+	//   "off"     — no per-tool progress messages (just thinking + final answer)
+	ToolProgress string `json:"tool_progress,omitempty"`
+
+	// ToolProgressCleanup controls whether progress messages are deleted after
+	// the final answer. Default: true (delete progress messages).
+	ToolProgressCleanup *bool `json:"tool_progress_cleanup,omitempty"`
 }
 
 // ResolvedConfig is the fully merged result. Every field has a concrete
@@ -282,6 +293,14 @@ type ResolvedConfig struct {
 	// InteractionMode is the resolved interaction style.
 	// "engaging" (default), "enhance", or "verbose".
 	InteractionMode string
+
+	// ToolProgress is the resolved tool progress mode for Telegram.
+	// Default: "all".
+	ToolProgress string
+
+	// ToolProgressCleanup controls whether progress messages are deleted
+	// after the final answer. Default: true.
+	ToolProgressCleanup bool
 }
 
 // ── Defaults ───────────────────────────────────────────────────────────
@@ -587,6 +606,7 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		GithubRepoDirectory: cfg.GithubRepoDirectory,
 		GithubRepoUrl:       cfg.GithubRepoUrl,
 		InteractionMode:     ifZero(cfg.InteractionMode, "engaging"),
+		ToolProgress:        ifZero(cfg.ToolProgress, "all"),
 	}
 
 	// MaxConcurrency: default to 3 if not set
@@ -614,6 +634,11 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 	}
 	if cfg.SandboxReadonly != nil {
 		resolved.SandboxReadonly = *cfg.SandboxReadonly
+	}
+	if cfg.ToolProgressCleanup != nil {
+		resolved.ToolProgressCleanup = *cfg.ToolProgressCleanup
+	} else {
+		resolved.ToolProgressCleanup = true // default: delete progress messages
 	}
 
 	// API key fallback chain: resolved → DEEPSEEK_API_KEY → OPENAI_API_KEY
@@ -904,6 +929,12 @@ func overlayFile(base, override FileConfig) FileConfig {
 	}
 	if override.InteractionMode != "" {
 		base.InteractionMode = override.InteractionMode
+	}
+	if override.ToolProgress != "" {
+		base.ToolProgress = override.ToolProgress
+	}
+	if override.ToolProgressCleanup != nil {
+		base.ToolProgressCleanup = override.ToolProgressCleanup
 	}
 	if override.Transcription != nil {
 		base.Transcription = override.Transcription

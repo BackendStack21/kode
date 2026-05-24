@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.43.0 (2026-05-24) — Telegram Narrator Upgrade
+
+### New Features
+- **Telegram tool progress system** — completely rewritten progress display with Hermes-parity features:
+  - **Smart previews** — `📝 read_file: "main.go"` instead of generic narrated templates. Extracts meaningful context from tool args (filename, command, URL, query, etc.)
+  - **Edit throttling** — 1.5s minimum between edits to avoid Telegram flood control (no more 429 errors)
+  - **Tool dedup** — consecutive same-tool calls collapse into `(×N)` counter, reducing chat noise
+  - **Flood control fallback** — when edit hits a rate limit, automatically switches to new messages
+  - **Content reset** — when `send_message` fires mid-run, progress bubble resets below the sent content
+- **`tool_progress` config** — new independent config field with four modes:
+  - `"all"` (default) — single editable progress bubble with smart previews, throttling, dedup
+  - `"new"` — only updates when the tool name changes
+  - `"verbose"` — raw tool args in per-tool messages
+  - `"off"` — no per-tool progress (just thinking + final answer)
+- **`tool_progress_cleanup` config** — whether to delete progress messages after the final answer (default: `true`)
+- **`render.ToolPreview()`** — exported function extracts meaningful previews from tool call JSON args. Covers all 20+ native tools (read_file, shell, browser, memory, transcribe, send_message, etc.)
+- **`render.ToolEmoji()`** — now exported for use by Telegram bot (was internal-only)
+
+### Breaking Changes
+- `narrate.Narrator` package is deprecated — all functionality absorbed into `telegram.go` + `render.go`. The package is kept for build compatibility but no longer used by Telegram bot
+
+### Config
+```json
+{
+  "tool_progress": "all",
+  "tool_progress_cleanup": true
+}
+```
+
+### Stats
+- 120+ insertions across 3 files (telegram.go, render.go, loader.go)
+- All 19 packages pass with `-race`
+
+---
+
 ## v0.42.1 (2026-05-24) — OGG Opus Transcribe Fix
 
 ### Bug Fixes
