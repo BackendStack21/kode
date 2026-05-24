@@ -6,6 +6,9 @@
 - **transcribe tool** — whisper.cpp cannot read OGG Opus audio (`dr_wav`/`dr_mp3` limitation). Telegram voice messages are OGG Opus → produced empty transcriptions silently. Added `convertToWAV()` that auto-detects unsupported formats and uses ffmpeg (16kHz mono WAV) before passing to whisper. Best-effort: falls through to original path if ffmpeg unavailable, so whisper's own error bubbles up
 - **config loader** — `overlayFile()` was missing `Transcription` field propagation. Adding `"transcription"` to `~/.odek/config.json` was silently ignored. Now properly propagates the pointer field
 
+### CI
+- **release workflow** — `softprops/action-gh-release@v4` does not exist (v3 is latest). Previous bump from v2→v4 (commit 3949a94 in v0.42.0) broke all tag-based releases. Fixed to `@v3`
+
 ### Stats
 - 43 insertions across 2 files (transcribe_tool.go, loader.go)
 - All 19 packages pass with `-race`
