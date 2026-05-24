@@ -209,3 +209,55 @@ odek mcp                                    # stdio transport
 - **One loop, one interface** — tool implementers write `func Call(args string) (string, error)`
 - **File-based config** — no YAML, no DSL, no schema generation
 - **Sandbox is opt-in** — no container runtime required for basic operation
+
+## Native Tools Reference
+
+### File I/O (zero-fork, O_NOFOLLOW gated)
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read with line numbers, offset/limit pagination |
+| `write_file` | Atomic temp+rename write, path confinement |
+| `patch` | Find-and-replace with unified diff output |
+| `batch_read` | Read N files in parallel, one call |
+| `batch_patch` | Apply N edits atomically across files |
+| `glob` | Find files by glob pattern |
+| `file_info` | Stat metadata (size, mod_time, mode, type) |
+| `sort` | Sort lines asc/desc/unique/numeric/case-insensitive |
+| `head_tail` | First/last N lines, streaming, parallel |
+| `search_files` | Regex content search or glob file find |
+
+### Data Processing (in-process, no shell fork)
+| Tool | Description |
+|------|-------------|
+| `math_eval` | Arithmetic via go/parser AST (`42*17+256/10 = 97`) |
+| `diff` | LCS structured line diff |
+| `json_query` | Dot-path query with array indexing (`users[0].name`) |
+| `tr` | Text transform: upper/lower/char/string/delete |
+| `base64` | Encode files/strings, decode base64 |
+| `count_lines` | Streaming line/byte count, parallel files |
+| `word_count` | Streaming word/line/char/byte count |
+| `checksum` | SHA-256, SHA-1, MD5 hashing |
+| `tree` | Structured directory tree listing |
+
+### Multi-Pattern (parallel goroutine search)
+| Tool | Description |
+|------|-------------|
+| `multi_grep` | Search N regex patterns in parallel |
+| `search_files` | Single-pattern content/file search |
+
+### Execution (shell replacement)
+| Tool | Description |
+|------|-------------|
+| `shell` | Single command, danger-classified |
+| `parallel_shell` | N commands, true parallel, per-cmd timeout |
+| `http_batch` | N URLs parallel fetch (no HTML parse) |
+| `browser` | HTTP fetch + regex HTML extraction |
+
+### Agent Infrastructure
+| Tool | Description |
+|------|-------------|
+| `delegate_tasks` | Spawn sub-agent OS processes |
+| `memory` | Persistent fact CRUD with cosine-merge |
+| `clarify` | Ask the user for clarification |
+| `send_message` | Send text/photo/document to Telegram |
+| `skill_load/list/save/patch/delete` | Skill CRUD |

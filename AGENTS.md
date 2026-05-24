@@ -31,6 +31,7 @@ cmd/odek/
   subagent_tool.go            delegate_tasks built-in tool (sub-agent spawning)
   browser_tool.go             Built-in browser tool (HTTP fetch + headless navigation)
   file_tool.go                Built-in file tools (read_file, write_file, search_files, patch)
+  perf_tools.go               Performance/parallelism tools (batch_read, batch_patch, math_eval, diff, multi_grep, etc.)
   mcp.go                      MCP server implementation (stdio + SSE transport)
   wsapprover.go               WebSocket-based approval bridge
   ui/index.html               Single-page Web UI (~770 LOC, vanilla JS + CSS)
@@ -75,10 +76,23 @@ ReAct cycle: observe → think → act → repeat.
 - Max 90 iterations by default (`--max-iter`).
 
 ### 2. Tools
-Built-in: `read_file`, `write_file`, `search_files`, `patch`, `shell`, `browser`, `memory`, `clarify`, `delegate_tasks`, `send_message`.
+
+**Core** (always available):
+`read_file`, `write_file`, `search_files`, `patch`, `shell`, `browser`, `memory`, `clarify`, `delegate_tasks`, `send_message`
+
+**Performance/parallelism** (added v0.38-v0.40):
+| Category | Tools |
+|----------|-------|
+| Parallel batch | `batch_read` — N files in 1 call, `batch_patch` — N edits atomically, `parallel_shell` — N commands true-parallel, `http_batch` — N URLs parallel fetch |
+| Zero-fork data | `math_eval` — native arithmetic, `diff` — LCS diff, `json_query` — dot-path JSON, `tr` — text transform, `base64` — encode/decode |
+| File analysis | `glob` — fast glob find, `file_info` — stat metadata, `count_lines` — streaming line count, `word_count` — streaming word count, `checksum` — SHA256/SHA1/MD5, `sort` — sort lines, `head_tail` — first/last N lines |
+| Multi-pattern | `multi_grep` — N regex patterns parallel, `tree` — structured directory tree |
+
 All gated by the `danger` security classifier with three actions: allow, deny, prompt.
 - `shell`: Classifies commands into risk classes (safe, local_write, system_write, destructive, network_egress, code_execution, install, blocked).
 - `send_message`: Sends text/photo/document/voice to the Telegram chat with inline keyboard support.
+- All file tools: `O_NOFOLLOW` on opens, `danger.ClassifyPath` per path, atomic temp+rename for writes.
+- All network tools: `danger.ClassifyURL` per URL, configurable network egress gate.
 
 ### 3. Skills
 Trigger-matched `SKILL.md` files loaded on-demand via lazy injection. Auto-learns from patterns every session.

@@ -1,5 +1,84 @@
 # Changelog
 
+## v0.40.1 (2026-05-24) — Security Hardening
+
+### Panic Recovery
+- Added `safeCall()` helper and `defer recover()` to all parallel goroutines and
+  file-processing helpers (`countFile`, `searchPattern`, `hashFile`, `readPreview`,
+  `countWords`) — a panic in any goroutine is caught and returned as an error entry
+  instead of crashing the process or hanging the semaphore drain
+
+### O_NOFOLLOW Hardening
+- Fixed `diff`, `tr`, `base64` tools — replaced 5 `os.ReadFile` calls with
+  `readFileNoFollow()` which opens with `O_NOFOLLOW` (previously followed symlinks)
+
+### Tests
+- 60 new test cases covering symlink rejection, empty files, binary files,
+  max limit enforcement, missing required fields, invalid JSON (all 15 tools),
+  division by zero, chain transforms, and danger config deny enforcement
+
+---
+
+## v0.40.0 (2026-05-24) — 5 More Native Perf Tools
+
+### New Tools
+
+| Tool | What it does | Fork replaced |
+|------|-------------|---------------|
+| `sort` | Sort lines asc/desc, unique, numeric, case-insensitive, multi-file merge | `sort`, `sort -u`, `sort -n` |
+| `head_tail` | First/last N lines, streaming (stops at N), parallel multi-file | `head -n`, `tail -n` |
+| `base64` | Encode files/strings, decode strings | `base64` |
+| `tr` | Case conversion, char replacement, string substitution, delete. Chainable | `tr`, `sed` (simple) |
+| `word_count` | Words+lines+chars+bytes streaming, parallel multi-file, aggregate totals | `wc` |
+
+### Stats
+- 1,009 lines added, 17 new tests, 0 new dependencies (stdlib: `encoding/base64`, `sort`)
+
+---
+
+## v0.39.0 (2026-05-24) — 10 New Parallelism/Performance Tools
+
+### New Tools
+
+| # | Tool | Parallel | Fork saved |
+|---|------|----------|------------|
+| 1 | `batch_patch` | N edits / 1 call, early-stop | N `sed`/`patch` → 1 |
+| 2 | `parallel_shell` | N commands / pool(4), timeout | N serial → parallel |
+| 3 | `http_batch` | N URLs / pool(4), 30s timeout | N `curl` → 1 call |
+| 4 | `math_eval` | N/A — go/parser AST walk | `bc`, `expr`, `python -c` |
+| 5 | `diff` | N/A — LCS line diff | `diff` fork |
+| 6 | `count_lines` | N files / pool(4), streaming | `wc -l` |
+| 7 | `multi_grep` | N patterns / pool(4), parallel walk | N `grep` → 1 call |
+| 8 | `json_query` | N/A — dot-path with array indexing | `jq`, `python -c` |
+| 9 | `tree` | N/A — recursive structured listing | `find`, `tree`, `ls -R` |
+| 10 | `checksum` | N files / pool(4), crypto stdlib | `sha256sum`, `md5sum` |
+
+### Security
+- All tools gate through `danger.ClassifyPath`/`ClassifyURL` + `CheckOperation`
+- All file opens use `O_NOFOLLOW` (anti-symlink)
+- All registered in `classifyToolCall()` for batch approval gate
+- `parallel_shell` individually classifies each command through the danger classifier
+
+### Stats
+- 2,126 lines added across 4 files (perf_tools.go 1,472 + test 640 + main.go 10 + loop.go 7)
+- 25 new tests, 0 new dependencies
+- Binary stays at ~12MB
+
+---
+
+## v0.38.2 (2026-05-24) — batch_read, glob, file_info
+
+### New Tools
+- **`batch_read`** — read N files in parallel goroutines, returns all content/errors in one call. Fixes fast_read benchmark (was 23%, 163s across 10 serial iterations)
+- **`glob`** — file finding by glob pattern. `filepath.Glob` for simple patterns (zero-walk), fallback to `filepath.Walk` for recursive
+- **`file_info`** — file metadata via Lstat: size, mod_time (ISO8601), mode, is_dir, is_symlink, is_regular
+
+### Security
+- Same `danger.ClassifyPath` + `CheckOperation` + `O_NOFOLLOW` as all existing tools
+- 14 new tests, 0 new dependencies
+
+---
+
 ## v0.37.0 (2026-05-23) — AIEB v2.0 Benchmark: 80.3%
 
 ### Code Generation Discipline
