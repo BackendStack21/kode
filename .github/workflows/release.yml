@@ -48,7 +48,7 @@ jobs:
         run: sha256sum odek-* > checksums.txt
 
       - name: release
-        uses: softprops/action-gh-release@v4
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             odek-linux-amd64
