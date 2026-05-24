@@ -2,6 +2,7 @@
 package telegram
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,7 +72,13 @@ func (sm *SessionManager) GetOrCreate(chatID int64) (*ChatSession, error) {
 	}
 
 	// Missed cache — try the backing store before creating fresh.
-	if loaded, _ := sm.Load(chatID); loaded != nil {
+	loaded, err := sm.Load(chatID)
+	if err != nil {
+		// Store error (corrupt, permission, etc.) — log but don't
+		// block the user. Create a fresh session instead.
+		return nil, err
+	}
+	if loaded != nil {
 		return loaded, nil
 	}
 
@@ -144,7 +151,12 @@ func (sm *SessionManager) Load(chatID int64) (*ChatSession, error) {
 	sessionID := fmt.Sprintf("tg-%d", chatID)
 	sess, err := sm.Store.Load(sessionID)
 	if err != nil {
-		return nil, nil
+		// File not found = expected, same as empty cache.
+		// Use errors.Is to unwrap through %w-wrapped errors.
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("telegram: load session %d: %w", chatID, err)
 	}
 
 	cs = &ChatSession{

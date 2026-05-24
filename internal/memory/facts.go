@@ -48,6 +48,9 @@ const entrySep = "\n§\n"
 // duplicate prevention, and entry-level CRUD via substring matching.
 // All write operations are protected by a mutex to prevent TOCTOU races
 // between concurrent sessions sharing the same memory directory.
+// The mutex guards only the in-memory read+parse+modify phase;
+// the final disk write happens outside the lock to avoid blocking
+// other sessions during file I/O.
 type FactStore struct {
 	mu      sync.Mutex
 	dir     string
@@ -99,6 +102,18 @@ func (f *FactStore) cap(target string) int {
 	}
 }
 
+// sizeOf returns the total character size of entries including separators.
+func (f *FactStore) sizeOf(entries []string) int {
+	size := 0
+	for i, e := range entries {
+		if i > 0 {
+			size += len(entrySep)
+		}
+		size += len(e)
+	}
+	return size
+}
+
 // Read returns the full content of a fact file. Returns empty string if the
 // file doesn't exist yet.
 func (f *FactStore) Read(target string) (string, error) {
@@ -115,6 +130,33 @@ func (f *FactStore) Read(target string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
+// readModifyWrite is the core read→modify→write pattern for fact files.
+// It holds the mutex only during the read+parse+modify phase, then releases
+// it before the disk write. This prevents blocking other sessions during file I/O.
+//
+// The modify function receives parsed entries and returns modified entries.
+// If it returns nil entries, the write is skipped (no-op).
+func (f *FactStore) readModifyWrite(target string, modify func([]string) ([]string, error)) error {
+	// Read and parse under lock
+	f.mu.Lock()
+	existing, err := f.Read(target)
+	if err != nil {
+		f.mu.Unlock()
+		return err
+	}
+	entries := parseEntries(existing)
+	result, err := modify(entries)
+	f.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		return nil // no-op
+	}
+	// Write without lock
+	return f.writeEntries(target, result)
+}
+
 // Add appends a new entry to a fact file. Returns error if:
 //   - target is invalid
 //   - content is empty
@@ -128,47 +170,38 @@ func (f *FactStore) Add(target, content string) error {
 		return fmt.Errorf("memory: empty content")
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	content = strings.TrimSpace(content)
 
-	// Read existing content
-	existing, err := f.Read(target)
-	if err != nil {
-		return err
-	}
-
-	// Dedup: check if content already exists
-	entries := parseEntries(existing)
-	for _, e := range entries {
-		if e == content {
-			return nil // silent dedup
+	return f.readModifyWrite(target, func(entries []string) ([]string, error) {
+		// Dedup: check if content already exists
+		for _, e := range entries {
+			if e == content {
+				return nil, nil // silent dedup, skip write
+			}
 		}
-	}
 
-	// Calculate new size
-	newSize := len(existing)
-	if newSize > 0 {
-		newSize += len(entrySep) // separator between existing and new
-	}
-	newSize += len(content)
+		// Calculate new size
+		newSize := 0
+		for i, e := range entries {
+			if i > 0 {
+				newSize += len(entrySep)
+			}
+			newSize += len(e)
+		}
+		if len(entries) > 0 {
+			newSize += len(entrySep)
+		}
+		newSize += len(content)
 
-	maxCap := f.cap(target)
-	if newSize > maxCap {
-		return fmt.Errorf("memory: adding entry (%d chars) would exceed cap (%d chars); current: %d, max: %d",
-			len(content), maxCap, len(existing), maxCap)
-	}
+		maxCap := f.cap(target)
+		if newSize > maxCap {
+			return nil, fmt.Errorf("memory: adding entry (%d chars) would exceed cap (%d chars); current: %d, max: %d",
+				len(content), maxCap, f.sizeOf(entries), maxCap)
+		}
 
-	// Append
-	var newContent string
-	if existing == "" {
-		newContent = content
-	} else {
-		newContent = existing + entrySep + content
-	}
-
-	return f.writeEntries(target, parseEntries(newContent))
+		// Append
+		return append(entries, content), nil
+	})
 }
 
 // Replace finds an entry by substring match and replaces it with new content.
@@ -184,56 +217,37 @@ func (f *FactStore) Replace(target, oldText, content string) error {
 		return fmt.Errorf("memory: empty old_text")
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	content = strings.TrimSpace(content)
 	oldText = strings.TrimSpace(oldText)
 
-	existing, err := f.Read(target)
-	if err != nil {
-		return err
-	}
-
-	entries := parseEntries(existing)
-
-	// Find matching entries
-	var matchIdx int
-	matchCount := 0
-	for i, e := range entries {
-		if strings.Contains(e, oldText) {
-			matchIdx = i
-			matchCount++
+	return f.readModifyWrite(target, func(entries []string) ([]string, error) {
+		// Find matching entries
+		var matchIdx int
+		matchCount := 0
+		for i, e := range entries {
+			if strings.Contains(e, oldText) {
+				matchIdx = i
+				matchCount++
+			}
 		}
-	}
 
-	if matchCount == 0 {
-		return fmt.Errorf("memory: no entry contains %q", oldText)
-	}
-	if matchCount > 1 {
-		return fmt.Errorf("memory: %d entries contain %q — use a more specific old_text", matchCount, oldText)
-	}
-
-	// Calculate new size (replace entry at matchIdx)
-	newSize := 0
-	for i, e := range entries {
-		if i > 0 {
-			newSize += len(entrySep)
+		if matchCount == 0 {
+			return nil, fmt.Errorf("memory: no entry contains %q", oldText)
 		}
-		if i == matchIdx {
-			newSize += len(content)
-		} else {
-			newSize += len(e)
+		if matchCount > 1 {
+			return nil, fmt.Errorf("memory: %d entries contain %q — use a more specific old_text", matchCount, oldText)
 		}
-	}
 
-	maxCap := f.cap(target)
-	if newSize > maxCap {
-		return fmt.Errorf("memory: replacement (%d chars) would exceed cap (%d chars)", newSize, maxCap)
-	}
+		// Calculate new size
+		newSize := f.sizeOf(entries) - len(entries[matchIdx]) + len(content)
+		maxCap := f.cap(target)
+		if newSize > maxCap {
+			return nil, fmt.Errorf("memory: replacement (%d chars) would exceed cap (%d chars)", newSize, maxCap)
+		}
 
-	entries[matchIdx] = content
-	return f.writeEntries(target, entries)
+		entries[matchIdx] = content
+		return entries, nil
+	})
 }
 
 // Remove finds an entry by substring match and removes it. Returns error if
@@ -246,39 +260,30 @@ func (f *FactStore) Remove(target, oldText string) error {
 		return fmt.Errorf("memory: empty old_text")
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
 	oldText = strings.TrimSpace(oldText)
 
-	existing, err := f.Read(target)
-	if err != nil {
-		return err
-	}
-
-	entries := parseEntries(existing)
-
-	var matchIdx int
-	matchCount := 0
-	for i, e := range entries {
-		if strings.Contains(e, oldText) {
-			matchIdx = i
-			matchCount++
+	return f.readModifyWrite(target, func(entries []string) ([]string, error) {
+		var matchIdx int
+		matchCount := 0
+		for i, e := range entries {
+			if strings.Contains(e, oldText) {
+				matchIdx = i
+				matchCount++
+			}
 		}
-	}
 
-	if matchCount == 0 {
-		return fmt.Errorf("memory: no entry contains %q", oldText)
-	}
-	if matchCount > 1 {
-		return fmt.Errorf("memory: %d entries contain %q — use a more specific old_text", matchCount, oldText)
-	}
+		if matchCount == 0 {
+			return nil, fmt.Errorf("memory: no entry contains %q", oldText)
+		}
+		if matchCount > 1 {
+			return nil, fmt.Errorf("memory: %d entries contain %q — use a more specific old_text", matchCount, oldText)
+		}
 
-	// Remove by swapping with last and slicing
-	entries[matchIdx] = entries[len(entries)-1]
-	entries = entries[:len(entries)-1]
-
-	return f.writeEntries(target, entries)
+		// Remove by swapping with last and slicing
+		entries[matchIdx] = entries[len(entries)-1]
+		entries = entries[:len(entries)-1]
+		return entries, nil
+	})
 }
 
 // Entries returns the individual entries as a string slice.

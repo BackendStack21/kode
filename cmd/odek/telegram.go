@@ -1417,7 +1417,17 @@ func handleChatMessage(
 	defer agent.Close()
 
 	// Create a cancellable context so /stop can interrupt the agent loop.
-	agentCtx, agentCancel := context.WithCancel(context.Background())
+	// Also apply a max run timeout to prevent runaway agents.
+	var (
+		agentCtx    context.Context
+		agentCancel context.CancelFunc
+	)
+	if resolved.Telegram.AgentTimeout > 0 {
+		agentCtx, agentCancel = context.WithTimeout(context.Background(),
+			time.Duration(resolved.Telegram.AgentTimeout)*time.Second)
+	} else {
+		agentCtx, agentCancel = context.WithCancel(context.Background())
+	}
 	chatCancels.Store(chatID, agentCancel)
 	defer func() {
 		agentCancel()
@@ -1435,7 +1445,13 @@ func handleChatMessage(
 		// state and notify the user with a cancellation summary.
 		if errors.Is(err, context.Canceled) {
 			// Save partial session state so the conversation isn't lost.
+			// Use updatedMessages (the agent's current state) instead of
+			// cs.Messages (the input state) to preserve any tool results
+			// or context updates made before cancellation.
 			cs.LastActive = time.Now()
+			if len(updatedMessages) > 0 {
+				cs.Messages = updatedMessages
+			}
 			if saveErr := sessionManager.Save(chatID, cs.Messages); saveErr != nil {
 				log.Error("save session after cancel", "chat_id", chatID, "error", saveErr)
 			}

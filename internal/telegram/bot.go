@@ -62,6 +62,13 @@ func (b *Bot) SetLogger(l Logger) {
 	b.log = l
 }
 
+// SetFileBaseURL overrides the file download base URL (defaults to
+// https://api.telegram.org/file/bot<token>). Tests can use this to
+// point file downloads at a test server.
+func (b *Bot) SetFileBaseURL(url string) {
+	b.FileBaseURL = url
+}
+
 // url builds the full API endpoint URL for the given method.
 func (b *Bot) url(method string) string {
 	return fmt.Sprintf("%s/%s", b.BaseURL, method)

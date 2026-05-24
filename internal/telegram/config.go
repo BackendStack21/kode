@@ -18,6 +18,7 @@ type TelegramConfig struct {
 	MaxMsgLength     int      `json:"max_msg_length"`     // default 4096
 	DailyTokenBudget int64    `json:"daily_token_budget"` // 0 = unlimited (default)
 	SessionTTL       int      `json:"session_ttl_hours"`  // hours, default 24
+	AgentTimeout     int      `json:"agent_timeout_seconds"` // max agent run duration, default 900 (15m), 0 = unlimited
 	FallbackURLs     []string `json:"fallback_urls"`
 	HealthAddr       string   `json:"health_addr"`        // e.g. "127.0.0.1:9090" (empty = disabled)
 	LogLevel         string   `json:"log_level"` // "debug","info","warn","error" (default "info")
@@ -33,6 +34,7 @@ func DefaultConfig() TelegramConfig {
 		MaxMsgLength:     4096,
 		DailyTokenBudget: 0, // 0 = unlimited
 		SessionTTL:       24,
+		AgentTimeout:     900, // 15 minutes (0 = unlimited)
 	}
 }
 
@@ -78,6 +80,11 @@ func ConfigFromEnv(base TelegramConfig) TelegramConfig {
 			cfg.SessionTTL = n
 		}
 	}
+	if v := os.Getenv("ODEK_TELEGRAM_AGENT_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.AgentTimeout = n
+		}
+	}
 	if v := os.Getenv("ODEK_TELEGRAM_FALLBACK_URLS"); v != "" {
 		cfg.FallbackURLs = splitAndTrim(v)
 	}
@@ -111,6 +118,9 @@ func ValidateConfig(cfg TelegramConfig) error {
 	}
 	if cfg.SessionTTL < 1 {
 		return fmt.Errorf("telegram: session_ttl_hours must be >= 1, got %d", cfg.SessionTTL)
+	}
+	if cfg.AgentTimeout < 0 {
+		return fmt.Errorf("telegram: agent_timeout_seconds must be >= 0, got %d", cfg.AgentTimeout)
 	}
 	return nil
 }
