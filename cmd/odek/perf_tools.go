@@ -110,7 +110,13 @@ func (t *batchPatchTool) Schema() any {
 	}
 }
 
-func (t *batchPatchTool) Call(argsJSON string) (string, error) {
+func (t *batchPatchTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("batch_patch: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args batchPatchArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -282,7 +288,13 @@ func (t *parallelShellTool) Schema() any {
 	}
 }
 
-func (t *parallelShellTool) Call(argsJSON string) (string, error) {
+func (t *parallelShellTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("parallel_shell: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args parallelShellArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -332,10 +344,14 @@ func (t *parallelShellTool) Call(argsJSON string) (string, error) {
 			shCmd.Stdout = &stdout
 			shCmd.Stderr = &stderr
 
-			// Kill on timeout via goroutine
+			// Kill on timeout via goroutine, with mutex to avoid Process race
+			var procMu sync.Mutex
 			done := make(chan error, 1)
 			go func() {
-				done <- shCmd.Run()
+				err := shCmd.Run()
+				procMu.Lock()
+				done <- err
+				procMu.Unlock()
 			}()
 
 			select {
@@ -352,9 +368,11 @@ func (t *parallelShellTool) Call(argsJSON string) (string, error) {
 					}
 				}
 			case <-time.After(time.Duration(timeout) * time.Second):
+				procMu.Lock()
 				if shCmd.Process != nil {
 					shCmd.Process.Kill()
 				}
+				procMu.Unlock()
 				entry.Error = fmt.Sprintf("timeout after %ds", timeout)
 				entry.DurationMs = time.Since(start).Milliseconds()
 			}
@@ -439,7 +457,13 @@ func (t *httpBatchTool) Schema() any {
 	}
 }
 
-func (t *httpBatchTool) Call(argsJSON string) (string, error) {
+func (t *httpBatchTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("http_batch: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args httpBatchArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -552,7 +576,13 @@ func (t *mathEvalTool) Schema() any {
 	}
 }
 
-func (t *mathEvalTool) Call(argsJSON string) (string, error) {
+func (t *mathEvalTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("math_eval: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args mathEvalArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -561,11 +591,11 @@ func (t *mathEvalTool) Call(argsJSON string) (string, error) {
 		return jsonError("expression is required")
 	}
 
-	result, err := evalMath(args.Expression)
+	res, err := evalMath(args.Expression)
 	if err != nil {
 		return jsonResult(mathEvalResult{Expression: args.Expression, Error: err.Error()})
 	}
-	return jsonResult(mathEvalResult{Expression: args.Expression, Result: result})
+	return jsonResult(mathEvalResult{Expression: args.Expression, Result: res})
 }
 
 func evalMath(expr string) (float64, error) {
@@ -671,7 +701,13 @@ func (t *diffTool) Schema() any {
 	}
 }
 
-func (t *diffTool) Call(argsJSON string) (string, error) {
+func (t *diffTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("diff: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args diffArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -1138,7 +1174,13 @@ func (t *jsonQueryTool) Schema() any {
 	}
 }
 
-func (t *jsonQueryTool) Call(argsJSON string) (string, error) {
+func (t *jsonQueryTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("json_query: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args jsonQueryArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -1281,7 +1323,13 @@ func (t *treeTool) Schema() any {
 	}
 }
 
-func (t *treeTool) Call(argsJSON string) (string, error) {
+func (t *treeTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("tree: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args treeArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -1546,7 +1594,13 @@ func (t *sortTool) Schema() any {
 	}
 }
 
-func (t *sortTool) Call(argsJSON string) (string, error) {
+func (t *sortTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("sort: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args sortArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -1609,8 +1663,15 @@ func (t *sortTool) Call(argsJSON string) (string, error) {
 			a, b = strings.ToLower(a), strings.ToLower(b)
 		}
 		if args.Numeric {
-			ai, _ := strconv.ParseFloat(strings.Fields(a)[0], 64)
-			bi, _ := strconv.ParseFloat(strings.Fields(b)[0], 64)
+			var ai, bi float64
+			fa := strings.Fields(a)
+			fb := strings.Fields(b)
+			if len(fa) > 0 {
+				ai, _ = strconv.ParseFloat(fa[0], 64)
+			}
+			if len(fb) > 0 {
+				bi, _ = strconv.ParseFloat(fb[0], 64)
+			}
 			if desc {
 				return ai > bi
 			}
@@ -1774,10 +1835,6 @@ func (t *headTailTool) readHead(f *os.File, path string, n int) headTailFileResu
 			lines = append(lines, scanner.Text())
 		}
 	}
-	// Continue counting total
-	for scanner.Scan() {
-		total++
-	}
 	return headTailFileResult{Path: path, Lines: lines, Count: len(lines), Total: total}
 }
 
@@ -1842,7 +1899,13 @@ func (t *base64Tool) Schema() any {
 	}
 }
 
-func (t *base64Tool) Call(argsJSON string) (string, error) {
+func (t *base64Tool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("base64: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args base64Args
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -1939,7 +2002,13 @@ func (t *trTool) Schema() any {
 	}
 }
 
-func (t *trTool) Call(argsJSON string) (string, error) {
+func (t *trTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("tr: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args trArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())

@@ -830,7 +830,13 @@ func (t *batchReadTool) Schema() any {
 	}
 }
 
-func (t *batchReadTool) Call(argsJSON string) (string, error) {
+func (t *batchReadTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("batch_read: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args batchReadArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -991,7 +997,13 @@ func (t *globTool) Schema() any {
 	}
 }
 
-func (t *globTool) Call(argsJSON string) (string, error) {
+func (t *globTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("glob: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args globArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -1129,7 +1141,13 @@ func (t *fileInfoTool) Schema() any {
 	}
 }
 
-func (t *fileInfoTool) Call(argsJSON string) (string, error) {
+func (t *fileInfoTool) Call(argsJSON string) (result string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("file_info: panic: %v", r)
+			result = `{"error":"internal tool error"}`
+		}
+	}()
 	var args fileInfoArgs
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return jsonError("invalid arguments: " + err.Error())
@@ -1161,7 +1179,7 @@ func (t *fileInfoTool) Call(argsJSON string) (string, error) {
 		})
 	}
 
-	result := fileInfoResult{
+	fi := fileInfoResult{
 		Path:      args.Path,
 		Size:      lInfo.Size(),
 		ModTime:   lInfo.ModTime().UTC().Format(time.RFC3339),
@@ -1171,7 +1189,7 @@ func (t *fileInfoTool) Call(argsJSON string) (string, error) {
 		IsRegular: lInfo.Mode().IsRegular(),
 	}
 
-	return jsonResult(result)
+	return jsonResult(fi)
 }
 
 // Ensure tools implement odek.Tool
