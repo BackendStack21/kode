@@ -59,6 +59,25 @@ odek repl --sandbox --sandbox-image python:3.12
 
 Priority: `~/.odek/config.json` ← `./odek.json` ← `ODEK_*` env ← CLI flags.
 
+### Audio Transcription
+- **`transcribe`** tool uses local whisper.cpp CLI — no cloud APIs
+- Model files cached in `~/.odek/whisper/models/ggml-<model>.bin` (default: `tiny`, ~75 MB)
+- Configure via `transcription` section in config:
+
+```json
+{
+  "transcription": {
+    "model": "tiny",
+    "language": "en",
+    "auto_transcribe": true,
+    "models_dir": "~/.odek/whisper/models",
+    "binary_path": "/usr/local/bin/whisper"
+  }
+}
+```
+
+Settings: `model` (tiny/base/small/medium), `language` (ISO code, empty=auto), `auto_transcribe` (Telegram voice → text), `models_dir` (model directory), `binary_path` (whisper binary path).
+
 ## Memory System Architecture
 
 ### Three Tiers

@@ -1,5 +1,75 @@
 # Changelog
 
+## v0.41.1 (2026-05-24) — Quality Hardening
+
+### Bug Fixes
+- **sort numeric** — empty lines no longer cause panic (`strings.Fields("")` index out of range). Guarded with `len(fa) > 0` check
+- **head_tail total** — `readHead` second scanner loop after EOF never executed, so total always equalled count for files larger than N. Removed dead loop
+- **telegram.go** — `builtinTools()` in Telegram handler was passing empty `TranscriptionConfig`, ignoring user's configured binary_path and models_dir. Now passes `resolved.Transcription`
+- **fileInfoTool** — named return `result string` shadowed by local `result fileInfoResult` (would fail compilation on any change)
+- **mathEvalTool** — named return `result string` shadowed by `result, err := evalMath()` which returns `float64`
+- **parallel_shell** — data race on `shCmd.Process.Kill()` vs `shCmd.Run()` from concurrent goroutines. Fixed with mutex-guarded Process access
+
+### Recoverability
+- Added `defer recover` to top-level Call methods of 11 tools: batch_patch, parallel_shell, http_batch, math_eval, diff, sort, base64, tr, json_query, tree, batch_read, glob, file_info
+- Every tool Call method now guards against panics with named returns and JSON error response
+
+### New Tests
+- Metadata (Name/Description/Schema) tests for all 15 perf tools
+- `TestSort_Numeric` — numeric sort correctness
+- `TestSort_NumericWithEmptyLine` — regression: empty line + numeric sort (was panic)
+- `TestHeadTail_HeadTotalAccuracy` — regression: total=100 not 3 for head(3) of 100 lines
+- `TestMultiGrep_GlobFilter` — glob filtering works across file types
+- `TestWordCount_BinaryFile` — binary files don't cause errors
+
+### Stats
+- 364 insertions, 26 deletions across 4 files
+- All tests pass with `-race`
+
+---
+
+## v0.41.0 (2026-05-24) — Native Audio Transcription
+
+### New Tool: `transcribe`
+- Transcribes audio files (OGG, WAV, MP3) to text using a local whisper.cpp CLI
+- Fully local — zero cloud APIs, no API keys, no credentials
+- Returns: `{text, duration_sec, segments, model, language}`
+- Streams via `exec.Command("whisper", "--model", ..., "--output-json", "--file", ...)` and parses JSON output
+
+### Dependency Management
+- If whisper CLI is missing → clear error with install instructions (brew / apt / git clone)
+- If model file is missing → clear error with download instructions (curl from HuggingFace)
+- No silent installs, no auto-downloads — tool errors until user installs dependencies
+
+### Configuration (`~/.odek/config.json`)
+```json
+{
+  "transcription": {
+    "model": "tiny",
+    "language": "en",
+    "auto_transcribe": true,
+    "models_dir": "~/.odek/whisper/models",
+    "binary_path": "/usr/local/bin/whisper"
+  }
+}
+```
+
+### Telegram Integration
+- Voice messages downloaded to `~/.odek/media/`
+- When `auto_transcribe: true` and whisper is available → transcribed text injected directly as user message
+- When `auto_transcribe: false` or transcription fails → file path passed to agent with `transcribe()` tool suggestion
+
+### Security
+- Path gated through `danger.ClassifyPath` + `O_NOFOLLOW`
+- Symlink paths rejected (tested)
+- Panic recovery in Call method
+
+### Stats
+- 590 lines across 12 files, 7 new tests, 0 new Go dependencies
+- External: whisper.cpp CLI (user installs, tool validates)
+
+---
+
 ## v0.40.1 (2026-05-24) — Security Hardening
 
 ### Panic Recovery

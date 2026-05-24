@@ -12,7 +12,7 @@ It provides context about the project's architecture, conventions, and how to up
 - **Binary:** `odek` — single static binary, ~12 MB, instant startup.
 - **Config:** Five-layer priority: `~/.odek/secrets.env` → `~/.odek/config.json` → `./odek.json` → `ODEK_*` env vars → CLI flags.
 - **Benchmark:** AIEB v2.0 — 80.3% (highest published agent score on the Autonomous Intelligence Engineering Benchmark).
-- **Version:** v0.37.x — see latest tag at https://github.com/BackendStack21/odek/releases
+- **Version:** v0.41.1 — see latest tag at https://github.com/BackendStack21/odek/releases
 
 ## Source Layout
 
@@ -87,6 +87,7 @@ ReAct cycle: observe → think → act → repeat.
 | Zero-fork data | `math_eval` — native arithmetic, `diff` — LCS diff, `json_query` — dot-path JSON, `tr` — text transform, `base64` — encode/decode |
 | File analysis | `glob` — fast glob find, `file_info` — stat metadata, `count_lines` — streaming line count, `word_count` — streaming word count, `checksum` — SHA256/SHA1/MD5, `sort` — sort lines, `head_tail` — first/last N lines |
 | Multi-pattern | `multi_grep` — N regex patterns parallel, `tree` — structured directory tree |
+| Audio | `transcribe` — local whisper.cpp audio transcription (OGG/WAV/MP3 → text) |
 
 All gated by the `danger` security classifier with three actions: allow, deny, prompt.
 - `shell`: Classifies commands into risk classes (safe, local_write, system_write, destructive, network_egress, code_execution, install, blocked).
