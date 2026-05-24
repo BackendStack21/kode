@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -321,19 +323,104 @@ func ImportSkill(opts ImportOptions, confirmFn func(assessment *ImportAssessment
 
 // isPrivateHost returns true if the hostname is a private/internal IP
 // or localhost. Blocks SSRF via redirect in skill import.
+// Uses proper IP parsing (handles decimal, octal, hex, short, integer forms)
+// and checks RFC 1918, RFC 6598, IPv6 ULA, link-local, and metadata hostnames.
 func isPrivateHost(host string) bool {
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" ||
-		host == "169.254.169.254" || host == "0.0.0.0" {
+	// Well-known private hostnames (fast path, no network lookup)
+	switch strings.ToLower(host) {
+	case "localhost", "localhost.localdomain", "localhost6", "localhost6.localdomain6",
+		"ip6-localhost", "ip6-loopback":
+		return true
+	case "metadata.google.internal", "metadata.internal":
+		return true
+	case "169.254.169.254":
 		return true
 	}
-	// RFC 1918 private ranges
-	for _, prefix := range []string{"10.", "172.16.", "172.17.", "172.18.",
-		"172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
-		"172.24.", "172.25.", "172.26.", "172.27.", "172.28.",
-		"172.29.", "172.30.", "172.31.", "192.168."} {
-		if strings.HasPrefix(host, prefix) {
+
+	if strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".docker.internal") {
+		return true
+	}
+	if strings.HasSuffix(host, ".local") {
+		return true // mDNS — link-local
+	}
+
+	// Try as an IP using browser-compatible parsing (handles all representations)
+	if ip := parsePrivateIP(host); ip != nil {
+		return isPrivateIP(ip)
+	}
+
+	// If it's a hostname (not an IP), resolve it to check for private IPs.
+	// This catches cases like DNS rebinding where the hostname resolves
+	// to a private IP at connection time.
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return false // can't resolve — let the connection attempt fail naturally
+	}
+	for _, ipStr := range ips {
+		if ip := net.ParseIP(ipStr); ip != nil && isPrivateIP(ip) {
 			return true
 		}
 	}
 	return false
+}
+
+// isPrivateIP checks if an IP is in a private/internal range.
+func isPrivateIP(ip net.IP) bool {
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() || ip.IsLinkLocalUnicast() {
+		return true
+	}
+	// RFC 6598: Carrier-grade NAT (100.64.0.0/10)
+	if ip4 := ip.To4(); ip4 != nil {
+		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+			return true
+		}
+	}
+	// IPv6 Unique Local Address (fc00::/7)
+	if ip.To16() != nil && len(ip) == net.IPv6len {
+		if ip[0] == 0xfc || ip[0] == 0xfd {
+			return true
+		}
+	}
+	return false
+}
+
+// parsePrivateIP parses a host string using browser-compatible IP parsing.
+func parsePrivateIP(host string) net.IP {
+	if ip := net.ParseIP(host); ip != nil {
+		return ip
+	}
+	// inet_aton-style: octal (0177.0.0.1), hex (0x7f000001), short (127.1),
+	// single-integer (2130706433), hex-dotted (0x0.0x0.0x0.0x0)
+	parts := strings.Split(host, ".")
+	if len(parts) < 1 || len(parts) > 4 {
+		return nil
+	}
+	var nums []uint32
+	for _, p := range parts {
+		var val uint64
+		var err error
+		switch {
+		case strings.HasPrefix(p, "0x") || strings.HasPrefix(p, "0X"):
+			val, err = strconv.ParseUint(p[2:], 16, 32)
+		case strings.HasPrefix(p, "0") && len(p) > 1:
+			val, err = strconv.ParseUint(p[1:], 8, 32)
+		default:
+			val, err = strconv.ParseUint(p, 10, 32)
+		}
+		if err != nil || val > 0xFFFFFFFF {
+			return nil
+		}
+		nums = append(nums, uint32(val))
+	}
+	switch len(nums) {
+	case 1:
+		return net.IPv4(byte(nums[0]>>24), byte(nums[0]>>16), byte(nums[0]>>8), byte(nums[0]))
+	case 2:
+		return net.IPv4(byte(nums[0]), byte(nums[1]>>16), byte(nums[1]>>8), byte(nums[1]))
+	case 3:
+		return net.IPv4(byte(nums[0]), byte(nums[1]), byte(nums[2]>>8), byte(nums[2]))
+	case 4:
+		return net.IPv4(byte(nums[0]), byte(nums[1]), byte(nums[2]), byte(nums[3]))
+	}
+	return nil
 }

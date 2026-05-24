@@ -418,6 +418,28 @@ func TestIsPrivateHost(t *testing.T) {
 		{"8.8.8.8", false},
 		{"example.com", false},
 		{"172.32.0.1", false},
+		// Bypass vectors (old string-prefix classifier missed these)
+		{"0", true},                  // 0.0.0.0
+		{"0177.0.0.1", true},         // octal 127.0.0.1
+		{"2130706433", true},         // decimal 127.0.0.1
+		{"0x7f000001", true},         // hex 127.0.0.1
+		{"127.1", true},              // short form 127.0.0.1
+		{"0x0.0x0.0x0.0x0", true},   // hex-dotted
+		// RFC 6598 carrier-grade NAT
+		{"100.64.0.1", true},
+		{"100.127.255.254", true},
+		{"100.128.0.1", false},       // outside RFC 6598
+		// IPv6 ULA
+		{"fc00::1", true},
+		{"fd00::1", true},
+		// Metadata hostnames
+		{"metadata.google.internal", true},
+		{"metadata.internal", true},
+		{"instance.metadata.internal", true},
+		// Docker internal
+		{"host.docker.internal", true},
+		// mDNS / .local
+		{"mydevice.local", true},
 	}
 	for _, tt := range tests {
 		got := isPrivateHost(tt.host)
