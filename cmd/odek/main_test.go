@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/BackendStack21/odek"
 	"github.com/BackendStack21/odek/internal/config"
@@ -1394,6 +1395,10 @@ func TestRunLearn_MultiStepProcedure(t *testing.T) {
 	defer func() { os.Stderr = oldStderr }()
 
 	err := run([]string{"--learn", "--base-url", server.URL, "multi step task"})
+	// Learn loop now runs asynchronously; give it a moment to complete.
+	// With llm_learn=false the heuristics are instant, but we still
+	// need to let the goroutine write to stderr before closing the pipe.
+	time.Sleep(200 * time.Millisecond)
 	errW.Close()
 	errOutput, _ := io.ReadAll(errR)
 
@@ -1412,12 +1417,16 @@ func TestRunLearn_MultiStepProcedure(t *testing.T) {
 		t.Error("expected 'multi-step' heuristic in output")
 	}
 
-	// Skill file written to disk
+	// Skill file written to disk — poll since the goroutine may still be writing.
 	skillDir := filepath.Join(homeDir, ".odek", "skills", "procedure-echo")
 	skillFile := filepath.Join(skillDir, "SKILL.md")
-	if _, err := os.Stat(skillFile); os.IsNotExist(err) {
-		t.Errorf("expected skill file at %s", skillFile)
+	for i := 0; i < 10; i++ {
+		if _, err := os.Stat(skillFile); err == nil {
+			return // found
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
+	t.Errorf("expected skill file at %s", skillFile)
 }
 
 // TestRunLearn_InteractiveReject verifies that when auto-save is disabled,
@@ -1459,6 +1468,8 @@ func TestRunLearn_InteractiveReject(t *testing.T) {
 	defer func() { os.Stderr = oldStderr }()
 
 	err := run([]string{"--learn", "--base-url", server.URL, "multi step task"})
+	// Learn loop runs asynchronously; give it a moment to write stderr.
+	time.Sleep(200 * time.Millisecond)
 	errW.Close()
 	errOutput, _ := io.ReadAll(errR)
 

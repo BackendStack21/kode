@@ -270,14 +270,17 @@ func replCmd(args []string) error {
 		fmt.Fprintln(os.Stderr)
 	}
 
-	// Session end — extract episode if enough turns
+	// Session end — extract episode if enough turns.
+	// Run asynchronously so episode extraction does not delay process exit.
 	if mm := agent.Memory(); mm != nil {
-		messages := sess.GetMessages()
-		msgStrs := make([]string, 0, len(messages))
-		for _, m := range messages {
-			msgStrs = append(msgStrs, m.Role+": "+m.Content)
-		}
-		mm.OnSessionEnd(sess.ID, sess.Turns, msgStrs)
+		go func() {
+			messages := sess.GetMessages()
+			msgStrs := make([]string, 0, len(messages))
+			for _, m := range messages {
+				msgStrs = append(msgStrs, m.Role+": "+m.Content)
+			}
+			mm.OnSessionEnd(sess.ID, sess.Turns, msgStrs)
+		}()
 	}
 
 	return nil

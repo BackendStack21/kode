@@ -1071,23 +1071,29 @@ func run(args []string) error {
 	}
 
 	// ── Learn loop: run self-improvement heuristics ──
+	// Run asynchronously so the process can exit immediately after
+	// the response is delivered. Skill learning is best-effort
+	// post-processing that should not block termination.
 	if resolved.Skills.Learn && sm != nil {
-		// Create LLM client for skill enhancement
-		skillsLLM := llm.New(resolved.BaseURL, resolved.APIKey, resolved.Model, "", 30*time.Second)
-		runLearnLoop(allMessages, f.Task, sm, skillsLLM, resolved.Skills)
+		go func() {
+			skillsLLM := llm.New(resolved.BaseURL, resolved.APIKey, resolved.Model, "", 30*time.Second)
+			runLearnLoop(allMessages, f.Task, sm, skillsLLM, resolved.Skills)
+		}()
 	}
 
 	// ── Session end — extract episode if enough turns ──
+	// Run asynchronously so episode extraction does not delay process exit.
 	if mm := agent.Memory(); mm != nil && f.Session != nil && *f.Session {
-		// We need the session for OnSessionEnd. Re-create it from the stored data.
-		sess, err := session.NewStore()
-		if err == nil {
-			latest, err := sess.Latest()
+		go func() {
+			sess, err := session.NewStore()
 			if err == nil {
-				msgStrs := makeSessionMessageStrings(latest)
-				mm.OnSessionEnd(latest.ID, latest.Turns, msgStrs)
+				latest, err := sess.Latest()
+				if err == nil {
+					msgStrs := makeSessionMessageStrings(latest)
+					mm.OnSessionEnd(latest.ID, latest.Turns, msgStrs)
+				}
 			}
-		}
+		}()
 	}
 
 	// ── Delivery: send result to default channel ──
@@ -2017,9 +2023,12 @@ func continueCmd(args []string) error {
 	fmt.Fprintf(os.Stderr, "odek: session %s saved (%d turns)\n", sess.ID, sess.Turns+1)
 
 	// ── Session end — extract episode ──
+	// Run asynchronously so episode extraction does not delay process exit.
 	if mm := agent.Memory(); mm != nil {
-		msgStrs := makeSessionMessageStrings(sess)
-		mm.OnSessionEnd(sess.ID, sess.Turns+1, msgStrs)
+		go func() {
+			msgStrs := makeSessionMessageStrings(sess)
+			mm.OnSessionEnd(sess.ID, sess.Turns+1, msgStrs)
+		}()
 	}
 
 	return nil
