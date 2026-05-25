@@ -768,6 +768,23 @@ func TestConfineToCWD_DoubleDotEscape(t *testing.T) {
 	}
 }
 
+// TestConfineToCWD_AllowsOdekDir verifies that paths under ~/.odek/
+// are allowed by confineToCWD even when they are outside the project
+// CWD. The agent frequently needs to write skills, memory, and config
+// to ~/.odek/ — blocking these forces wasteful shell workarounds.
+func TestConfineToCWD_AllowsOdekDir(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	odekPath := home + "/.odek/skills/test-skill/SKILL.md"
+
+	_, err = confineToCWD(odekPath)
+	if err != nil {
+		t.Errorf("~/.odek/ paths should be allowed by confineToCWD, got: %v", err)
+	}
+}
+
 // ── isBinary Tests ─────────────────────────────────────────────────────
 
 func TestIsBinary_NullByte(t *testing.T) {

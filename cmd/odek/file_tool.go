@@ -737,6 +737,16 @@ func confineToCWD(path string) (string, error) {
 		abs = filepath.Join(cwd, path)
 	}
 
+	// Allow paths under ~/.odek/ even when outside CWD — the agent
+	// frequently writes skills, memory, and config to this directory.
+	home, homeErr := os.UserHomeDir()
+	if homeErr == nil {
+		odekPrefix := home + "/.odek/"
+		if strings.HasPrefix(abs, odekPrefix) {
+			return abs, nil
+		}
+	}
+
 	// Check that the resolved path is within CWD
 	if !strings.HasPrefix(abs, cwd+string(filepath.Separator)) && abs != cwd {
 		return "", fmt.Errorf("path %q escapes the working directory", path)

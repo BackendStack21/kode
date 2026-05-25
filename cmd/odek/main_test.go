@@ -2254,3 +2254,18 @@ func TestDefaultSystem_MentionsBatchTools(t *testing.T) {
 		t.Error("defaultSystem should mention parallel_shell for parallel command execution")
 	}
 }
+
+// ── Literal Tool Names ───────────────────────────────────────────────
+
+// TestDefaultSystem_RemindsLiteralToolNames verifies that defaultSystem
+// tells the agent that tool names are literal strings — e.g. call "shell"
+// not "bash", "sh", or "terminal". The model frequently hallucinates
+// unix command names as tool names, wasting an iteration on a 404.
+func TestDefaultSystem_RemindsLiteralToolNames(t *testing.T) {
+	if !strings.Contains(defaultSystem, "tool names are LITERAL") {
+		t.Error("defaultSystem should remind the agent that tool names are literal — call 'shell' not 'bash', 'sh', or 'terminal'")
+	}
+	if !strings.Contains(defaultSystem, `"shell" NOT "bash"`) {
+		t.Error("defaultSystem should include explicit 'shell NOT bash' mapping")
+	}
+}
