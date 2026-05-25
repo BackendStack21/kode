@@ -1,6 +1,14 @@
 # Changelog
 
-## v0.48.0 (2026-05-25) — Tool Latency & Intelligence Upgrades
+## v0.49.1 (2026-05-25) — Verification Contradiction Fix
+
+### Bug Fixes
+- **Contradictory verification rules** — `cmd/odek/main.go`: `defaultSystem` had two conflicting instructions: "do NOT run tests or verify with shell commands" (line 127) contradicted the Reasoning Scaffold's step 4 "Verify — Do NOT skip verification on complex changes" (line 96). The model could not follow both. Removed the anti-verification instruction and softened "Do NOT write, then test, then rewrite, then retest" to "Avoid unnecessary iteration — verify in one shot".
+
+### Testing
+- `TestDefaultSystem_AllowsVerification` — regression guard that catches if the anti-verification instruction is reintroduced
+
+## v0.49.0 (2026-05-25) — Silent Agent Mode
 
 ### Intelligence Improvements
 - **Episode extraction now produces narrative task summaries** — `internal/memory/memory.go`: replaced "Extract 1-3 durable facts" with "Summarize this session covering: what was implemented/fixed, key files changed, architectural decisions, outcome". Episodes are now recoverable by semantic cross-session search instead of disappearing as unreachable bullet points.
