@@ -31,7 +31,7 @@ func (t *readFileTool) Description() string {
 	return `Read a text file with line numbers and pagination.
 Returns file content prefixed with line numbers (LINE_NUM|CONTENT).
 Use offset and limit to read specific sections of large files.
-Cannot read binary files — use shell for that.`
+Cannot read binary files — use base64 or checksum for binary content.`
 }
 
 func (t *readFileTool) Schema() any {
@@ -968,6 +968,7 @@ func (t *globTool) Name() string { return "glob" }
 
 func (t *globTool) Description() string {
 	return `Find files by glob pattern. Returns matching file paths sorted by modification time (newest first).
+Zero-fork — pure Go filepath walk with no subprocess.
 
 Examples:
   glob(pattern="*.go")       — all Go files in current directory
@@ -1134,7 +1135,7 @@ func (t *fileInfoTool) Description() string {
 	return `Get file or directory metadata without reading content.
 Returns size, modification time, file mode, and type flags.
 Uses Lstat — does NOT follow symlinks.
-Use this instead of shell: ls, stat, or test commands.`
+Zero-fork — pure Go file stat with no subprocess.`
 }
 
 type fileInfoArgs struct {

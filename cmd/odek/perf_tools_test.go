@@ -76,7 +76,7 @@ func TestBatchPatch_MultipleFiles(t *testing.T) {
 	}
 }
 
-func TestBatchPatch_FailSkipsRemaining(t *testing.T) {
+func TestBatchPatch_ContinueOnError(t *testing.T) {
 	dir := t.TempDir()
 	path1 := filepath.Join(dir, "a.txt")
 	os.WriteFile(path1, []byte("hello"), 0644)
@@ -85,7 +85,7 @@ func TestBatchPatch_FailSkipsRemaining(t *testing.T) {
 	args := fmt.Sprintf(`{"patches":[
 		{"path":"%s","old_string":"hello","new_string":"hi"},
 		{"path":"/nonexistent/file.txt","old_string":"x","new_string":"y"},
-		{"path":"%s","old_string":"should","new_string":"skip"}
+		{"path":"%s","old_string":"hi","new_string":"bye"}
 	]}`, path1, path1)
 	result := callJSON(t, tool, args)
 
@@ -104,10 +104,15 @@ func TestBatchPatch_FailSkipsRemaining(t *testing.T) {
 		t.Errorf("first patch should succeed")
 	}
 	if r.Results[1].Error == "" {
-		t.Errorf("second patch should have error")
+		t.Errorf("second patch should have error (file not found)")
 	}
-	if !strings.Contains(r.Results[2].Error, "skipped") {
-		t.Errorf("third patch should be skipped, got: %s", r.Results[2].Error)
+	if !r.Results[2].Success {
+		t.Errorf("third patch should succeed (independent of second patch failure), got: %s", r.Results[2].Error)
+	}
+	// Verify file content: first patch changed hello→hi, third changed hi→bye
+	data, _ := os.ReadFile(path1)
+	if string(data) != "bye" {
+		t.Errorf("file content should be 'bye', got: %s", string(data))
 	}
 }
 

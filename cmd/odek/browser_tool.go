@@ -81,6 +81,8 @@ func (t *browserTool) Description() string {
   click    — Follow a link or interact with an element by ref ID
   back     — Return to the previous page in navigation history
 
+Note: Uses regex-based HTML parsing with NO JavaScript execution. Best for server-rendered HTML pages. SPAs and JS-heavy sites may return limited content.
+
 Use browser_navigate(url) first, then browser_snapshot() to see interactive
 elements with their ref IDs (e.g. @e1, @e2), then browser_click(ref) to
 follow links or interact with buttons.`
