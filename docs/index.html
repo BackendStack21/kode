@@ -16,6 +16,9 @@
   <meta name="twitter:description" content="The fastest, minimal Go autonomous agent runtime. ~12 MB static binary, zero frameworks.">
   <meta name="keywords" content="Go, autonomous agent, AI agent, LLM, ReAct, MCP, parallel execution, interaction modes, Telegram bot, Docker sandbox, CLI, benchmark, open-source">
   <meta name="robots" content="index, follow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://assets.21no.de; font-src https://assets.21no.de; img-src 'self' https://21no.de; connect-src 'self'">
+  <link rel="icon" type="image/x-icon" href="https://21no.de/logo-v2.png">
+  <link rel="apple-touch-icon" href="https://21no.de/logo-v2.png">
   <link rel="stylesheet" href="https://assets.21no.de/fonts/fonts.css">
   <link rel="stylesheet" href="https://assets.21no.de/css/tokens.css">
   <style>
@@ -305,6 +308,7 @@
     <a href="#features">Features</a>
     <a href="#install">Install</a>
     <a href="#cheatsheet">Cheatsheet</a>
+    <a href="#docs">Docs</a>
     <a href="#demos">Demos</a>
     <a href="https://github.com/BackendStack21/odek" target="_blank">GitHub</a>
   </div>
@@ -314,7 +318,7 @@
   <div class="container">
     <h1>odek</h1>
     <p class="sub"><span class="size">~12 MB</span> static binary · Zero frameworks.<br>Think, therefore act.</p>
-    <div class="badge" style="margin-top:12px;display:inline-block;background:var(--accent-subtle);border:1px solid rgba(56,189,248,.15);border-radius:6px;padding:5px 12px;font-size:0.8125rem;font-family:var(--font-mono);color:var(--accent);">v0.45.0</div>
+    <div class="badge" style="margin-top:12px;display:inline-block;background:var(--accent-subtle);border:1px solid rgba(56,189,248,.15);border-radius:6px;padding:5px 12px;font-size:0.8125rem;font-family:var(--font-mono);color:var(--accent);">v0.48.0</div>
 
     <div class="install-block">
       <code>go install github.com/BackendStack21/odek/cmd/odek@latest</code>
@@ -426,7 +430,7 @@
       <div class="slide">
         <span class="info"># MCP server mode</span><br>
         <span class="prompt">$ odek mcp</span><br>
-        <span class="info">odek mcp ⚡  MCP server starting (v0.45.0)</span><br>
+        <span class="info">odek mcp ⚡  MCP server starting (v0.48.0)</span><br>
         <span class="output">Connected by Claude Code. Exposing 8 tools:</span><br>
         <span class="output">  • read_file    — read files with line numbers</span><br>
         <span class="output">  • write_file   — write files safely</span><br>
@@ -658,6 +662,7 @@ $ odek run <span class="hljs-string">"@README.md summarize this project"</span>
     <li><span class="cmd">odek telegram</span><span class="desc">Start Telegram bot</span></li>
     <li><span class="cmd">odek run --deliver <task></span><span class="desc">Run task, deliver to Telegram</span></li>
     <li><span class="cmd">odek init [--global]</span><span class="desc">Create config file</span></li>
+    <li><span class="cmd">odek version</span><span class="desc">Show version</span></li>
   </ul>
 
   <h3>Key Flags</h3>
@@ -678,7 +683,7 @@ $ odek run <span class="hljs-string">"@README.md summarize this project"</span>
 </section>
 
 <!-- ═══ Docs ═══ -->
-<section>
+<section id="docs">
   <h2>Everything else is <span class="hl">documented</span></h2>
   <p style="margin-bottom:20px">Deep-dive docs for every subsystem. Real detail, no fluff.</p>
 
@@ -718,7 +723,7 @@ $ odek run <span class="hljs-string">"@README.md summarize this project"</span>
 
 <footer>
   <div class="container">
-    <a href="https://21no.de">21no.de</a> &middot; MIT License &middot;
+    &copy; 2024–2026 <a href="https://21no.de">21no.de</a> &middot; MIT License &middot;
     <a href="https://github.com/BackendStack21/odek">GitHub</a>
   </div>
 </footer>
