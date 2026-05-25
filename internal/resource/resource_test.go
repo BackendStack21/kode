@@ -610,3 +610,42 @@ func (e *emptyResolver) Search(ctx context.Context, query string, limit int) ([]
 func (e *emptyResolver) Load(ctx context.Context, id string) (string, error) {
 	return "", os.ErrNotExist
 }
+
+// ── Bug #7: SessionResolver.Load path traversal ─────────────────────────
+
+func TestSessionResolverLoad_PathTraversal(t *testing.T) {
+	// Create a temp dir for sessions
+	dir := t.TempDir()
+
+	// Create a real session file
+	sessionID := "my-valid-session"
+	if err := os.WriteFile(filepath.Join(dir, sessionID+".json"), []byte(`{"id":"valid"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := &SessionResolver{dir: dir}
+
+	// Valid session ID should succeed
+	content, err := resolver.Load(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("Load with valid session failed: %v", err)
+	}
+	if !strings.Contains(content, "valid") {
+		t.Errorf("Load with valid session returned wrong content: %s", content)
+	}
+
+	// Path traversal attempts should FAIL
+	traversalAttempts := []string{
+		"../../etc/passwd",
+		"..%2f..%2fetc/passwd",
+		"/etc/passwd",
+		"../other-session",
+		"foo/../../etc/passwd",
+	}
+	for _, attempt := range traversalAttempts {
+		_, err := resolver.Load(context.Background(), attempt)
+		if err == nil {
+			t.Errorf("Load with path traversal %q should have failed but succeeded (security bug)", attempt)
+		}
+	}
+}

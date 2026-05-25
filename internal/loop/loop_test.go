@@ -1908,3 +1908,48 @@ func TestEngine_InteractionModeDefault_ProducesRenderOutput(t *testing.T) {
 	}
 }
 
+
+// ── Bug #8: Tool goroutines lack panic recovery ─────────────────────────
+// If a tool.Call() panics, the agent should not crash.
+
+type panicTool struct {
+	name string
+}
+
+func (p *panicTool) Name() string        { return p.name }
+func (p *panicTool) Description() string  { return "panics on call" }
+func (p *panicTool) Schema() any          { return map[string]any{"type": "object"} }
+func (p *panicTool) Call(args string) (string, error) {
+	panic("deliberate panic from tool")
+}
+
+// TestToolPanic_DoesNotKillAgent verifies that a panicking tool call
+// does not crash the agent. The agent should recover and continue.
+func TestToolPanic_DoesNotKillAgent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []llm.Message `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		// First call: return tool calls with panic tool
+		if len(body.Messages) == 2 {
+			fmt.Fprint(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"panic_tool","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)
+			return
+		}
+		// Second call (after tool panic): return content
+		fmt.Fprint(w, `{"choices":[{"index":0,"message":{"role":"assistant","content":"Agent survived the panic!"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	engine := New(client, tool.NewRegistry([]tool.Tool{&panicTool{name: "panic_tool"}}), 10, "", nil, 0)
+	result, err := engine.Run(context.Background(), "test task")
+	if err != nil {
+		t.Fatalf("engine.Run should not crash on tool panic: %v", err)
+	}
+	if !strings.Contains(result, "Agent survived") {
+		t.Errorf("agent result = %q, want 'Agent survived'", result)
+	}
+}

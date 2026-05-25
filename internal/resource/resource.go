@@ -17,6 +17,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/BackendStack21/odek/internal/session"
 )
 
 // Resource is a discovered resource returned by a Resolver.
@@ -384,6 +386,10 @@ func (s *SessionResolver) Search(ctx context.Context, query string, limit int) (
 
 func (s *SessionResolver) Load(ctx context.Context, id string) (string, error) {
 	// id is the session ID (without "sess:" prefix)
+	// Security: validate session ID to prevent path traversal.
+	if err := session.ValidateSessionID(id); err != nil {
+		return "", fmt.Errorf("resource: invalid session ID: %w", err)
+	}
 	data, err := os.ReadFile(filepath.Join(s.dir, id+".json"))
 	if err != nil {
 		return "", err

@@ -779,11 +779,24 @@ if e.approver != nil && len(result.ToolCalls) > 1 {
 						if ctxTool, ok := t.(interface{ SetContext(context.Context) }); ok {
 							ctxTool.SetContext(ctx)
 						}
-						res, err := t.Call(tcRef.Function.Arguments)
-						if err != nil {
-							output = fmt.Sprintf("error: %s", err.Error())
-						} else {
-							output = redact.RedactSecrets(res)
+						// Capture any panic from the tool so it does not kill the agent.
+						var toolPanicked bool
+						func() {
+							defer func() {
+								if r := recover(); r != nil {
+									output = fmt.Sprintf("error: tool %q panicked: %v", tcRef.Function.Name, r)
+									toolPanicked = true
+								}
+							}()
+							res, err := t.Call(tcRef.Function.Arguments)
+							if err != nil {
+								output = fmt.Sprintf("error: %s", err.Error())
+							} else {
+								output = redact.RedactSecrets(res)
+							}
+						}()
+						if toolPanicked {
+							return
 						}
 					}
 					results[idx] = execResult{output: output}
