@@ -119,7 +119,7 @@ func (t *readFileTool) Call(argsJSON string) (string, error) {
 		return jsonError(fmt.Sprintf("cannot stat %q: %v", args.Path, err))
 	}
 	if info.IsDir() {
-		return jsonError(fmt.Sprintf("%q is a directory, not a file", args.Path))
+		return jsonError(fmt.Sprintf("%q is a directory — use tree or search_files(target='files') to list its contents, or glob(pattern='*', path=%q) to find files inside it", args.Path, args.Path))
 	}
 
 	// Single pass: binary check from sample → seek → read+count
@@ -926,7 +926,7 @@ func (t *batchReadTool) readSingle(arg batchReadFileArg) batchReadFileResult {
 		return batchReadFileResult{Path: arg.Path, Error: fmt.Sprintf("cannot stat %q: %v", arg.Path, err)}
 	}
 	if info.IsDir() {
-		return batchReadFileResult{Path: arg.Path, Error: fmt.Sprintf("%q is a directory, not a file", arg.Path)}
+		return batchReadFileResult{Path: arg.Path, Error: fmt.Sprintf("%q is a directory — use tree or search_files(target='files') to list its contents", arg.Path)}
 	}
 
 	// Binary check from sample

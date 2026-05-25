@@ -947,7 +947,7 @@ func (t *countLinesTool) countFile(path string) (entry countFileEntry) {
 		return countFileEntry{Path: path, Error: fmt.Sprintf("cannot stat %q: %v", path, err)}
 	}
 	if info.IsDir() {
-		return countFileEntry{Path: path, Error: fmt.Sprintf("%q is a directory", path)}
+		return countFileEntry{Path: path, Error: fmt.Sprintf("%q is a directory — use tree or glob to explore directories", path)}
 	}
 
 	lines := 0
