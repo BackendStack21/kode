@@ -183,16 +183,6 @@ func telegramCmd(args []string) error {
 	systemMessage += "- A single failure means the path or assumption was wrong — fix that,\n"
 	systemMessage += "  don't escalate to a broader search. Narrow, don't widen.\n"
 	systemMessage += "\n"
-	systemMessage += "## REASONING REMINDER\n"
-	systemMessage += "The first sentence of your reasoning block is the user's live progress indicator. "
-	systemMessage += "Make it brief (<20 words), user-facing, and specific to what you are "
-	systemMessage += "doing right now. Generic self-talk like 'Let me think about this...' "
-	systemMessage += "is useless — users see nothing useful. Start with a real explanation.\n"
-	systemMessage += "\n"
-	systemMessage += "## LANGUAGE REMINDER\n"
-	systemMessage += "Always reply in the exact same language the user writes in. "
-	systemMessage += "Match their language for the answer, the thinking message, "
-	systemMessage += "and the progress indicator. Never switch languages.\n"
 	// Set working directory to the configured repo directory.
 	// This ensures tools like search_files scan the project, not /root.
 	if resolved.GithubRepoDirectory != "" {

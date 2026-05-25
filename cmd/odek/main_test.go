@@ -2087,6 +2087,58 @@ func TestBuildSystemPrompt_FallsBackToDefault(t *testing.T) {
 	}
 }
 
+// ── System prompt optimization validation tests ──────────────────────────
+
+// TestBuildSystemPrompt_NoSkillFencingSection verifies that buildSystemPrompt
+// does NOT contain the SKILL FENCING section. The section references boundary
+// delimiters (╔═══ SKILL BOUNDARY) that never appear in practice — condensed
+// mode injects skills with no delimiters, verbose mode uses different ones.
+// This test fails on the current code (proving ~80 tokens are wasted per
+// session) and passes after the section is removed.
+func TestBuildSystemPrompt_NoSkillFencingSection(t *testing.T) {
+	_ = setupTestHome(t)
+	resolved := config.ResolvedConfig{}
+	got := buildSystemPrompt(resolved)
+
+	if strings.Contains(got, "╔═══ SKILL BOUNDARY") {
+		t.Error("buildSystemPrompt contains '╔═══ SKILL BOUNDARY' delimiters that never appear in skill injection. " +
+			"Remove the SKILL FENCING section or align delimiters with actual skill loading code (loop.go:459).")
+	}
+	if strings.Contains(got, "SKILL FENCING") {
+		t.Error("buildSystemPrompt contains a SKILL FENCING section with non-matching delimiters. " +
+			"This wastes ~80 tokens per session — the model is trained to recognize boundaries that never appear.")
+	}
+}
+
+// TestDefaultSystem_NoRedundantMemoryReadInstruction verifies that defaultSystem
+// does NOT instruct the agent to call the memory(read) tool. Memory is already
+// automatically injected as a ═══ MEMORY ═══ system message every iteration
+// by the loop engine (loop.go:507-523). Telling the model to also call
+// memory(read) wastes a tool call + iteration on every session start.
+func TestDefaultSystem_NoRedundantMemoryReadInstruction(t *testing.T) {
+	if strings.Contains(defaultSystem, "memory(read)") {
+		t.Error("defaultSystem tells the agent to call memory(read), but the loop already injects " +
+			"░░ MEMORY ░░ automatically each turn. Replace with 'Review the ═══ MEMORY ═══ block' instruction.")
+	}
+	if strings.Contains(defaultSystem, "query your memory using the memory tool") {
+		t.Error("defaultSystem instructs the agent to 'query your memory using the memory tool', " +
+			"but memory content is automatically injected as a system message. This wastes a tool call.")
+	}
+}
+
+// TestDefaultSystem_AllowsSkillExploration verifies that the default
+// system prompt does NOT contain "Do not explore alternatives" — an
+// overly restrictive instruction that prevents the model from using
+// better approaches even when a matching skill exists. Skills should
+// be guidance, not absolute constraints.
+func TestDefaultSystem_AllowsSkillExploration(t *testing.T) {
+	if strings.Contains(defaultSystem, "Do not explore alternatives") {
+		t.Error("defaultSystem says 'Do not explore alternatives or do your own research unless the skill's steps fail'. " +
+			"This over-constrains the model — skills should be primary guidance, not absolute restrictions. " +
+			"The model may fail to suggest better approaches because of this instruction.")
+	}
+}
+
 // ── --deliver flag tests ──────────────────────────────────────────────────
 
 func TestParseRunFlags_Deliver(t *testing.T) {

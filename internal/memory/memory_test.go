@@ -557,3 +557,17 @@ func TestMemoryPromptCache(t *testing.T) {
 		t.Error("prompt should differ after ClearBuffer")
 	}
 }
+
+// ── Config Defaults ──────────────────────────────────────────────
+
+func TestMemoryConfig_LLMSearchDefault(t *testing.T) {
+	cfg := DefaultMemoryConfig()
+	if cfg.LLMSearch == nil {
+		t.Fatal("LLMSearch should not be nil in defaults")
+	}
+	if !*cfg.LLMSearch {
+		t.Error("LLMSearch defaults to false — episodes are ranked by recency only, not relevance. " +
+			"Now that episodes ARE injected (lastEpiMsg fix), enable LLM ranking by default " +
+			"so cross-session memory is relevance-ordered, not just chronological.")
+	}
+}

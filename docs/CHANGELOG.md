@@ -1,5 +1,38 @@
 # Changelog
 
+## v0.46.0 (2026-05-24) — System Prompt Optimization & Episode Context Fix
+
+### Bug Fixes
+- **Episode context blocked by skill dedup** — `internal/loop/loop.go`: episode search shared the `lastSkillMsg` variable with skill loading, causing episodes to be silently skipped on every turn where skills also fired. Added separate `lastEpiMsg` field + dedup. Episodes now inject alongside skills.
+
+### Intelligence Improvements
+- **LLM episode ranking enabled by default** — `internal/memory/memory.go`: `LLMSearch` changed from `false` to `true`. Episodes are now relevance-ranked via LLM instead of chronologically, making cross-session memory dramatically more useful.
+- **Skill exploration constraint softened** — `cmd/odek/`: replaced "Do not explore alternatives or do your own research unless the skill's steps fail" with "use your judgment if a better approach exists", allowing the model to suggest superior approaches even when a skill exists.
+- **Memory(read) instruction replaced** — `cmd/odek/`: removed instruction telling the model to call `memory(read)`, which wasted a tool call + iteration since memory is automatically injected as the ═══ MEMORY ═══ block each turn. Replaced with guidance to review the injected block.
+- **SKILL FENCING section removed** — `cmd/odek/`: removed ~80-token section referencing delimiters (`╔═══ SKILL BOUNDARY`) that never appear in practice — condensed skill mode injects content with no delimiters, verbose mode uses different ones.
+- **Duplicate reasoning/language rules removed** — `cmd/odek/`: removed REASONING REMINDER + LANGUAGE REMINDER from Telegram system prompt. Both are already covered by `BuildRuntimeContext("telegram")`.
+
+### Testing
+- `TestEngine_SkillsAndEpisodesBothLoad` — regression guard for the episode dedup bug
+- `TestBuildSystemPrompt_NoSkillFencingSection` — guards against reintroducing wasted section
+- `TestDefaultSystem_NoRedundantMemoryReadInstruction` — guards against memory(read) instruction
+- `TestMemoryConfig_LLMSearchDefault` — verifies LLM ranking is enabled by default
+- `TestDefaultSystem_AllowsSkillExploration` — guards over-constrained skill instruction
+
+---
+
+## v0.45.0 (2026-05-24) — Stability & Recoverability
+
+### Bug Fixes
+- **Critical recoverability/stability fixes** — agent Telegram bot stability issues (#5-#11): race conditions in session persistence, bot crash recovery, and connection handling
+- **Data race in SessionManager.Save** — fixed races detected by `-race` between concurrent session writes
+- **Data race in Telegram poller** — fixed race between poll loop and context cancellation
+
+### Internal
+- Multiple stability improvements across Telegram bot lifecycle
+
+---
+
 ## v0.44.1 (2026-05-25) — Security Hardening & Session Fix
 
 ### Security Fixes

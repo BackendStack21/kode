@@ -1764,6 +1764,72 @@ func TestClassifyToolCall_UnknownTool(t *testing.T) {
 	}
 }
 
+// ── Skills + Episode dedup regression tests ─────────────────────────
+//
+// TestEngine_SkillsAndEpisodesBothLoad verifies that when both skillLoader
+// and episodeCtx return non-empty on the same user message, BOTH context
+// blocks are injected into the LLM request. A bug where episode dedup
+// shared the lastSkillMsg variable caused episodes to be silently blocked
+// on every turn where skills also fired.
+
+func TestEngine_SkillsAndEpisodesBothLoad(t *testing.T) {
+	var sawSkill, sawEpisode bool
+
+	skillLoader := func(userInput string) string {
+		return "injected skill context"
+	}
+	episodeCtx := func(userInput string) string {
+		return "injected episode context"
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return
+		}
+
+		// Inspect messages for both skill and episode content.
+		// messages[0] = system (baseSystem), messages[1] = skill, messages[2] = episode,
+		// messages[3] = user. Both skill and episode must be present.
+		for _, msg := range body.Messages {
+			if strings.Contains(msg.Content, "injected skill context") {
+				sawSkill = true
+			}
+			if strings.Contains(msg.Content, "injected episode context") {
+				sawEpisode = true
+			}
+		}
+
+		// Return a final answer immediately — no tool calls needed.
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"done"}}]}`)
+	}))
+	defer server.Close()
+
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	registry := tool.NewRegistry(nil)
+	engine := New(client, registry, 10, "You are odek.", nil, 0)
+	engine.SetSkillLoader(skillLoader)
+	engine.SetEpisodeContextFunc(episodeCtx)
+
+	_, err := engine.Run(context.Background(), "test both systems")
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	if !sawSkill {
+		t.Error("skill context was NOT injected — skillLoader returned content but it never appeared in LLM messages")
+	}
+	if !sawEpisode {
+		t.Error("episode context was NOT injected — episodeCtx returned content but it never appeared in LLM messages. " +
+			"This is likely caused by the shared lastSkillMsg dedup variable blocking episode search.")
+	}
+}
+
 func TestClassifyToolCall_Terminal(t *testing.T) {
 	risk, resource := classifyToolCall("terminal", `{"command":"whoami"}`)
 	if risk != danger.Safe {

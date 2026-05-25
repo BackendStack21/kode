@@ -65,6 +65,7 @@ type Engine struct {
 	maxContext  int               // max context tokens (0 = no limit)
 	skillLoader SkillLoader       // optional: loads matching skills
 	lastSkillMsg string           // last user message that triggered skill loading (dedup)
+	lastEpiMsg  string            // last user message that triggered episode search (dedup)
 	skillVerbose bool             // show full skill banners (default: condensed)
 	episodeCtx   EpisodeContextFunc // optional: per-turn episode search
 
@@ -479,8 +480,9 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 		// Search relevant past session episodes based on latest user input.
 		// Only runs once per new user message (same dedup as skill loading).
 		if e.episodeCtx != nil {
-			if userMsg := lastUserMessage(messages); userMsg != "" && userMsg != e.lastSkillMsg {
+			if userMsg := lastUserMessage(messages); userMsg != "" && userMsg != e.lastEpiMsg {
 				if episodeContext := e.episodeCtx(userMsg); episodeContext != "" {
+					e.lastEpiMsg = userMsg
 					// Inject episode context as a system message before the user message
 					insertIdx := len(messages)
 					for j := len(messages) - 1; j >= 0; j-- {

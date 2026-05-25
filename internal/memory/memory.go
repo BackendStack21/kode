@@ -53,7 +53,7 @@ func DefaultMemoryConfig() MemoryConfig {
 		BufferEnabled:        boolPtr(true),
 		MergeOnWrite:         boolPtr(true),
 		ExtractOnEnd:         boolPtr(true),
-		LLMSearch:            boolPtr(false), // RP ranker by default (zero LLM calls per turn)
+		LLMSearch:            boolPtr(true),  // LLM ranker by default — relevance over recency
 		LLMExtract:           boolPtr(true),
 		LLMConsolidate:       boolPtr(true),
 		MergeThreshold:       MergeThreshold,
