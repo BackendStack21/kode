@@ -140,6 +140,12 @@ type lineResult struct {
 	err  error
 }
 
+// callResponse carries a JSON-RPC response from readLoop to the waiting caller.
+type callResponse struct {
+	result json.RawMessage
+	err    error
+}
+
 // ── Client ─────────────────────────────────────────────────────────────
 
 // Client manages a connection to an external MCP server over stdio.
@@ -150,8 +156,10 @@ type Client struct {
 	stdout *bufio.Reader
 	lineCh chan lineResult // single-reader goroutine sends lines here
 	done   chan struct{}   // closed when process exits
-	mu     sync.Mutex
-	nextID int
+
+	mu      sync.Mutex
+	nextID  int
+	pending map[int]chan callResponse // routes responses to waiting callers
 }
 
 // New spawns an MCP server process and returns a client connected to it.
@@ -184,12 +192,13 @@ func New(name string, cfg ServerConfig) (*Client, error) {
 	}
 
 	c := &Client{
-		name:   name,
-		cmd:    cmd,
-		stdin:  stdin,
-		stdout: bufio.NewReader(stdout),
-		lineCh: make(chan lineResult, 10),
-		done:   make(chan struct{}),
+		name:    name,
+		cmd:     cmd,
+		stdin:   stdin,
+		stdout:  bufio.NewReader(stdout),
+		lineCh:  make(chan lineResult, 10),
+		done:    make(chan struct{}),
+		pending: make(map[int]chan callResponse),
 	}
 
 	// Start single-reader goroutine
@@ -333,19 +342,27 @@ func (c *Client) call(ctx context.Context, method string, params json.RawMessage
 		ctx = context.Background()
 	}
 
-	// Assign unique ID
+	// Assign unique ID and register a response channel.
+	respCh := make(chan callResponse, 1)
+
 	c.mu.Lock()
 	id := c.nextID
 	c.nextID++
-	c.mu.Unlock()
-
-	// Build request
 	req := request{
 		JSONRPC: "2.0",
 		ID:      id,
 		Method:  method,
 		Params:  params,
 	}
+	c.pending[id] = respCh
+	c.mu.Unlock()
+
+	// Unregister on exit to prevent map leak.
+	defer func() {
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
+	}()
 
 	reqRaw, err := json.Marshal(req)
 	if err != nil {
@@ -360,18 +377,42 @@ func (c *Client) call(ctx context.Context, method string, params json.RawMessage
 		return nil, fmt.Errorf("write: %w", err)
 	}
 
-	// Read responses until we find our ID
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+	// Wait for response via channel (dispatched by readLoop).
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case cr, ok := <-respCh:
+		if !ok {
+			return nil, fmt.Errorf("connection closed before response received")
 		}
+		if cr.err != nil {
+			return nil, cr.err
+		}
+		return cr.result, nil
+	}
+}
 
-		// Set a read deadline via context
-		line, err := c.readLine(ctx)
+// readLoop is a single reader goroutine that reads lines from stdout and
+// routes each response to the correct waiting caller via the pending map.
+// This prevents response misrouting when multiple concurrent call() instances
+// are reading from the same connection.
+// Exits when stdout returns an error (EOF on pipe close).
+func (c *Client) readLoop() {
+	for {
+		line, err := c.stdout.ReadString('\n')
 		if err != nil {
-			return nil, fmt.Errorf("read: %w", err)
+			// Process exited or pipe closed — unblock all waiters.
+			c.mu.Lock()
+			for id, ch := range c.pending {
+				close(ch)
+				delete(c.pending, id)
+			}
+			c.mu.Unlock()
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
 
 		var resp response
@@ -379,36 +420,24 @@ func (c *Client) call(ctx context.Context, method string, params json.RawMessage
 			continue // skip malformed lines
 		}
 
-		// Skip responses that aren't for our request
-		if resp.ID != id {
-			continue
+		// Route to the waiting caller, if any.
+		c.mu.Lock()
+		ch, ok := c.pending[resp.ID]
+		if ok {
+			delete(c.pending, resp.ID)
 		}
+		c.mu.Unlock()
 
-		if resp.Error != nil {
-			return nil, resp.Error
-		}
-
-		return resp.Result, nil
-	}
-}
-
-// readLoop is a single reader goroutine that reads lines from stdout and
-// sends them on lineCh. It exits when stdout returns an error (EOF on pipe close).
-func (c *Client) readLoop() {
-	defer close(c.lineCh)
-	for {
-		line, err := c.stdout.ReadString('\n')
-		select {
-		case c.lineCh <- lineResult{strings.TrimSpace(line), err}:
-		default:
-			// Channel full — drain the queue by consuming one stale entry,
-			// then retry. This prevents a stuck server from deadlocking the
-			// reader goroutine.
-			<-c.lineCh
-			c.lineCh <- lineResult{strings.TrimSpace(line), err}
-		}
-		if err != nil {
-			return
+		if ok && ch != nil {
+			// Non-blocking send in case caller has already timed out.
+			var rpcErr error
+			if resp.Error != nil {
+				rpcErr = resp.Error
+			}
+			select {
+			case ch <- callResponse{result: resp.Result, err: rpcErr}:
+			default:
+			}
 		}
 	}
 }
