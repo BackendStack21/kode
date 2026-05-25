@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 )
@@ -211,7 +212,7 @@ func TestMemoryManagerOnSessionEnd(t *testing.T) {
 	dir := t.TempDir()
 	llm := &mockLLM{
 		responses: map[string]string{
-			"Extract 1-3": "User prefers Go over Python\nProject uses TDD workflow",
+			"Summarize": "User prefers Go over Python\nProject uses TDD workflow",
 		},
 	}
 	mm := NewMemoryManager(dir, llm, DefaultMemoryConfig())
@@ -241,7 +242,7 @@ func TestMemoryManagerOnSessionEnd(t *testing.T) {
 func TestOnSessionEnd_StructuredPrompt(t *testing.T) {
 	llm := &mockLLM{
 		responses: map[string]string{
-			"Extract 1-3": "User prefers Go over Python",
+			"Summarize": "User prefers Go over Python",
 		},
 	}
 
@@ -683,6 +684,30 @@ func TestMemoryPromptCache(t *testing.T) {
 	p6 := mm.BuildSystemPrompt()
 	if p6 == p5b {
 		t.Error("prompt should differ after ClearBuffer")
+	}
+}
+
+// ── Episode Extraction Prompt ────────────────────────────────────
+
+// TestOnSessionEnd_ExtractionPromptIsTaskOriented verifies that the episode
+// extraction prompt uses task-oriented language ("Summarize", "implement",
+// "fix", "decision", "outcome") rather than bullet-point facts ("durable
+// facts", "one fact per line"). Bullet-point facts are unrecoverable by
+// semantic search — the next task asking "how did we fix the OOM bug?"
+// won't match "User prefers Go".
+func TestOnSessionEnd_ExtractionPromptIsTaskOriented(t *testing.T) {
+	src, err := os.ReadFile("memory.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(src)
+
+	// GREEN PHASE: assert the new prompt contains "Summarize"
+	if !strings.Contains(content, "Summarize") {
+		t.Error("episode extraction prompt should contain 'Summarize' instead of 'durable facts' — narrative summaries are more recoverable by semantic search")
+	}
+	if strings.Contains(content, "durable facts") {
+		t.Error("episode extraction prompt should NOT contain 'durable facts' — use 'Summarize' for task-oriented narrative summaries")
 	}
 }
 

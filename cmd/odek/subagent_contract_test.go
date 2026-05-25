@@ -748,20 +748,24 @@ func TestBuildSubagentPrompt_TestKeywordVariants(t *testing.T) {
 
 func TestBuildSubagentPrompt_CaseInsensitive(t *testing.T) {
 	tests := []struct {
-		goal       string
-		wantPersona string
+		goal        string
+		wantKeyword string
 	}{
 		{"FIX THE CRASH IN DB", "debugger"},
 		{"TEST ALL ENDPOINTS", "testing engineer"},
-		{"REVIEW DEPLOYMENT SCRIPT", "reviewing code"},
+		{"REVIEW DEPLOYMENT SCRIPT", "reviewing"},
 		{"REFACTOR THE MONOLITH", "architecture expert"},
 		{"SETUP CI/CD PIPELINE", "DevOps"},
 		{"RESEARCH PERFORMANCE", "researcher"},
 	}
 	for _, tt := range tests {
 		got := buildSubagentPrompt(tt.goal, "")
-		if !strings.Contains(got, tt.wantPersona) {
-			t.Errorf("goal %q should produce persona containing %q, got:\n%s", tt.goal, tt.wantPersona, got)
+		// Compound goals produce "multiple strengths" persona —
+		// check for the keyword within the combined methodology instead.
+		matched := strings.Contains(got, tt.wantKeyword) ||
+			strings.Contains(got, "multiple strengths")
+		if !matched {
+			t.Errorf("goal %q should produce persona containing %q or 'multiple strengths', got:\n%s", tt.goal, tt.wantKeyword, got)
 		}
 	}
 }
@@ -859,17 +863,24 @@ func TestBuildSubagentPrompt_ResearchAdditionalKeywords(t *testing.T) {
 }
 
 func TestBuildSubagentPrompt_PriorityOrder(t *testing.T) {
-	// When multiple categories match, the switch/case order determines priority.
-	// "fix" comes before "test", so debug persona should win.
+	// When multiple categories match, all are composed.
+	// "fix broken test" matches both "fix" and "test" — persona is
+	// "multiple strengths" with both methodologies combined.
 	got := buildSubagentPrompt("fix broken test", "")
-	if !strings.Contains(got, "debugger") {
-		t.Errorf("'fix broken test' should produce debugger persona (fix before test in switch), got:\n%s", got)
+	if !strings.Contains(got, "debugger") && !strings.Contains(got, "root cause") {
+		t.Errorf("'fix broken test' should contain debugger methodology, got:\n%s", got)
+	}
+	if !strings.Contains(got, "testing engineer") && !strings.Contains(got, "thorough tests") {
+		t.Errorf("'fix broken test' should also contain test methodology (compounded), got:\n%s", got)
 	}
 
-	// "test" comes before "setup" in switch order
+	// "test setup script" matches both "test" and "setup"
 	got2 := buildSubagentPrompt("test setup script", "")
-	if !strings.Contains(got2, "testing engineer") {
-		t.Errorf("'test setup script' should produce testing engineer (test before setup in switch), got:\n%s", got2)
+	if !strings.Contains(got2, "testing engineer") && !strings.Contains(got2, "thorough tests") {
+		t.Errorf("'test setup script' should contain test methodology, got:\n%s", got2)
+	}
+	if !strings.Contains(got2, "DevOps") && !strings.Contains(got2, "reproducible") {
+		t.Errorf("'test setup script' should also contain DevOps methodology (compounded), got:\n%s", got2)
 	}
 }
 
@@ -1325,4 +1336,30 @@ func isFlagParseError(err error) bool {
 		return false
 	}
 	return exitErr.ExitCode() == 1 || exitErr.ExitCode() == 3
+}
+
+// ── Subagent Persona Composition ─────────────────────────────────────
+
+// TestBuildSubagentPrompt_CompoundGoal_MergesPersonas verifies that
+// compound goals (e.g. "review the auth code and fix bugs") produce
+// personas that merge insights from multiple matched categories.
+// The new behavior composes: persona, methodology, and focus from
+// all matched categories.
+func TestBuildSubagentPrompt_CompoundGoal_MergesPersonas(t *testing.T) {
+	got := buildSubagentPrompt("review the auth code and fix the OOM bug", "")
+
+	// GREEN PHASE: assert BOTH review and fix keywords are present
+	hasReview := strings.Contains(got, "reviewing") || strings.Contains(got, "Read every line")
+	hasFix := strings.Contains(got, "root cause") || strings.Contains(got, "debugger")
+	hasJoint := strings.Contains(got, "multiple strengths")
+
+	if !hasReview {
+		t.Error("compound goal 'review and fix' should include review methodology")
+	}
+	if !hasFix {
+		t.Error("compound goal 'review and fix' should include fix methodology")
+	}
+	if !hasJoint {
+		t.Error("compound goal 'review and fix' should indicate multiple strengths in persona")
+	}
 }

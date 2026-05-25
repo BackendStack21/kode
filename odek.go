@@ -480,24 +480,6 @@ func New(cfg Config) (*Agent, error) {
 	// and the loop engine refreshes it before each LLM call.
 	// (Memory is injected per-turn via SetMemoryPromptFunc below.)
 
-	// Auto-search relevant past episodes and inject them into the system
-	// prompt so the agent has context from previous sessions without
-	// needing an explicit memory(search=...) tool call.
-	// Only runs when memory and LLM-based search are enabled — the search
-	// uses semantic similarity which requires an LLM call.
-	if cfg.MemoryConfig.LLMSearch != nil && *cfg.MemoryConfig.LLMSearch {
-		if episodes, err := memoryManager.SearchEpisodes("session context", 3); err == nil && len(episodes) > 0 {
-			var epBlock strings.Builder
-			epBlock.WriteString("\n═══ RELEVANT PAST SESSIONS ═══\n")
-			epBlock.WriteString("Below are summaries of past sessions relevant to this conversation.\n")
-			for _, ep := range episodes {
-				fmt.Fprintf(&epBlock, "• [%s] (%d turns): %s\n", ep.SessionID, ep.Turns, ep.Summary)
-			}
-			epBlock.WriteString("─────────────────────────────────\n")
-			cfg.SystemMessage += epBlock.String()
-		}
-	}
-
 	// Append memory tool to registry
 	tools = append(tools, &toolAdapter{memory.NewMemoryTool(memoryManager)})
 	registry := tool.NewRegistry(tools)

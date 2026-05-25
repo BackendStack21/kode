@@ -1059,6 +1059,26 @@ func TestAgent_SkillEventHandler_FiresViaMultiNotifier(t *testing.T) {
 	}
 }
 
+// ── Init Episode Search ─────────────────────────────────────────────
+
+// TestNew_NoInitEpisodeSearch verifies that New() does NOT inject episode
+// context at agent creation time using the vague query "session context".
+// The per-turn FormatEpisodeContext in the loop already handles episode
+// injection with the actual user message as query — the init search just
+// wasted ~400 tokens with potentially irrelevant recent episodes.
+func TestNew_NoInitEpisodeSearch(t *testing.T) {
+	src, err := os.ReadFile("odek.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(src)
+
+	// GREEN PHASE: assert "session context" query is GONE
+	if strings.Contains(content, `SearchEpisodes("session context"`) {
+		t.Error("init episode search with vague 'session context' query should not exist — use per-turn FormatEpisodeContext instead")
+	}
+}
+
 func TestAgent_SkillEventHandler_NilSkills(t *testing.T) {
 	// When Skills is nil, no SkillManager is created, so no events.
 	var events []skills.SkillEvent

@@ -60,7 +60,8 @@ func buildSubagentPrompt(goal, context string) string {
 		return subagentSystem
 	}
 
-	// Detect task type from goal keywords
+	// Detect task type from goal keywords — composable: multiple matches
+	// stack to handle compound goals like "review code and fix bugs".
 	lower := strings.ToLower(goal)
 	matches := func(kws ...string) bool {
 		for _, kw := range kws {
@@ -71,36 +72,89 @@ func buildSubagentPrompt(goal, context string) string {
 		return false
 	}
 
-	// Pick persona and methodology based on detected intent
+	// Collect all matched categories — composable for compound goals.
+	type personaFragment struct {
+		persona     string
+		methodology string
+		focus       string
+	}
+	var fragments []personaFragment
+
+	// Order matters: primary intent first, then supporting intents.
+	if matches("fix", "bug", "error", "crash", "broken", "incorrect", "wrong", "fail") {
+		fragments = append(fragments, personaFragment{
+			persona:     "an expert debugger",
+			methodology: "Find the root cause before writing any fix.",
+			focus:       "Isolate the bug, prove the fix, and verify edge cases.",
+		})
+	}
+	if matches("test", "spec", "coverage", "assert") {
+		fragments = append(fragments, personaFragment{
+			persona:     "a testing engineer",
+			methodology: "Write thorough tests. Cover happy path, edge cases, and failures.",
+			focus:       "Use clear assertions and descriptive test names.",
+		})
+	}
+	if matches("review", "audit", "check", "inspect", "verify", "validate") {
+		fragments = append(fragments, personaFragment{
+			persona:     "a senior engineer reviewing code",
+			methodology: "Read every line critically.",
+			focus:       "Find logic errors, security holes, and style issues. Be constructive.",
+		})
+	}
+	if matches("refactor", "clean up", "simplify", "rename", "extract", "restructure") {
+		fragments = append(fragments, personaFragment{
+			persona:     "an architecture expert",
+			methodology: "Preserve behavior. Change only the structure.",
+			focus:       "Eliminate technical debt without breaking anything.",
+		})
+	}
+	if matches("setup", "config", "install", "docker", "ci", "deploy", "provision") {
+		fragments = append(fragments, personaFragment{
+			persona:     "a DevOps engineer",
+			methodology: "Make every change reproducible and minimal.",
+			focus:       "Test the configuration after changing it.",
+		})
+	}
+	if matches("research", "explain", "compare", "understand", "investigate", "analyze") {
+		fragments = append(fragments, personaFragment{
+			persona:     "a technical researcher",
+			methodology: "Explore thoroughly before concluding.",
+			focus:       "Read source code and docs. Cite findings. Recommend action.",
+		})
+	}
+
+	// Compose: default fallback if no fragments matched
 	persona := "an expert engineer"
 	methodology := "Architect and implement with confidence."
 	focus := "Write clean, well-structured code."
 
-	switch {
-	case matches("fix", "bug", "error", "crash", "broken", "incorrect", "wrong", "fail"):
-		persona = "an expert debugger"
-		methodology = "Find the root cause before writing any fix."
-		focus = "Isolate the bug, prove the fix, and verify edge cases."
-	case matches("test", "spec", "coverage", "assert"):
-		persona = "a testing engineer"
-		methodology = "Write thorough tests. Cover happy path, edge cases, and failures."
-		focus = "Use clear assertions and descriptive test names."
-	case matches("review", "audit", "check", "inspect", "verify", "validate", "inspect"):
-		persona = "a senior engineer reviewing code"
-		methodology = "Read every line critically."
-		focus = "Find logic errors, security holes, and style issues. Be constructive."
-	case matches("refactor", "clean up", "simplify", "rename", "extract", "restructure"):
-		persona = "an architecture expert"
-		methodology = "Preserve behavior. Change only the structure."
-		focus = "Eliminate technical debt without breaking anything."
-	case matches("setup", "config", "install", "docker", "ci", "deploy", "provision"):
-		persona = "a DevOps engineer"
-		methodology = "Make every change reproducible and minimal."
-		focus = "Test the configuration after changing it."
-	case matches("research", "explain", "compare", "understand", "investigate", "analyze"):
-		persona = "a technical researcher"
-		methodology = "Explore thoroughly before concluding."
-		focus = "Read source code and docs. Cite findings. Recommend action."
+	if len(fragments) > 0 {
+		// Primary fragment
+		persona = fragments[0].persona
+		methodology = fragments[0].methodology
+
+		// Focuses are composable: collect all unique instructions
+		var focusParts []string
+		for _, f := range fragments {
+			if f.focus != "" {
+				focusParts = append(focusParts, f.focus)
+			}
+		}
+		if len(focusParts) > 0 {
+			focus = strings.Join(focusParts, " ")
+		}
+
+		// If multiple categories matched, update persona to reflect composition
+		if len(fragments) > 1 {
+			persona = "an expert engineer with multiple strengths"
+			// Add methodology from each matched category
+			var methods []string
+			for _, f := range fragments {
+				methods = append(methods, f.methodology)
+			}
+			methodology = strings.Join(methods, " ")
+		}
 	}
 
 	// Build the prompt with the actual goal embedded

@@ -2216,3 +2216,41 @@ func TestDeliverToTelegram_SendsMessage(t *testing.T) {
 		t.Errorf("expected message_id 123, got %v", msg)
 	}
 }
+
+// ── Reasoning Scaffold ───────────────────────────────────────────────
+
+// TestDefaultSystem_IncludesReasoningScaffold verifies that defaultSystem
+// includes a structured reasoning scaffold (Understand → Plan → Execute →
+// Verify → Ship) to guide the agent's thinking for complex tasks. Without
+// a scaffold, the model's "think first, then act" instruction is too vague
+// — models perform measurably better with explicit thinking stages.
+func TestDefaultSystem_IncludesReasoningScaffold(t *testing.T) {
+	hasUnderstand := strings.Contains(defaultSystem, "**1. Understand**") ||
+		strings.Contains(defaultSystem, "1. Understand:")
+	hasPlan := strings.Contains(defaultSystem, "**2. Plan**") ||
+		strings.Contains(defaultSystem, "2. Plan:")
+	hasExecute := strings.Contains(defaultSystem, "**3. Execute**") ||
+		strings.Contains(defaultSystem, "3. Execute:")
+	hasVerify := strings.Contains(defaultSystem, "**4. Verify**") ||
+		strings.Contains(defaultSystem, "4. Verify:")
+
+	if !hasUnderstand || !hasPlan || !hasExecute || !hasVerify {
+		t.Error("defaultSystem should include a structured reasoning scaffold (Understand → Plan → Execute → Verify → Ship)")
+	}
+}
+
+// ── Batch Tool Awareness ─────────────────────────────────────────────
+
+// TestDefaultSystem_MentionsBatchTools verifies that defaultSystem tells
+// the agent about batch/parallel tools (batch_read, parallel_shell,
+// multi_grep) so it uses them instead of reading files one-by-one.
+// Without this instruction, the model wastes tokens on sequential reads
+// for tasks that could fetch 5 files in a single call.
+func TestDefaultSystem_MentionsBatchTools(t *testing.T) {
+	if !strings.Contains(defaultSystem, "batch_read") {
+		t.Error("defaultSystem should mention batch_read for efficient multi-file reads")
+	}
+	if !strings.Contains(defaultSystem, "parallel_shell") {
+		t.Error("defaultSystem should mention parallel_shell for parallel command execution")
+	}
+}

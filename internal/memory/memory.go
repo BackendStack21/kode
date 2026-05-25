@@ -430,7 +430,7 @@ func (m *MemoryManager) markPromptDirty() {
 // ── Episode Operations ───────────────────────────────────────────────
 
 // OnSessionEnd is called when a session ends. If turns >= threshold,
-// extracts durable facts using the LLM and stores them as an episode.
+// extracts a narrative session summary using the LLM and stores it as an episode.
 // sessionID is validated for path traversal before any file I/O.
 func (m *MemoryManager) OnSessionEnd(sessionID string, turns int, messages []string) {
 	if err := session.ValidateSessionID(sessionID); err != nil {
@@ -465,7 +465,7 @@ func (m *MemoryManager) OnSessionEnd(sessionID string, turns int, messages []str
 	convText := b.String()
 
 	extraction, err := m.llm.SimpleCall(context.Background(),
-		"Extract 1-3 concise, durable facts from this conversation that the agent should remember for future sessions. Output as plain text, one fact per line. Skip task-specific details (PR numbers, commit SHAs, file paths). Focus on user preferences, tool quirks, project rules, and environment details.",
+		"Summarize this session in 1-3 sentences covering: what was implemented/fixed, key files changed, architectural decisions, and the outcome. Format as a narrative summary, not bullet points.",
 		convText,
 	)
 	if err != nil {
