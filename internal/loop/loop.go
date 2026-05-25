@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/danger"
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/narrate"
-	"github.com/BackendStack21/kode/internal/redact"
-	"github.com/BackendStack21/kode/internal/render"
-	"github.com/BackendStack21/kode/internal/tool"
+	"github.com/BackendStack21/odek/internal/danger"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/narrate"
+	"github.com/BackendStack21/odek/internal/redact"
+	"github.com/BackendStack21/odek/internal/render"
+	"github.com/BackendStack21/odek/internal/tool"
 )
 
 // SkillLoader is an optional callback that the loop engine calls before each

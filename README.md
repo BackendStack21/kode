@@ -6,7 +6,7 @@ One binary. One loop. Zero frameworks. ReAct (Reasoning + Acting) — think, the
 
 ```bash
 # Install
-go install github.com/BackendStack21/kode/cmd/odek@latest
+go install github.com/BackendStack21/odek/cmd/odek@latest
 
 # Use (set ODEK_API_KEY, DEEPSEEK_API_KEY, or OPENAI_API_KEY)
 export ODEK_API_KEY=sk-...
@@ -172,7 +172,7 @@ odek run "@README.md what does this project do?"
 ## Programmatic API
 
 ```go
-import "github.com/BackendStack21/kode"
+import "github.com/BackendStack21/odek"
 
 agent, err := odek.New(odek.Config{
     Model:          "deepseek-v4-flash",

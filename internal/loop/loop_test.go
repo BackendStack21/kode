@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/danger"
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/render"
-	"github.com/BackendStack21/kode/internal/tool"
+	"github.com/BackendStack21/odek/internal/danger"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/render"
+	"github.com/BackendStack21/odek/internal/tool"
 )
 
 // fakeTool is a simple tool for testing.

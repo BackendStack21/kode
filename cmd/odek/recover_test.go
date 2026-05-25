@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/danger"
-	"github.com/BackendStack21/kode/internal/telegram"
+	"github.com/BackendStack21/odek/internal/config"
+	"github.com/BackendStack21/odek/internal/danger"
+	"github.com/BackendStack21/odek/internal/telegram"
 )
 
 // newRecordingTestBot creates a telegram.Bot wired to a test server that

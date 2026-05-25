@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 // ── Constants ──────────────────────────────────────────────────────────────

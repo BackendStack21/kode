@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/session"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/session"
 )
 
 // setupTestSessionManager creates a session.Store in a temp directory

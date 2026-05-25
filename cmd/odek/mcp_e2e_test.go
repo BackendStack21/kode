@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/BackendStack21/kode/internal/mcpclient"
+	"github.com/BackendStack21/odek/internal/mcpclient"
 )
 
 // ── E2E: MCP Client with a real MCP server subprocess ──────────────────

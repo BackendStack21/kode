@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/mcp"
-	"github.com/BackendStack21/kode/internal/skills"
+	"github.com/BackendStack21/odek/internal/config"
+	"github.com/BackendStack21/odek/internal/mcp"
+	"github.com/BackendStack21/odek/internal/skills"
 )
 
 // ── MCP Command ────────────────────────────────────────────────────────

@@ -116,7 +116,7 @@ Combine all three:
 **Setup:**
 ```bash
 # Ensure odek is on PATH
-which odek || go install github.com/BackendStack21/kode/cmd/odek@latest
+which odek || go install github.com/BackendStack21/odek/cmd/odek@latest
 
 # Optionally share the skills directory
 ln -s ~/.odek/skills ~/.hermes/skills  # optional

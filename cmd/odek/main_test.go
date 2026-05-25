@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BackendStack21/kode"
-	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/danger"
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/mcpclient"
-	"github.com/BackendStack21/kode/internal/telegram"
+	"github.com/BackendStack21/odek"
+	"github.com/BackendStack21/odek/internal/config"
+	"github.com/BackendStack21/odek/internal/danger"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/mcpclient"
+	"github.com/BackendStack21/odek/internal/telegram"
 )
 
 func TestGetVersion_LdFlagsOverride(t *testing.T) {

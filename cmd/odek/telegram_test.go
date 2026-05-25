@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/loop"
-	"github.com/BackendStack21/kode/internal/render"
-	"github.com/BackendStack21/kode/internal/session"
-	"github.com/BackendStack21/kode/internal/telegram"
+	"github.com/BackendStack21/odek/internal/loop"
+	"github.com/BackendStack21/odek/internal/render"
+	"github.com/BackendStack21/odek/internal/session"
+	"github.com/BackendStack21/odek/internal/telegram"
 )
 
 // ── spawnChild tests ──────────────────────────────────────────────────

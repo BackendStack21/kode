@@ -1,4 +1,4 @@
-module github.com/BackendStack21/kode
+module github.com/BackendStack21/odek
 
 go 1.25.0
 

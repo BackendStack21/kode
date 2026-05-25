@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BackendStack21/kode"
-	"github.com/BackendStack21/kode/internal/session"
+	"github.com/BackendStack21/odek"
+	"github.com/BackendStack21/odek/internal/session"
 )
 
 // ═════════════════════════════════════════════════════════════════════════

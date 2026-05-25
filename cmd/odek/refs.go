@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/BackendStack21/kode/internal/resource"
+	"github.com/BackendStack21/odek/internal/resource"
 )
 
 // enrichTask resolves @references in the task prompt and prepends

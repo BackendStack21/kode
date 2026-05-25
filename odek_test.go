@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/render"
-	"github.com/BackendStack21/kode/internal/skills"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/render"
+	"github.com/BackendStack21/odek/internal/skills"
 )
 
 func TestConfigDefaults(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/transport"
+	"github.com/BackendStack21/odek/internal/transport"
 )
 
 // Client sends chat completion requests to any OpenAI-compatible endpoint.

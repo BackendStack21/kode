@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/BackendStack21/kode/internal/session"
+	"github.com/BackendStack21/odek/internal/session"
 )
 
 // memoryToolSchema is the JSON schema for the `memory` tool.

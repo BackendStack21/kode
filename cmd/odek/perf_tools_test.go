@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 // ── BatchPatch Tests ──────────────────────────────────────────────────

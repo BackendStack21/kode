@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/BackendStack21/kode/internal/session"
+	"github.com/BackendStack21/odek/internal/session"
 )
 
 // Default memory dir relative to ~/.odek/

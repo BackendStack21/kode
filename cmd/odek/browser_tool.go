@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 // ── Regex helpers for HTML parsing (zero-dep) ─────────────────────────

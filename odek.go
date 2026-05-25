@@ -27,14 +27,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/danger"
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/loop"
-	"github.com/BackendStack21/kode/internal/memory"
-	"github.com/BackendStack21/kode/internal/narrate"
-	"github.com/BackendStack21/kode/internal/render"
-	"github.com/BackendStack21/kode/internal/skills"
-	"github.com/BackendStack21/kode/internal/tool"
+	"github.com/BackendStack21/odek/internal/danger"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/loop"
+	"github.com/BackendStack21/odek/internal/memory"
+	"github.com/BackendStack21/odek/internal/narrate"
+	"github.com/BackendStack21/odek/internal/render"
+	"github.com/BackendStack21/odek/internal/skills"
+	"github.com/BackendStack21/odek/internal/tool"
 )
 
 // Tool represents a single capability the agent can invoke.

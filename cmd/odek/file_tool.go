@@ -13,8 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BackendStack21/kode"
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 // ── ReadFile Tool ──────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/BackendStack21/go-vector/pkg/vector"
-	"github.com/BackendStack21/kode/internal/session"
+	"github.com/BackendStack21/odek/internal/session"
 )
 
 // maxEpisodeSummaryBytes caps how much summary text we store per episode.

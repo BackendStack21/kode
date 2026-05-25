@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BackendStack21/kode"
+	"github.com/BackendStack21/odek"
 )
 
 // delegateTasksTool is a built-in tool that spawns sub-agent OS processes

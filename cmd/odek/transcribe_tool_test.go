@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek/internal/config"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 // ── Transcribe Tests ─────────────────────────────────────────────────

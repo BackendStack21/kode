@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/transport"
+	"github.com/BackendStack21/odek/internal/transport"
 )
 
 // TelegramError represents an error returned by the Telegram Bot API.

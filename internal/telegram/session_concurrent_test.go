@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/odek/internal/llm"
 )
 
 // TestSave_UnblocksOtherChatsDuringDiskIO verifies that Save() releases

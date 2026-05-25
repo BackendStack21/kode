@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode"
-	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/danger"
-	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/odek"
+	"github.com/BackendStack21/odek/internal/config"
+	"github.com/BackendStack21/odek/internal/danger"
+	"github.com/BackendStack21/odek/internal/llm"
 )
 
 // ─────────────────────────────────────────────────────────────────────

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 // approvalRequest is sent from the serve WebSocket to the browser

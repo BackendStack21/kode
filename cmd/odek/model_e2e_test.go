@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode"
-	"github.com/BackendStack21/kode/internal/render"
+	"github.com/BackendStack21/odek"
+	"github.com/BackendStack21/odek/internal/render"
 )
 
 type modelCase struct {

@@ -16,15 +16,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/BackendStack21/kode"
-	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/loop"
-	"github.com/BackendStack21/kode/internal/render"
-	"github.com/BackendStack21/kode/internal/session"
-	"github.com/BackendStack21/kode/internal/skills"
-	"github.com/BackendStack21/kode/internal/telegram"
-	toolpkg "github.com/BackendStack21/kode/internal/tool"
+	"github.com/BackendStack21/odek"
+	"github.com/BackendStack21/odek/internal/config"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/loop"
+	"github.com/BackendStack21/odek/internal/render"
+	"github.com/BackendStack21/odek/internal/session"
+	"github.com/BackendStack21/odek/internal/skills"
+	"github.com/BackendStack21/odek/internal/telegram"
+	toolpkg "github.com/BackendStack21/odek/internal/tool"
 )
 
 // chatMu serializes agent processing per chat to prevent same-chat message

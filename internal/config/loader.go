@@ -21,11 +21,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/BackendStack21/kode/internal/danger"
-	"github.com/BackendStack21/kode/internal/mcpclient"
-	"github.com/BackendStack21/kode/internal/memory"
-	"github.com/BackendStack21/kode/internal/skills"
-	"github.com/BackendStack21/kode/internal/telegram"
+	"github.com/BackendStack21/odek/internal/danger"
+	"github.com/BackendStack21/odek/internal/mcpclient"
+	"github.com/BackendStack21/odek/internal/memory"
+	"github.com/BackendStack21/odek/internal/skills"
+	"github.com/BackendStack21/odek/internal/telegram"
 )
 
 // ── Types ──────────────────────────────────────────────────────────────

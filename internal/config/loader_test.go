@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/BackendStack21/kode/internal/memory"
+	"github.com/BackendStack21/odek/internal/memory"
 )
 
 func boolPtr(b bool) *bool { return &b }

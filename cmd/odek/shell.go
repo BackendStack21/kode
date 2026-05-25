@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 // shellTool is odek's built-in tool that lets the agent run shell commands.

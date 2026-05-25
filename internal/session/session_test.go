@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/llm"
+	"github.com/BackendStack21/odek/internal/llm"
 )
 
 func TestNewStore(t *testing.T) {

@@ -26,8 +26,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/llm"
-	"github.com/BackendStack21/kode/internal/redact"
+	"github.com/BackendStack21/odek/internal/llm"
+	"github.com/BackendStack21/odek/internal/redact"
 )
 
 // ── Types ──────────────────────────────────────────────────────────────

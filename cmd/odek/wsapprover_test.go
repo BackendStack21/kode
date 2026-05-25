@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/danger"
+	"github.com/BackendStack21/odek/internal/danger"
 )
 
 func TestNewWSApprover(t *testing.T) {

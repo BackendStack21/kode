@@ -3,7 +3,7 @@
 Use odek as a **Go library** — build autonomous agents, custom tools, and AI-powered workflows without any frameworks or runtime overhead.
 
 ```go
-import "github.com/BackendStack21/kode"
+import "github.com/BackendStack21/odek"
 ```
 
 One binary. One loop. Zero frameworks.
@@ -20,7 +20,7 @@ import (
     "fmt"
     "os"
 
-    "github.com/BackendStack21/kode"
+    "github.com/BackendStack21/odek"
 )
 
 func main() {
@@ -303,7 +303,7 @@ answer, messages, err = agent.RunWithMessages(ctx, messages)
 odek's `session.Store` handles persistence. Use it to save and resume sessions:
 
 ```go
-import "github.com/BackendStack21/kode/internal/session"
+import "github.com/BackendStack21/odek/internal/session"
 
 store, _ := session.NewStore()
 sess, _ := store.Create(messages, "deepseek-v4-flash", "Refactor auth")
@@ -651,7 +651,7 @@ import (
     "os/exec"
     "strings"
 
-    "github.com/BackendStack21/kode"
+    "github.com/BackendStack21/odek"
 )
 
 // ── Custom tool: file line count ──
@@ -773,7 +773,7 @@ func main() {
 
 ## Package Reference
 
-All public symbols exported by `github.com/BackendStack21/kode`:
+All public symbols exported by `github.com/BackendStack21/odek`:
 
 ### Functions
 
@@ -810,7 +810,7 @@ All public symbols exported by `github.com/BackendStack21/kode`:
 ## Import Path
 
 ```go
-import "github.com/BackendStack21/kode"
+import "github.com/BackendStack21/odek"
 ```
 
 ```
@@ -818,7 +818,7 @@ module github.com/your-project
 
 go 1.25.0
 
-require github.com/BackendStack21/kode v0.16.1
+require github.com/BackendStack21/odek v0.16.1
 ```
 
 All `internal/` packages (`internal/llm`, `internal/memory`, `internal/skills`, `internal/config`, `internal/session`, `internal/danger`, `internal/resource`, `internal/render`, `internal/ws`) are not importable outside the module due to Go's `internal` package visibility rules.

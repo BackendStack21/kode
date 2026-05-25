@@ -1,5 +1,5 @@
 # odek — the fastest, minimalistic autonomous ReAct agent CLI in Go.
-# https://github.com/BackendStack21/kode
+# https://github.com/BackendStack21/odek
 
 GO      := go
 GOLINT  := $(shell command -v golangci-lint 2>/dev/null)

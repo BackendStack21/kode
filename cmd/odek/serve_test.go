@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BackendStack21/kode/internal/config"
-	"github.com/BackendStack21/kode/internal/resource"
-	"github.com/BackendStack21/kode/internal/session"
+	"github.com/BackendStack21/odek/internal/config"
+	"github.com/BackendStack21/odek/internal/resource"
+	"github.com/BackendStack21/odek/internal/session"
 	golangws "golang.org/x/net/websocket"
 )
 
