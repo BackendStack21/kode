@@ -422,31 +422,43 @@ func trimToSurvival(msgs []llm.Message) []llm.Message {
 	}
 
 	// Collect the last 2 complete assistant→tool groups before the user msg.
-	var groups []llm.Message
+	// Each group is a sub-slice in correct internal order: [system*, assistant, tool*].
+	var groups [][]llm.Message
 	seen := 0
 	for i := lastUserIdx - 1; i > start && seen < 2; i-- {
 		if msgs[i].Role == "assistant" && len(msgs[i].ToolCalls) > 0 {
-			// This assistant message has tool calls — collect it and
-			// its following tool results.
-			groupEnd := i + 1
-			for groupEnd < len(msgs) && msgs[groupEnd].Role == "tool" {
-				groupEnd++
-			}
-			groups = append(groups, msgs[i:groupEnd]...)
-			// Also include any preceding system messages (corrections, warnings).
+			var group []llm.Message
+
+			// Preceding system messages (corrections, warnings)
 			preStart := i - 1
 			for preStart > start && msgs[preStart].Role == "system" {
 				preStart--
 			}
 			for k := preStart + 1; k < i; k++ {
-				groups = append(groups, msgs[k])
+				group = append(group, msgs[k])
 			}
+
+			// Assistant message with tool calls
+			group = append(group, msgs[i])
+
+			// Following tool results
+			for j := i + 1; j < len(msgs) && msgs[j].Role == "tool"; j++ {
+				group = append(group, msgs[j])
+			}
+
+			groups = append(groups, group)
+			i = preStart + 1 // skip past the group we just consumed
 			seen++
 		}
 	}
 
 	// Build survival set: system + task + recent groups + last user
-	survival := make([]llm.Message, 0, start+1+len(groups)+1)
+	// Calculate total messages across all groups for capacity hint
+	totalGroupMsgs := 0
+	for _, g := range groups {
+		totalGroupMsgs += len(g)
+	}
+	survival := make([]llm.Message, 0, start+1+totalGroupMsgs+1)
 	if start > 0 {
 		survival = append(survival, msgs[0]) // system message
 	}
@@ -454,9 +466,11 @@ func trimToSurvival(msgs []llm.Message) []llm.Message {
 	warning := "[Context trimmed to survive: the conversation history exceeded the model's context window. Earlier turns have been dropped. If you need information from earlier in the conversation, the agent may ask for a summary.]"
 	survival = append(survival, llm.Message{Role: "system", Content: warning})
 
-	// Add the recent groups (in chronological order, not reversed)
+	// Add the recent groups in chronological order (groups were collected
+	// from newest to oldest, so reverse them while preserving each group's
+	// internal order: system* → assistant(tool_calls) → tool*).
 	for i := len(groups) - 1; i >= 0; i-- {
-		survival = append(survival, groups[i])
+		survival = append(survival, groups[i]...)
 	}
 
 	// Add the last user message
@@ -513,11 +527,6 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 		case <-ctx.Done():
 			return "", messages, ctx.Err()
 		default:
-		}
-
-		// Render iteration header (1-indexed for humans)
-		if e.renderer != nil && e.interactionMode != "off" {
-			e.renderer.Iteration(i+1, e.maxIter, 0, 0, 0, 0)
 		}
 
 		// Trim context to stay within model's context window

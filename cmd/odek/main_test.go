@@ -755,8 +755,14 @@ func TestRun_WithProjectConfig(t *testing.T) {
 
 // dockerAvailable returns true if the docker CLI is available.
 func dockerAvailable() bool {
-	_, err := exec.LookPath("docker")
-	return err == nil
+	if _, err := exec.LookPath("docker"); err != nil {
+		return false
+	}
+	// Verify the daemon is actually reachable (not just the CLI installed).
+	cmd := exec.Command("docker", "info")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Run() == nil
 }
 
 // ── Init Config Tests ─────────────────────────────────────────────────

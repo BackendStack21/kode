@@ -68,6 +68,16 @@ func ClassifyPath(path string) RiskClass {
 			return Destructive
 		}
 	}
+
+	// Temp directory paths are always local, not system. This handles
+	// macOS where temp dirs live under /var/folders/, preventing false
+	// SystemWrite classification (matching Linux /tmp behavior).
+	// os.TempDir may include a trailing separator on some platforms;
+	// Clean normalises it before the prefix check.
+	if tmpDir := filepath.Clean(os.TempDir()); abs == tmpDir || strings.HasPrefix(abs, tmpDir+string(filepath.Separator)) {
+		return LocalWrite
+	}
+
 	for _, prefix := range []string{"/etc", "/root", "/var", "/run", "/lib", "/usr"} {
 		if strings.HasPrefix(abs, prefix) {
 			return SystemWrite

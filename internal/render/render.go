@@ -123,20 +123,9 @@ func (r *Renderer) disable() bool {
 
 // ── Rendering methods ─────────────────────────────────────────────────
 
-// Start prints the session header with task preview.
-func (r *Renderer) Start(task string) {
-	if r.disable() {
-		return
-	}
-	preview := r.truncate(strings.ReplaceAll(task, "\n", " "), 80)
-	prefix := "⚡ odek"
-	if r.model != "" {
-		prefix += " · " + r.model
-	}
-	fmt.Fprintln(r.w, r.style(blue, prefix))
-	fmt.Fprintln(r.w, r.style(gray, "   "+preview))
-	fmt.Fprintln(r.w)
-}
+// Start is a no-op — session context is now shown via iteration headers
+// and session banners (REPL). Kept for API compatibility.
+func (r *Renderer) Start(task string) {}
 
 // Iteration prints the cycle header with optional turn statistics and
 // turn number. When turn > 0, shows "Turn N" in the header.
@@ -164,7 +153,6 @@ func (r *Renderer) Iteration(n, maxN int, latency time.Duration, inTokens, outTo
 	// Double-line rule framing
 	rule := strings.Repeat("═", 3)
 	line := fmt.Sprintf("%s %s %s%s", rule, prefix, rule, stats)
-	fmt.Fprintln(r.w)
 	fmt.Fprintln(r.w, r.style(blue, line))
 }
 
@@ -402,9 +390,7 @@ func (r *Renderer) FinalAnswer(text string) {
 	if r.disable() || text == "" {
 		return
 	}
-	fmt.Fprintln(r.w)
 	fmt.Fprintln(r.w, r.style(green, "✅ "+text))
-	fmt.Fprintln(r.w)
 }
 
 // Summary prints a run summary line with total token and cache statistics.
@@ -432,7 +418,6 @@ func (r *Renderer) Summary(inTokens, outTokens, cacheCreate, cacheRead, cached i
 		parts = append(parts, fmt.Sprintf("%d cached", cached))
 	}
 	fmt.Fprintln(r.w, r.style(gray, "── "+strings.Join(parts, " · ")))
-	fmt.Fprintln(r.w)
 }
 
 // Error prints a non-fatal loop error with a cross emoji.

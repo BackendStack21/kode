@@ -84,7 +84,7 @@ func (e *replEditor) ReadLine() (string, error) {
 				}
 				// Disable bracketed paste
 				fmt.Fprint(os.Stderr, "\x1b[?2004l")
-				fmt.Fprintln(os.Stderr)
+				fmt.Fprint(os.Stderr, "\r\n")
 				return result, nil
 			}
 		}

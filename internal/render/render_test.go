@@ -15,14 +15,8 @@ func TestRenderer_Start(t *testing.T) {
 	r.Start("list all files in this directory")
 
 	out := buf.String()
-	if !strings.Contains(out, "odek") {
-		t.Errorf("Start() missing odek brand: %q", out)
-	}
-	if !strings.Contains(out, "deepseek-chat") {
-		t.Errorf("Start() missing model name: %q", out)
-	}
-	if !strings.Contains(out, "list all files") {
-		t.Errorf("Start() missing task preview: %q", out)
+	if out != "" {
+		t.Errorf("Start() should be a no-op, got output: %q", out)
 	}
 }
 
@@ -34,9 +28,8 @@ func TestRenderer_Start_LongTask(t *testing.T) {
 	r.Start(longTask)
 
 	out := buf.String()
-	// Task preview should be truncated to ~80 chars
-	if strings.Count(out, "explain") > 6 {
-		t.Errorf("Start() should truncate long task: %q", out)
+	if out != "" {
+		t.Errorf("Start() should be a no-op even for long tasks, got output: %q", out)
 	}
 }
 

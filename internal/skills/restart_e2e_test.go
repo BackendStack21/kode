@@ -1,19 +1,46 @@
 package skills
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// setupRestartSkill creates a temp skills directory containing the
+// restart-odek-telegram skill and returns a SkillManager pointed at it.
+func setupRestartSkill(t *testing.T) *SkillManager {
+	t.Helper()
+
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "restart-odek-telegram")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("failed to create skill dir: %v", err)
+	}
+
+	content := `---
+name: restart-odek-telegram
+description: Restart the odek Telegram bot
+odek:
+  trigger:
+    topic: odek, telegram, bot, restart, deploy, rebuild
+    action: restart, redeploy, rebuild, bounce
+  auto_load: false
+---
+Run build-and-restart-telegram.sh --restart-only with nohup. Do NOT use go build directly.
+`
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write SKILL.md: %v", err)
+	}
+
+	return NewSkillManager("", dir)
+}
 
 // TestRestartSkill_Triggers_ScoredMatcher verifies the scored matcher
 // correctly triggers the restart-odek-telegram skill for common user
 // inputs like "rebuild and restart", "restart the bot", etc.
 func TestRestartSkill_Triggers_ScoredMatcher(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping E2E test in short mode (requires installed skills)")
-	}
-	sm := NewSkillManager("", "/root/.odek/skills")
-	sm.Reload()
+	sm := setupRestartSkill(t)
 
 	// The restart skill should be in the Lazy pool (auto_load: false)
 	found := false
@@ -63,11 +90,7 @@ func TestRestartSkill_Triggers_ScoredMatcher(t *testing.T) {
 // actually directs the agent to use the build-and-restart script,
 // not manual build or kill commands.
 func TestRestartSkill_BodyContainsScript(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping E2E test in short mode (requires installed skills)")
-	}
-	sm := NewSkillManager("", "/root/.odek/skills")
-	sm.Reload()
+	sm := setupRestartSkill(t)
 
 	matched := sm.ScoredMatcher.MatchSkills("rebuild and restart", 1)
 	if len(matched) == 0 {
