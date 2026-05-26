@@ -195,6 +195,60 @@ func (sm *SessionManager) Delete(chatID int64) error {
 	return sm.Store.Delete(sessionID)
 }
 
+// ArchiveAndDelete archives the current session to a timestamped file,
+// then removes it from cache and store. This preserves the conversation
+// history for later reference while starting fresh on the next message.
+// The archived session is saved with an ID like "tg-<chatID>-<YYYYMMDD>-<HHMMSS>"
+// so it can be browsed via `odek session list`.
+func (sm *SessionManager) ArchiveAndDelete(chatID int64) error {
+	sessionID := fmt.Sprintf("tg-%d", chatID)
+
+	sm.Mu.Lock()
+	// Get session from cache if available, remove from cache
+	cs, ok := sm.Cache[chatID]
+	if ok {
+		delete(sm.Cache, chatID)
+	}
+	sm.Mu.Unlock()
+
+	// If we had cache data not yet persisted, persist directly to store
+	// (bypassing Save which would re-create a cache entry we just deleted)
+	if ok && cs != nil && len(cs.Messages) > 0 {
+		sess := &session.Session{
+			ID:        sessionID,
+			CreatedAt: cs.CreatedAt,
+			UpdatedAt: time.Now(),
+			Turns:     cs.TurnCount,
+			Task:      fmt.Sprintf("tg-%d", chatID),
+			Messages:  cs.Messages,
+		}
+		if err := sm.Store.Save(sess); err != nil {
+			return fmt.Errorf("archive: persist before archive: %w", err)
+		}
+	}
+
+	// Load current session from store
+	sess, err := sm.Store.Load(sessionID)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// No session on disk — nothing to archive
+			return nil
+		}
+		return fmt.Errorf("archive: load session: %w", err)
+	}
+
+	// Save as archive with timestamped ID
+	archiveID := fmt.Sprintf("tg-%d-%s", chatID, time.Now().UTC().Format("20060102-150405"))
+	archived := *sess
+	archived.ID = archiveID
+	if err := sm.Store.Save(&archived); err != nil {
+		return fmt.Errorf("archive: save archive: %w", err)
+	}
+
+	// Delete the old session (file + index + vector index)
+	return sm.Store.Delete(sessionID)
+}
+
 // AppendMessage adds a single message (role + content) to the chat
 // session's message list and saves the updated session. It uses
 // GetOrCreate to ensure the session exists.

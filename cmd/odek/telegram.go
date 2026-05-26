@@ -233,15 +233,19 @@ func telegramCmd(args []string) error {
 			return "🔄 *Restarting...*\n\nThe bot will restart momentarily. This may take a few seconds.", nil
 		}
 
-		// Handle /new — clear session and reset trust in the approver.
+		// Handle /new — archive the current session and start fresh.
+		// The current session is preserved as a timestamped archive file
+		// so it can be revisited via `odek session list`.
 		if cmdName == "new" {
-			sessionManager.Delete(chatID)
+			if err := sessionManager.ArchiveAndDelete(chatID); err != nil {
+				handlerLog.Warn("archive session", "chat_id", chatID, "error", err)
+			}
 			chatMu.Delete(chatID) // prevent mutex leak on session reset
 			if a := handler.GetApprover(chatID); a != nil {
 				a.ResetTrust()
 			}
 			var b strings.Builder
-			b.WriteString("🔄 *New session started*\n\n")
+			b.WriteString("🔄 *Session archived, starting fresh*\n\n")
 			b.WriteString(fmt.Sprintf("• Model: `%s`\n", resolved.Model))
 			if resolved.Sandbox {
 				b.WriteString("• Sandbox: enabled\n")
