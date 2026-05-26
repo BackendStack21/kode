@@ -565,3 +565,317 @@ func TestSessionSearch_SearchNoDeepFallback(t *testing.T) {
 		t.Error("expected native-tools session in task-only search results")
 	}
 }
+
+// ── Extended Edge-Case Tests ──────────────────────────────────────────
+
+func TestSessionSearch_DeepSearchTwoTokens(t *testing.T) {
+	// Verify deepSearch requires >= 2 distinct tokens to match.
+	// A single common word in 107 messages must not qualify.
+	store, cleanup := seedSessionStore(t)
+	defer cleanup()
+
+	// Add a session where a single common word "changes" appears in messages
+	// but nothing else from the query matches. This simulates the false
+	// positive where "go-vector changes" matched the events fetcher session.
+	singleWordSess := &session.Session{
+		ID:        "test-single-word",
+		Task:      "unrelated task about events",
+		CreatedAt: time.Now().Add(-1 * time.Hour),
+		UpdatedAt: time.Now().Add(-30 * time.Minute),
+		Model:     "deepseek-v4-flash",
+		Turns:     3,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Analyze the current output"},
+			{Role: "assistant", Content: "Events changed: +8 -8 = 10 total"},
+		},
+		Buffer: []string{"13:00 user analyzed output"},
+	}
+	if err := store.Save(singleWordSess); err != nil {
+		t.Fatalf("save single-word session: %v", err)
+	}
+
+	// Add a session with TWO distinct tokens matching
+	twoTokenSess := &session.Session{
+		ID:        "test-two-tokens",
+		Task:      "go-vector project updates",
+		CreatedAt: time.Now().Add(-2 * time.Hour),
+		UpdatedAt: time.Now().Add(-1 * time.Hour),
+		Model:     "deepseek-v4-flash",
+		Turns:     5,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Review our latest changes in go-vector"},
+			{Role: "assistant", Content: "The SaveEmbedder API is now persistent"},
+		},
+		Buffer: []string{"14:00 user asked about go-vector changes"},
+	}
+	if err := store.Save(twoTokenSess); err != nil {
+		t.Fatalf("save two-token session: %v", err)
+	}
+
+	tool := newSessionSearchTool(store)
+
+	// Query with "changes" + novel term — only two-token session should match
+	result := callSessionSearch(t, tool, `{"action":"search","query":"go-vector changes","limit":10}`)
+
+	var resp struct {
+		Sessions []struct {
+			ID string `json:"id"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		t.Fatalf("unmarshal: %v\nraw: %s", err, result)
+	}
+
+	// The single-word session should NOT appear
+	for _, s := range resp.Sessions {
+		if s.ID == "test-single-word" {
+			t.Error("single-word session matched — 'changes' alone should not qualify")
+		}
+	}
+
+	// The two-token session SHOULD appear
+	found := false
+	for _, s := range resp.Sessions {
+		if s.ID == "test-two-tokens" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("two-token session should match 'go-vector changes'")
+	}
+}
+
+func TestSessionSearch_GetReturnsSessionMessages(t *testing.T) {
+	// Verify get returns the full session_messages array with role+content.
+	store, cleanup := seedSessionStore(t)
+	defer cleanup()
+
+	// Add a session with known messages
+	testSess := &session.Session{
+		ID:        "test-msg-content",
+		Task:      "test session for message content",
+		CreatedAt: time.Now().Add(-1 * time.Hour),
+		UpdatedAt: time.Now(),
+		Model:     "deepseek-v4-flash",
+		Turns:     2,
+		Messages: []llm.Message{
+			{Role: "user", Content: "First user message about go-vector"},
+			{Role: "assistant", Content: "Here is the response about SaveEmbedder"},
+			{Role: "user", Content: "Second question about vector dimensions"},
+			{Role: "assistant", Content: "256 dimensions for RandomProjections"},
+		},
+	}
+	if err := store.Save(testSess); err != nil {
+		t.Fatalf("save test session: %v", err)
+	}
+
+	tool := newSessionSearchTool(store)
+	result := callSessionSearch(t, tool, `{"action":"get","query":"test-msg-content"}`)
+
+	var resp struct {
+		SessionMessages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"session_messages"`
+		Messages int    `json:"messages"`
+		Error    string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		t.Fatalf("unmarshal: %v\nraw: %s", err, result)
+	}
+
+	if resp.Error != "" {
+		t.Fatalf("error: %s", resp.Error)
+	}
+
+	// Check messages count matches
+	if resp.Messages != 4 {
+		t.Errorf("messages count = %d, want 4", resp.Messages)
+	}
+
+	// Check all 4 messages are present with correct role+content
+	if len(resp.SessionMessages) != 4 {
+		t.Fatalf("got %d session_messages, want 4", len(resp.SessionMessages))
+	}
+
+	checks := []struct {
+		role    string
+		content string
+	}{
+		{"user", "First user message about go-vector"},
+		{"assistant", "Here is the response about SaveEmbedder"},
+		{"user", "Second question about vector dimensions"},
+		{"assistant", "256 dimensions for RandomProjections"},
+	}
+	for i, c := range checks {
+		if resp.SessionMessages[i].Role != c.role {
+			t.Errorf("msg[%d] role = %q, want %q", i, resp.SessionMessages[i].Role, c.role)
+		}
+		if resp.SessionMessages[i].Content != c.content {
+			t.Errorf("msg[%d] content = %q, want %q", i, resp.SessionMessages[i].Content, c.content)
+		}
+	}
+}
+
+func TestSessionSearch_PreSavePersistence(t *testing.T) {
+	// Verify that a session saved immediately (simulating pre-agent-loop save)
+	// is findable by session_search right after. This tests the core of the
+	// v0.58.5 fix: save user message before agent loop runs.
+	store, cleanup := seedSessionStore(t)
+	defer cleanup()
+
+	// Simulate: user sends a message, handler saves it immediately
+	uniqueContent := "specific-unique-go-vector-context-xyz"
+	freshSess := &session.Session{
+		ID:        "test-fresh-save",
+		Task:      "current conversation",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Model:     "deepseek-v4-flash",
+		Turns:     0,
+		Messages: []llm.Message{
+			{Role: "user", Content: uniqueContent},
+		},
+	}
+	// This is what Store.Save does — immediate persistence to disk + vector index
+	if err := store.Save(freshSess); err != nil {
+		t.Fatalf("save fresh session: %v", err)
+	}
+
+	tool := newSessionSearchTool(store)
+
+	// Search should find it immediately (both vector and deepSearch paths)
+	result := callSessionSearch(t, tool, `{"action":"search","query":"specific-unique-go-vector-context-xyz","limit":5}`)
+
+	var resp struct {
+		Sessions []struct {
+			ID string `json:"id"`
+		} `json:"sessions"`
+		Count int `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		t.Fatalf("unmarshal: %v\nraw: %s", err, result)
+	}
+
+	if resp.Count == 0 {
+		t.Fatal("freshly saved session should be findable immediately")
+	}
+
+	found := false
+	for _, s := range resp.Sessions {
+		if s.ID == "test-fresh-save" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("fresh-save session not found in search results")
+	}
+}
+
+func TestSessionSearch_DeepSearchEdgeCases(t *testing.T) {
+	store, cleanup := seedSessionStore(t)
+	defer cleanup()
+
+	// Edge case 1: session with empty messages
+	emptySess := &session.Session{
+		ID:        "test-empty-msgs",
+		Task:      "empty session",
+		CreatedAt: time.Now().Add(-1 * time.Hour),
+		UpdatedAt: time.Now(),
+		Model:     "deepseek-v4-flash",
+		Turns:     0,
+		Messages:  []llm.Message{},
+	}
+	if err := store.Save(emptySess); err != nil {
+		t.Fatalf("save empty session: %v", err)
+	}
+
+	// Edge case 2: session with only system messages (should be skipped)
+	systemOnlySess := &session.Session{
+		ID:        "test-system-only",
+		Task:      "system messages only",
+		CreatedAt: time.Now().Add(-1 * time.Hour),
+		UpdatedAt: time.Now(),
+		Model:     "deepseek-v4-flash",
+		Turns:     1,
+		Messages: []llm.Message{
+			{Role: "system", Content: "You are a helpful assistant"},
+			{Role: "system", Content: "Memory context block"},
+		},
+	}
+	if err := store.Save(systemOnlySess); err != nil {
+		t.Fatalf("save system-only session: %v", err)
+	}
+
+	// Edge case 3: session with unicode content
+	unicodeSess := &session.Session{
+		ID:        "test-unicode",
+		Task:      "unicode test session",
+		CreatedAt: time.Now().Add(-1 * time.Hour),
+		UpdatedAt: time.Now(),
+		Model:     "deepseek-v4-flash",
+		Turns:     2,
+		Messages: []llm.Message{
+			{Role: "user", Content: "Check the 🚀 emoji and café content"},
+			{Role: "assistant", Content: "Found go-vector persistência in the code"},
+		},
+	}
+	if err := store.Save(unicodeSess); err != nil {
+		t.Fatalf("save unicode session: %v", err)
+	}
+
+	tool := newSessionSearchTool(store)
+
+	t.Run("empty messages dont cause panic", func(t *testing.T) {
+		result := callSessionSearch(t, tool, `{"action":"search","query":"go-vector changes","limit":5}`)
+		// Should not panic — just return whatever it finds
+		var r sessionSearchBasicResult
+		if err := json.Unmarshal([]byte(result), &r); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if r.Error != "" && r.Error != "null" {
+			t.Errorf("unexpected error: %s", r.Error)
+		}
+	})
+
+	t.Run("system-only messages not matched", func(t *testing.T) {
+		result := callSessionSearch(t, tool, `{"action":"search","query":"helpful assistant memory","limit":5}`)
+		var resp struct {
+			Sessions []struct {
+				ID string `json:"id"`
+			} `json:"sessions"`
+		}
+		if err := json.Unmarshal([]byte(result), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		for _, s := range resp.Sessions {
+			if s.ID == "test-system-only" {
+				t.Error("system-only session should not match — system messages are excluded from deepSearch")
+			}
+		}
+	})
+
+	t.Run("unicode content with two tokens matches", func(t *testing.T) {
+		result := callSessionSearch(t, tool, `{"action":"search","query":"go-vector persistência","limit":5}`)
+		var resp struct {
+			Sessions []struct {
+				ID string `json:"id"`
+			} `json:"sessions"`
+		}
+		if err := json.Unmarshal([]byte(result), &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		found := false
+		for _, s := range resp.Sessions {
+			if s.ID == "test-unicode" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Error("unicode session should match 'go-vector persistência'")
+		}
+	})
+}
