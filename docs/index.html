@@ -58,6 +58,7 @@
     .hero .sub {
       font-size: 1.15rem; color: var(--text-secondary); margin-top: 16px; max-width: 600px; margin-inline: auto;
     }
+    .version-badge { text-align: center; margin: 24px 0 16px; }
     .hero .sub .size { color: var(--green); font-weight: 600; }
     .install-block {
       display: inline-flex; align-items: center; padding: 4px 4px 4px 20px;
@@ -320,7 +321,7 @@
   <div class="container">
     <h1>odek</h1>
     <p class="sub"><span class="size">~12 MB</span> static binary · Zero frameworks.<br>Think, therefore act.</p>
-    <a href="https://github.com/BackendStack21/odek/releases" target="_blank" style="margin-top:12px;display:inline-block;"><img src="https://img.shields.io/github/v/release/BackendStack21/odek?style=flat&label=&color=38bdf8&labelColor=0a1628" alt="Latest release" style="height:28px;border-radius:6px;"></a>
+    <div class="version-badge"><a href="https://github.com/BackendStack21/odek/releases" target="_blank"><img src="https://img.shields.io/github/v/release/BackendStack21/odek?style=flat&label=&color=38bdf8&labelColor=0a1628" alt="Latest release" style="height:28px;border-radius:6px;"></a></div>
 
     <div class="install-block">
       <code>go install github.com/BackendStack21/odek/cmd/odek@latest</code>
