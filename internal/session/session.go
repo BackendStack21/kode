@@ -500,6 +500,10 @@ func (s *Store) Cleanup(before time.Time) (int, error) {
 					return deleted, fmt.Errorf("session: delete %q: %w", id, err)
 				}
 				delete(idx, id)
+				// Remove from vector index to prevent stale entries.
+				if s.Vec != nil {
+					_ = s.Vec.Remove(id) // best-effort
+				}
 				deleted++
 			}
 		}
