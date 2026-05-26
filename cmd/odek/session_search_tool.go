@@ -24,7 +24,7 @@ func newSessionSearchTool(store *session.Store) *sessionSearchTool {
 }
 
 func (t *sessionSearchTool) Name() string        { return "session_search" }
-func (t *sessionSearchTool) Description() string  { return `Search and retrieve past agent sessions. Actions: list (recent sessions), search (keyword search), get (full session by ID), find (sessions by task/title). Use this when the user asks about previously discussed topics.` }
+func (t *sessionSearchTool) Description() string  { return `Search and retrieve past agent sessions. Actions: list (recent sessions), search (semantic keyword search through full message content), get (full session by ID), find (sessions by task/title). Uses semantic vector search for the search action — it finds sessions whose conversation content is relevant to your query, even when titles don't match. Use OR between keywords for broad recall.` }
 
 type sessionSearchArgs struct {
 	Action string `json:"action"`          // list, search, get, find
@@ -43,6 +43,7 @@ type sessionSummary struct {
 
 type sessionSearchResult struct {
 	Action   string           `json:"action"`
+	Query    string           `json:"query,omitempty"` // echoed back for the LLM
 	Sessions []sessionSummary `json:"sessions,omitempty"`
 	Count    int              `json:"count"`
 	// For get action — full session details
@@ -154,6 +155,42 @@ func (t *sessionSearchTool) handleSearch(query string, limit int) (string, error
 
 	tokens := strings.Fields(strings.ToLower(query))
 
+	// Phase 1: Vector search — semantic matching over conversation content.
+	// This finds sessions whose message content is semantically similar to
+	// the query, even when no keywords match the session title.
+	if t.store.Vec != nil && t.store.Vec.Ready() {
+		vecResults, err := t.store.Vec.Search(query, limit)
+		if err == nil && len(vecResults) > 0 {
+			// Load full session metadata for each result.
+			results := make([]sessionSummary, 0, len(vecResults))
+			for _, vr := range vecResults {
+				sess, err := t.store.Load(vr.SessionID)
+				if err != nil || sess == nil {
+					continue
+				}
+				scoreLabel := fmt.Sprintf("(score: %.3f)", vr.Score)
+				results = append(results, sessionSummary{
+					ID:        sess.ID,
+					Task:      sess.Task + " " + scoreLabel,
+					Turns:     sess.Turns,
+					CreatedAt: sess.CreatedAt.UTC().Format(time.RFC3339),
+					UpdatedAt: sess.UpdatedAt.UTC().Format(time.RFC3339),
+					Model:     sess.Model,
+				})
+			}
+			if len(results) > 0 {
+				return jsonResult(sessionSearchResult{
+					Action:   "search",
+					Query:    query,
+					Sessions: results,
+					Count:    len(results),
+				})
+			}
+		}
+		// Vector search returned no results — fall through to keyword.
+	}
+
+	// Phase 2: Keyword search (existing logic — title + deep scan).
 	// Get generous candidate list
 	listLimit := limit * 4
 	if listLimit < 20 {
@@ -169,7 +206,7 @@ func (t *sessionSearchTool) handleSearch(query string, limit int) (string, error
 		})
 	}
 
-	// Phase 1: score by task + buffer
+	// Phase 2a: score by task + buffer
 	var matches []sessionMatch
 	for _, s := range sessions {
 		m := t.scoreSession(tokens, s)
@@ -178,7 +215,7 @@ func (t *sessionSearchTool) handleSearch(query string, limit int) (string, error
 		}
 	}
 
-	// Phase 2: if not enough results, load full sessions and search messages
+	// Phase 2b: if not enough results, load full sessions and search messages
 	if len(matches) < limit {
 		matches = t.deepSearch(tokens, sessions, matches, limit)
 	}
@@ -211,6 +248,7 @@ func (t *sessionSearchTool) handleSearch(query string, limit int) (string, error
 
 	return jsonResult(sessionSearchResult{
 		Action:   "search",
+		Query:    query,
 		Sessions: results,
 		Count:    len(results),
 	})

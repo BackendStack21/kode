@@ -140,6 +140,12 @@ func telegramCmd(args []string) error {
 		return err
 	}
 
+	// Initialize semantic search index.
+	if err := store.InitVectorIndex(); err != nil {
+		fmt.Fprintf(os.Stderr, "odek telegram: vector index: %v\n", err)
+		// Non-fatal — search falls back to metadata-only.
+	}
+
 	// 6. Create session manager (per-chat Telegram session cache)
 	//    with the configured session TTL (default 24h).
 	sessionManager := telegram.NewSessionManager(store, time.Duration(cfg.SessionTTL)*time.Hour)

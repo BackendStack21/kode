@@ -53,6 +53,11 @@ type Session struct {
 type Store struct {
 	dir string // e.g. /home/user/.odek/sessions/
 	mu  sync.Mutex
+
+	// Vec is the optional semantic search index. When non-nil, every
+	// Save/Delete/Cleanup call updates the vector index automatically.
+	// Call InitVectorIndex() to initialize.
+	Vec *VectorIndex
 }
 
 // NewStore creates a session store rooted at ~/.odek/sessions/.
@@ -67,6 +72,17 @@ func NewStore() (*Store, error) {
 		return nil, fmt.Errorf("session: create dir: %w", err)
 	}
 	return &Store{dir: dir}, nil
+}
+
+// InitVectorIndex initializes the semantic search index. Must be called
+// after NewStore, before the first Save. Safe to call multiple times —
+// subsequent calls are no-ops.
+func (s *Store) InitVectorIndex() error {
+	if s.Vec != nil && s.Vec.Ready() {
+		return nil // already initialized
+	}
+	s.Vec = new(VectorIndex)
+	return s.Vec.Init(s.dir)
 }
 
 // ── ID Generation ──────────────────────────────────────────────────────
@@ -293,7 +309,18 @@ func (s *Store) saveLocked(sess *Session) error {
 	// Update the index atomically.
 	idx := s.loadIndex()
 	idx[sess.ID] = indexEntry(sess)
-	return s.saveIndexLocked(idx)
+	if err := s.saveIndexLocked(idx); err != nil {
+		return err
+	}
+
+	// Update the vector index for semantic search.
+	if s.Vec != nil {
+		if err := s.Vec.Add(sess.ID, sess.Messages); err != nil {
+			return fmt.Errorf("session: vector index add: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // Load reads a session from disk by ID. Returns an error if the file
@@ -443,7 +470,16 @@ func (s *Store) Delete(id string) error {
 	// Remove from index atomically.
 	idx := s.loadIndex()
 	delete(idx, id)
-	return s.saveIndexLocked(idx)
+	if err := s.saveIndexLocked(idx); err != nil {
+		return err
+	}
+
+	// Remove from vector index.
+	if s.Vec != nil {
+		_ = s.Vec.Remove(id) // best-effort
+	}
+
+	return nil
 }
 
 // Cleanup deletes all sessions whose UpdatedAt is before the given time.

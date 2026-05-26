@@ -847,3 +847,199 @@ func TestSaveIndexLocked_WriteError(t *testing.T) {
 		t.Log("Save error after removing dir (may succeed if dir is recreated)")
 	}
 }
+
+// ── Vector Index Tests ───────────────────────────────────────────────────
+
+func TestNewVectorIndex_Search(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a vector index against an empty dir.
+	vi := new(VectorIndex)
+	if err := vi.Init(dir); err != nil {
+		t.Fatalf("Init(empty dir): %v", err)
+	}
+	if !vi.Ready() {
+		t.Fatal("Ready() should be true after Init")
+	}
+
+	// Add two sessions.
+	msgs1 := []llm.Message{
+		{Role: "user", Content: "Summarize previous odek session"},
+		{Role: "assistant", Content: "Here is a summary of your past sessions including TDD and code review"},
+	}
+	msgs2 := []llm.Message{
+		{Role: "user", Content: "Deploy the application to production"},
+		{Role: "assistant", Content: "Use kubectl to apply the deployment manifest"},
+	}
+	msgs3 := []llm.Message{
+		{Role: "user", Content: "say hello"},
+		{Role: "assistant", Content: "hello!"},
+	}
+
+	if err := vi.Add("sess-tdd", msgs1); err != nil {
+		t.Fatalf("Add tdd: %v", err)
+	}
+	if err := vi.Add("sess-deploy", msgs2); err != nil {
+		t.Fatalf("Add deploy: %v", err)
+	}
+	if err := vi.Add("sess-hello", msgs3); err != nil {
+		t.Fatalf("Add hello: %v", err)
+	}
+
+	// Search for "code review" — should rank sess-tdd highest.
+	results, err := vi.Search("code review", 3)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result for 'code review'")
+	}
+	// sess-tdd should be in the top results.
+	foundTDD := false
+	for _, r := range results {
+		if r.SessionID == "sess-tdd" {
+			foundTDD = true
+			break
+		}
+	}
+	if !foundTDD {
+		t.Errorf("sess-tdd not found in results for 'code review': got %+v", results)
+	}
+
+	// Search for "deploy kubectl" — should rank sess-deploy highest.
+	results, err = vi.Search("deploy kubectl", 3)
+	if err != nil {
+		t.Fatalf("Search deploy: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result for 'deploy kubectl'")
+	}
+	foundDeploy := false
+	for _, r := range results {
+		if r.SessionID == "sess-deploy" {
+			foundDeploy = true
+			break
+		}
+	}
+	if !foundDeploy {
+		t.Errorf("sess-deploy not found for 'deploy kubectl': got %+v", results)
+	}
+}
+
+func TestVectorIndex_Remove(t *testing.T) {
+	dir := t.TempDir()
+	vi := new(VectorIndex)
+	if err := vi.Init(dir); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	msgs := []llm.Message{
+		{Role: "user", Content: "fix the login bug"},
+		{Role: "assistant", Content: "fixed the authentication issue"},
+	}
+	if err := vi.Add("sess-login", msgs); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Confirm it's searchable.
+	results, err := vi.Search("login", 3)
+	if err != nil || len(results) == 0 {
+		t.Fatalf("expected results before remove: %v, %v", results, err)
+	}
+
+	// Remove.
+	if err := vi.Remove("sess-login"); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+
+	// Should no longer be found.
+	results, err = vi.Search("login", 3)
+	if err != nil {
+		t.Fatalf("Search after remove: %v", err)
+	}
+	for _, r := range results {
+		if r.SessionID == "sess-login" {
+			t.Error("sess-login found after Remove")
+		}
+	}
+}
+
+func TestVectorIndex_Persistence(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create and populate.
+	vi1 := new(VectorIndex)
+	if err := vi1.Init(dir); err != nil {
+		t.Fatalf("Init vi1: %v", err)
+	}
+
+	msgs := []llm.Message{
+		{Role: "user", Content: "how does the memory system work"},
+		{Role: "assistant", Content: "the memory system persists facts and episodes across sessions"},
+	}
+	if err := vi1.Add("sess-memory", msgs); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Create a fresh index pointing to the same dir — should load persisted state.
+	vi2 := new(VectorIndex)
+	if err := vi2.Init(dir); err != nil {
+		t.Fatalf("Init vi2: %v", err)
+	}
+
+	results, err := vi2.Search("memory system", 3)
+	if err != nil {
+		t.Fatalf("Search from restored index: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("no results from persisted vector index")
+	}
+	found := false
+	for _, r := range results {
+		if r.SessionID == "sess-memory" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("sess-memory not found from persisted index: %+v", results)
+	}
+}
+
+func TestVectorIndex_EmptySearch(t *testing.T) {
+	dir := t.TempDir()
+	vi := new(VectorIndex)
+	if err := vi.Init(dir); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	results, err := vi.Search("anything", 3)
+	if err != nil {
+		t.Fatalf("Search on empty index: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("expected 0 results from empty index, got %d", len(results))
+	}
+}
+
+func TestBuildConversationText(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "system", Content: "you are an expert"},
+		{Role: "user", Content: "fix the bug"},
+		{Role: "assistant", Content: "found the off-by-one error"},
+		{Role: "tool", Content: `{"result": "ok"}`},
+	}
+	text := BuildConversationText(msgs)
+	if !strings.Contains(text, "[User] fix the bug") {
+		t.Errorf("missing user message in: %q", text)
+	}
+	if !strings.Contains(text, "[Assistant] found the off-by-one error") {
+		t.Errorf("missing assistant message in: %q", text)
+	}
+	if strings.Contains(text, "you are an expert") {
+		t.Error("system message should be excluded")
+	}
+	if strings.Contains(text, "tool") {
+		t.Error("tool messages should be excluded")
+	}
+}

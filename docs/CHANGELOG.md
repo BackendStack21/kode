@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.58.0 (2026-05-26) — Semantic Session Search (go-vector)
+
+### Features
+- **Semantic session search** — `session_search` now uses go-vector's RandomProjections embedder to find sessions by semantic similarity of their conversation content, not just keyword matching on titles. A search for "code review" now finds sessions discussing code review, even when their titles are "tg-8592463065".
+- **Automatic vector indexing** — every session Save() embeds the user+assistant conversation text using a pure-Go random projection (Achlioptas 2003) and persists the vector in `~/.odek/sessions/vectors.gob`. New sessions are indexed automatically. Index is rebuilt from scratch on first startup, then loaded from persisted gob files.
+- **`BuildConversationText()`** — new helper extracts user queries + assistant responses for embedding, excluding system prompts and tool noise.
+
+### Infrastructure
+- **`go-vector` upgraded v1.1.1→v1.2.0** — adds `SaveEmbedder()`/`LoadEmbedder()` methods to RandomProjections for embedder state persistence (seed 42 deterministic, 256-dim sparse random projection).
+- **`internal/session/vector_index.go`** — new VectorIndex type wrapping go-vector's Store + RandomProjections with Init/Add/Remove/Search/Save lifecycle. Thread-safe.
+
+### Testing
+- **5 new tests** — `TestNewVectorIndex_Search` (semantic ranking), `TestVectorIndex_Remove` (idempotent delete), `TestVectorIndex_Persistence` (survives restart), `TestVectorIndex_EmptySearch` (graceful on empty), `TestBuildConversationText` (user/assistant only).
+
 ## v0.57.0 (2026-05-26) — search_files & multi_grep Performance
 
 ### Performance
