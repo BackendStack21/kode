@@ -1070,6 +1070,38 @@ func (t *globTool) Call(argsJSON string) (result string, err error) {
 
 	// If pattern has path separators, use filepath.Walk
 	if strings.Contains(args.Pattern, "/") || strings.Contains(args.Pattern, "\\") {
+		// Support ** (recursive globstar) by converting to regex.
+		// filepath.Match does NOT support ** — it treats it as literal "*".
+		// When ** is present, compile a regex and use it for matching.
+		var globRe *regexp.Regexp
+		if strings.Contains(args.Pattern, "**") {
+			// Convert glob pattern to regex:
+			//   **  ->  .*   (match any chars including path separators)
+			//   *   ->  [^/]* (match any chars except path separators)
+			//   ?   ->  [^/]  (match any single char except path separator)
+			// Escape other regex meta-characters.
+			var reStr strings.Builder
+			reStr.WriteString("^")
+			for i := 0; i < len(args.Pattern); i++ {
+				ch := args.Pattern[i]
+				switch {
+				case ch == '*' && i+1 < len(args.Pattern) && args.Pattern[i+1] == '*':
+					reStr.WriteString(".*")
+					i++
+				case ch == '*':
+					reStr.WriteString("[^/]*")
+				case ch == '?':
+					reStr.WriteString("[^/]")
+				case ch == '.' || ch == '+' || ch == '^' || ch == '$' || ch == '|' || ch == '(' || ch == ')' || ch == '[' || ch == ']' || ch == '{' || ch == '}' || ch == '\\':
+					reStr.WriteByte('\\')
+					reStr.WriteByte(ch)
+				default:
+					reStr.WriteByte(ch)
+				}
+			}
+			reStr.WriteString("$")
+			globRe, _ = regexp.Compile(reStr.String())
+		}
 		filepath.Walk(args.Path, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info == nil {
 				return nil
@@ -1079,12 +1111,21 @@ func (t *globTool) Call(argsJSON string) (result string, err error) {
 			if info.Mode()&os.ModeSymlink != 0 {
 				return nil
 			}
-			match, _ := filepath.Match(args.Pattern, path)
-			if !match {
-				// Also try relative to root
-				rel, err := filepath.Rel(args.Path, path)
-				if err == nil {
-					match, _ = filepath.Match(args.Pattern, rel)
+			var match bool
+			if globRe != nil {
+				// Use regex matching for ** patterns.
+				rel, _ := filepath.Rel(args.Path, path)
+				if rel != "" {
+					match = globRe.MatchString(rel)
+				}
+			} else {
+				match, _ = filepath.Match(args.Pattern, path)
+				if !match {
+					// Also try relative to root
+					rel, err := filepath.Rel(args.Path, path)
+					if err == nil {
+						match, _ = filepath.Match(args.Pattern, rel)
+					}
 				}
 			}
 			if match {

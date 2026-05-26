@@ -54,8 +54,15 @@ type sessionSearchResult struct {
 	UpdatedAt string   `json:"updated_at,omitempty"`
 	Model     string   `json:"model,omitempty"`
 	Buffer    []string `json:"buffer,omitempty"`
-	Messages  int      `json:"messages,omitempty"`
+	Messages       int              `json:"messages,omitempty"`
+	SessionMessages []sessionMessage `json:"session_messages,omitempty"`
 	Error     string   `json:"error,omitempty"`
+}
+
+// sessionMessage is a single message in a session.
+type sessionMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
 func (t *sessionSearchTool) Schema() any {
@@ -338,7 +345,17 @@ func (t *sessionSearchTool) handleGet(id string) (string, error) {
 		})
 	}
 
-	msgCount := len(sess.Messages)
+	// Build session messages for the LLM to read.
+	var sessionMessages []sessionMessage
+	for _, m := range sess.Messages {
+		if m.Role == "user" || m.Role == "assistant" {
+			sessionMessages = append(sessionMessages, sessionMessage{
+				Role:    m.Role,
+				Content: m.Content,
+			})
+		}
+	}
+	msgCount := len(sessionMessages)
 	return jsonResult(sessionSearchResult{
 		Action:    "get",
 		ID:        sess.ID,
@@ -349,6 +366,7 @@ func (t *sessionSearchTool) handleGet(id string) (string, error) {
 		Model:     sess.Model,
 		Buffer:    sess.Buffer,
 		Messages:  msgCount,
+		SessionMessages: sessionMessages,
 	})
 }
 
