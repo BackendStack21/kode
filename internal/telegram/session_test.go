@@ -592,8 +592,6 @@ func TestConcurrentSave(t *testing.T) {
 	}
 }
 
-
-
 // TestConcurrentMixed runs GetOrCreate, Save, Load, and Delete
 // concurrently with distinct chat ID ranges per operation to avoid
 // triggering the known post-unlock field race in Save, while still

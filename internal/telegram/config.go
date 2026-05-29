@@ -13,17 +13,17 @@ type TelegramConfig struct {
 	AllowedChats     []int64  `json:"allowed_chats"`
 	AllowedUsers     []int64  `json:"allowed_users"`
 	BotUsername      string   `json:"bot_username"`
-	PollInterval     int      `json:"poll_interval"`      // seconds, default 1
-	PollTimeout      int      `json:"poll_timeout"`       // seconds, default 30
-	MaxMsgLength     int      `json:"max_msg_length"`     // default 4096
-	DailyTokenBudget int64    `json:"daily_token_budget"` // 0 = unlimited (default)
-	SessionTTL       int      `json:"session_ttl_hours"`  // hours, default 24
+	PollInterval     int      `json:"poll_interval"`         // seconds, default 1
+	PollTimeout      int      `json:"poll_timeout"`          // seconds, default 30
+	MaxMsgLength     int      `json:"max_msg_length"`        // default 4096
+	DailyTokenBudget int64    `json:"daily_token_budget"`    // 0 = unlimited (default)
+	SessionTTL       int      `json:"session_ttl_hours"`     // hours, default 24
 	AgentTimeout     int      `json:"agent_timeout_seconds"` // max agent run duration, default 900 (15m), 0 = unlimited
 	FallbackURLs     []string `json:"fallback_urls"`
-	HealthAddr       string   `json:"health_addr"`        // e.g. "127.0.0.1:9090" (empty = disabled)
-	LogLevel         string   `json:"log_level"` // "debug","info","warn","error" (default "info")
-	LogFile          string   `json:"log_file"`  // path or empty for stderr
-	DefaultChatID    int64    `json:"default_chat_id"`    // for --deliver and cron delivery
+	HealthAddr       string   `json:"health_addr"`     // e.g. "127.0.0.1:9090" (empty = disabled)
+	LogLevel         string   `json:"log_level"`       // "debug","info","warn","error" (default "info")
+	LogFile          string   `json:"log_file"`        // path or empty for stderr
+	DefaultChatID    int64    `json:"default_chat_id"` // for --deliver and cron delivery
 }
 
 // DefaultConfig returns a TelegramConfig with sensible defaults.

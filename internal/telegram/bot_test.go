@@ -1710,4 +1710,3 @@ func TestIsFatalAPIError(t *testing.T) {
 		}
 	}
 }
-

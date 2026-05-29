@@ -20,11 +20,11 @@ import (
 // session.Store. Each Telegram chat gets its own session identified by
 // "tg-<chatID>". An in-memory cache avoids redundant disk reads.
 type SessionManager struct {
-	Store          *session.Store
-	Cache          map[int64]*ChatSession
-	Mu             sync.RWMutex
-	BaseDir        string
-	SessionTTL     time.Duration
+	Store           *session.Store
+	Cache           map[int64]*ChatSession
+	Mu              sync.RWMutex
+	BaseDir         string
+	SessionTTL      time.Duration
 	clarifyChannels sync.Map // map[int64]chan string — per-chat clarify response channels
 }
 

@@ -10,24 +10,24 @@ const (
 
 // Update represents an incoming Telegram update.
 type Update struct {
-	ID            int             `json:"update_id"`
-	Message       *Message        `json:"message,omitempty"`
-	EditedMessage *Message        `json:"edited_message,omitempty"`
-	CallbackQuery *CallbackQuery  `json:"callback_query,omitempty"`
+	ID            int            `json:"update_id"`
+	Message       *Message       `json:"message,omitempty"`
+	EditedMessage *Message       `json:"edited_message,omitempty"`
+	CallbackQuery *CallbackQuery `json:"callback_query,omitempty"`
 }
 
 // Message represents a Telegram message.
 type Message struct {
-	ID          int                    `json:"message_id"`
-	From        *User                  `json:"from,omitempty"`
-	Chat        *Chat                  `json:"chat,omitempty"`
-	Date        int                    `json:"date,omitempty"`
-	Text        string                 `json:"text,omitempty"`
-	Entities    []MessageEntity        `json:"entities,omitempty"`
-	Photo       []PhotoSize            `json:"photo,omitempty"`
-	Voice       *Voice                 `json:"voice,omitempty"`
-	Document    *Document              `json:"document,omitempty"`
-	ReplyMarkup *InlineKeyboardMarkup  `json:"reply_markup,omitempty"`
+	ID          int                   `json:"message_id"`
+	From        *User                 `json:"from,omitempty"`
+	Chat        *Chat                 `json:"chat,omitempty"`
+	Date        int                   `json:"date,omitempty"`
+	Text        string                `json:"text,omitempty"`
+	Entities    []MessageEntity       `json:"entities,omitempty"`
+	Photo       []PhotoSize           `json:"photo,omitempty"`
+	Voice       *Voice                `json:"voice,omitempty"`
+	Document    *Document             `json:"document,omitempty"`
+	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
 }
 
 // User represents a Telegram user or bot.
@@ -132,36 +132,36 @@ type WebhookInfo struct {
 
 // SendOpts contains optional parameters for SendMessage.
 type SendOpts struct {
-	ParseMode             string                 `json:"parse_mode,omitempty"`
-	ReplyMarkup           *InlineKeyboardMarkup  `json:"reply_markup,omitempty"`
-	DisableWebPagePreview bool                   `json:"disable_web_page_preview,omitempty"`
-	ReplyToMessageID      int                    `json:"reply_to_message_id,omitempty"`
+	ParseMode             string                `json:"parse_mode,omitempty"`
+	ReplyMarkup           *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
+	DisableWebPagePreview bool                  `json:"disable_web_page_preview,omitempty"`
+	ReplyToMessageID      int                   `json:"reply_to_message_id,omitempty"`
 }
 
 // UpdateResponse is the generic Telegram API response for a single update-related request.
 type UpdateResponse struct {
-	OK          bool              `json:"ok"`
-	Result      json.RawMessage   `json:"result,omitempty"`
-	Description string            `json:"description,omitempty"`
-	ErrorCode   int               `json:"error_code,omitempty"`
+	OK          bool            `json:"ok"`
+	Result      json.RawMessage `json:"result,omitempty"`
+	Description string          `json:"description,omitempty"`
+	ErrorCode   int             `json:"error_code,omitempty"`
 }
 
 // UserProfilePhotos contains a set of user profile photos.
 type UserProfilePhotos struct {
-	TotalCount int          `json:"total_count,omitempty"`
+	TotalCount int           `json:"total_count,omitempty"`
 	Photos     [][]PhotoSize `json:"photos,omitempty"`
 }
 
 // FileResponse is the Telegram API response for getFile.
 type FileResponse struct {
-	OK     bool   `json:"ok"`
-	Result *File  `json:"result,omitempty"`
+	OK     bool  `json:"ok"`
+	Result *File `json:"result,omitempty"`
 }
 
 // GetUpdatesResponse is the Telegram API response for getUpdates.
 type GetUpdatesResponse struct {
-	OK     bool      `json:"ok"`
-	Result []Update  `json:"result,omitempty"`
+	OK     bool     `json:"ok"`
+	Result []Update `json:"result,omitempty"`
 }
 
 // SendMessageResponse is the Telegram API response for sendMessage.

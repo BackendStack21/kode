@@ -48,13 +48,13 @@ type pendingRequest struct {
 //
 // Thread-safe: PromptCommand and HandleCallback are safe to call concurrently.
 type TelegramApprover struct {
-	bot     *Bot
-	pending map[string]*pendingRequest // requestID -> pending request
-	mu      sync.Mutex
-	trusted map[danger.RiskClass]bool
+	bot      *Bot
+	pending  map[string]*pendingRequest // requestID -> pending request
+	mu       sync.Mutex
+	trusted  map[danger.RiskClass]bool
 	trustAll bool // when true, all PromptCommand calls auto-approve
-	log     Logger
-	cancel  chan struct{} // closed by Cancel() to interrupt waiting PromptCommand
+	log      Logger
+	cancel   chan struct{} // closed by Cancel() to interrupt waiting PromptCommand
 
 	// ChatID is the Telegram chat where approval prompts are sent.
 	ChatID int64

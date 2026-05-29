@@ -94,16 +94,16 @@ func (h *Handler) DeleteApprover(chatID int64) {
 // NewHandler creates a Handler with the given bot and default settings.
 func NewHandler(bot *Bot) *Handler {
 	return &Handler{
-		Bot:    bot,
+		Bot: bot,
 		Config: HandlerConfig{
 			MaxMsgLength: 4096,
 		},
-		log: NewNopLogger(),
-		OnTextMessage:   defaultTextHandler(),
-		OnCallbackQuery: defaultCallbackHandler(),
-		OnCommand:       defaultCommandHandler(),
-		OnVoiceMessage:  defaultVoiceHandler(bot),
-		OnPhotoMessage:  defaultPhotoHandler(bot),
+		log:               NewNopLogger(),
+		OnTextMessage:     defaultTextHandler(),
+		OnCallbackQuery:   defaultCallbackHandler(),
+		OnCommand:         defaultCommandHandler(),
+		OnVoiceMessage:    defaultVoiceHandler(bot),
+		OnPhotoMessage:    defaultPhotoHandler(bot),
 		OnDocumentMessage: defaultDocumentHandler(bot),
 	}
 }
@@ -266,7 +266,7 @@ func (h *Handler) handleMessage(msg *Message) {
 				h.SendResponse(msg.Chat.ID, resp, msg.ID)
 			}
 		}
-	case msg.Text != "": 
+	case msg.Text != "":
 		if h.OnTextMessage != nil {
 			resp, err := h.OnTextMessage(msg.Chat.ID, msg.ID, msg.Text)
 			if err != nil {
@@ -578,7 +578,6 @@ func extractCommand(text string) (cmd string, args string) {
 
 	return cmdPart, args
 }
-
 
 // approvalToast returns a toast message for an approval callback action.
 // Parses the callback data prefix to determine the user's choice.

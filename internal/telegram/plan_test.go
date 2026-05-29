@@ -260,9 +260,9 @@ func TestMostRecentPlan_Empty(t *testing.T) {
 
 func TestFirstLine(t *testing.T) {
 	tests := []struct {
-		input   string
-		maxLen  int
-		expect  string
+		input  string
+		maxLen int
+		expect string
 	}{
 		{"# Heading\ncontent", 80, "Heading"},
 		{"single line", 80, "single line"},
