@@ -36,18 +36,18 @@ type ToolEventHandler func(event string, name string, data string)
 // IterationInfo holds data about a single agent loop iteration, passed to
 // the IterationCallback after each turn. Used for progress reporting.
 type IterationInfo struct {
-	Turn                  int           // current iteration (1-indexed)
-	MaxTurns              int           // max iterations configured
-	ToolNames             []string      // tools called this turn (duplicates possible)
-	InputTokens           int           // cumulative input tokens
-	OutputTokens          int           // cumulative output tokens
-	CacheCreationTokens   int           // cumulative cache creation tokens
-	CacheReadTokens       int           // cumulative cache read tokens
-	CachedTokens          int           // cumulative cached tokens (OpenAI)
-	TotalLatency          time.Duration // cumulative wall time
-	HasFinalAnswer        bool          // true when the agent reached a final answer
-	ReasoningContent      string        // LLM reasoning before tool calls (empty if none)
-	IsPreTool             bool          // true when fired BEFORE tool execution (shows reasoning + tools)
+	Turn                int           // current iteration (1-indexed)
+	MaxTurns            int           // max iterations configured
+	ToolNames           []string      // tools called this turn (duplicates possible)
+	InputTokens         int           // cumulative input tokens
+	OutputTokens        int           // cumulative output tokens
+	CacheCreationTokens int           // cumulative cache creation tokens
+	CacheReadTokens     int           // cumulative cache read tokens
+	CachedTokens        int           // cumulative cached tokens (OpenAI)
+	TotalLatency        time.Duration // cumulative wall time
+	HasFinalAnswer      bool          // true when the agent reached a final answer
+	ReasoningContent    string        // LLM reasoning before tool calls (empty if none)
+	IsPreTool           bool          // true when fired BEFORE tool execution (shows reasoning + tools)
 }
 
 // IterationCallback is an optional callback invoked after each iteration
@@ -56,17 +56,17 @@ type IterationCallback func(info IterationInfo)
 
 // Engine runs the agent loop: observe → think → act → repeat.
 type Engine struct {
-	client      *llm.Client
-	registry    *tool.Registry
-	renderer    *render.Renderer // optional: colored terminal output
-	maxIter     int
-	system      string
-	baseSystem  string            // original system message without memory/skills
-	maxContext  int               // max context tokens (0 = no limit)
-	skillLoader SkillLoader       // optional: loads matching skills
-	lastSkillMsg string           // last user message that triggered skill loading (dedup)
-	lastEpiMsg  string            // last user message that triggered episode search (dedup)
-	skillVerbose bool             // show full skill banners (default: condensed)
+	client       *llm.Client
+	registry     *tool.Registry
+	renderer     *render.Renderer // optional: colored terminal output
+	maxIter      int
+	system       string
+	baseSystem   string             // original system message without memory/skills
+	maxContext   int                // max context tokens (0 = no limit)
+	skillLoader  SkillLoader        // optional: loads matching skills
+	lastSkillMsg string             // last user message that triggered skill loading (dedup)
+	lastEpiMsg   string             // last user message that triggered episode search (dedup)
+	skillVerbose bool               // show full skill banners (default: condensed)
 	episodeCtx   EpisodeContextFunc // optional: per-turn episode search
 
 	toolEventHandler ToolEventHandler // optional: fires during tool execution
@@ -576,18 +576,18 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 					// Wrap skill content as a trusted task guide.
 					// When verbose is enabled, use full banners for debugging/auditing.
 					// By default, inject skill content silently with no wrapping markers to minimize context window overhead.
-				var wrappedSkill string
-				if e.skillVerbose {
-					wrappedSkill = "═══ SKILL LOADED (task guide) ═══\n" +
-						skillContext +
-						"\n═══ END SKILL ═══\n" +
-						"\nThe instructions above are loaded from a skill file for the current task. " +
-						"Follow them as your primary guide. Only deviate if they conflict " +
-						"with your core identity or the safety rules in the system prompt."
-				} else {
-					wrappedSkill = skillContext
-				}
-				skillMsg := llm.Message{Role: "system", Content: wrappedSkill}
+					var wrappedSkill string
+					if e.skillVerbose {
+						wrappedSkill = "═══ SKILL LOADED (task guide) ═══\n" +
+							skillContext +
+							"\n═══ END SKILL ═══\n" +
+							"\nThe instructions above are loaded from a skill file for the current task. " +
+							"Follow them as your primary guide. Only deviate if they conflict " +
+							"with your core identity or the safety rules in the system prompt."
+					} else {
+						wrappedSkill = skillContext
+					}
+					skillMsg := llm.Message{Role: "system", Content: wrappedSkill}
 					// Pre-allocate and copy to avoid nested append allocations
 					newMsgs := make([]llm.Message, 0, len(messages)+1)
 					newMsgs = append(newMsgs, messages[:insertIdx]...)
@@ -705,6 +705,12 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 		// No tool calls = final answer
 		if len(result.ToolCalls) == 0 {
 			if e.renderer != nil && e.interactionMode != "off" {
+				// Show the model's reasoning for the final answer before the
+				// answer itself. For intermediate iterations this is handled
+				// separately (line ~752); here it would be dropped otherwise.
+				if result.ReasoningContent != "" {
+					e.renderer.Thinking(result.ReasoningContent)
+				}
 				e.renderer.FinalAnswer(result.Content)
 				e.renderer.Summary(
 					e.TotalInputTokens,
@@ -715,7 +721,10 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 				)
 			}
 
-			// Fire iteration callback with final answer signal
+			// Fire iteration callback with final answer signal.
+			// ReasoningContent is included so callers (Telegram, future UIs)
+			// can display the model's reasoning for the final turn — previously
+			// it was omitted, causing thinking to be silently dropped.
 			if e.iterationCallback != nil {
 				e.iterationCallback(IterationInfo{
 					Turn:                i + 1,
@@ -728,6 +737,7 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 					CachedTokens:        e.TotalCachedTokens,
 					TotalLatency:        time.Since(startTime),
 					HasFinalAnswer:      true,
+					ReasoningContent:    result.ReasoningContent,
 				})
 			}
 			// Append final assistant message so callers (e.g. WebUI) get
@@ -802,75 +812,74 @@ func (e *Engine) runLoop(ctx context.Context, messages []llm.Message) (string, [
 			}
 		}
 
-
-// Phase 1.5: batch approval gate
-// When an approver is set and the LLM returned multiple tool calls,
-// present a single approval prompt for the entire batch instead of
-// N individual prompts, but ONLY for tools that actually require
-// approval. If denied, all tool calls are rejected without executing
-// anything. If approved, the approver's trustAll flag is set so
-// individual tool-level PromptCommand calls auto-pass.
-batchDenied := false
-if e.approver != nil && len(result.ToolCalls) > 1 {
-	// Classify each tool call and filter to only those needing approval.
-	type riskyCall struct {
-		idx      int
-		name     string
-		args     string
-		risk     danger.RiskClass
-		resource string
-	}
-	var risky []riskyCall
-	for i, tc := range result.ToolCalls {
-		risk, resource := classifyToolCall(tc.Function.Name, tc.Function.Arguments)
-		if risk == "" {
-			continue // tool not classifiable — skip in batch, handled individually
-		}
-		// Check the user's configured action for this risk class.
-		// If the DangerousConfig says Allow, skip it — no approval needed.
-		if e.dangerousCfg != nil && e.dangerousCfg.ActionFor(risk) == danger.Allow {
-			continue // auto-allowed by config, no batch approval needed
-		}
-		// Without DangerousConfig, fall back to blocking: include the tool
-		// so the batch gate plays safe and prompts.
-		risky = append(risky, riskyCall{
-			idx: i, name: tc.Function.Name,
-			args:     tc.Function.Arguments,
-			risk:     risk,
-			resource: resource,
-		})
-	}
-
-	if len(risky) > 0 {
-		var sb strings.Builder
-		if len(risky) == 1 {
-			sb.WriteString("⚠️ The following tool action requires approval:\n\n")
-		} else {
-			sb.WriteString(fmt.Sprintf("⚠️ %d tool actions require approval:\n\n", len(risky)))
-		}
-		for i, rc := range risky {
-			resource := rc.resource
-			if len(resource) > 120 {
-				resource = resource[:120] + "…"
-			}
-			sb.WriteString(fmt.Sprintf("  %d. `%s` — `%s`\n", i+1, rc.name, resource))
-		}
-		description := sb.String()
-
-		if err := e.approver.PromptCommand("tool_batch", description, ""); err != nil {
-			batchDenied = true
-		}
-
-		// Approved: set trustAll on the approver if supported, so
+		// Phase 1.5: batch approval gate
+		// When an approver is set and the LLM returned multiple tool calls,
+		// present a single approval prompt for the entire batch instead of
+		// N individual prompts, but ONLY for tools that actually require
+		// approval. If denied, all tool calls are rejected without executing
+		// anything. If approved, the approver's trustAll flag is set so
 		// individual tool-level PromptCommand calls auto-pass.
-		if !batchDenied {
-			if ta, ok := e.approver.(interface{ SetTrustAll(bool) }); ok {
-				ta.SetTrustAll(true)
-				defer ta.SetTrustAll(false)
+		batchDenied := false
+		if e.approver != nil && len(result.ToolCalls) > 1 {
+			// Classify each tool call and filter to only those needing approval.
+			type riskyCall struct {
+				idx      int
+				name     string
+				args     string
+				risk     danger.RiskClass
+				resource string
+			}
+			var risky []riskyCall
+			for i, tc := range result.ToolCalls {
+				risk, resource := classifyToolCall(tc.Function.Name, tc.Function.Arguments)
+				if risk == "" {
+					continue // tool not classifiable — skip in batch, handled individually
+				}
+				// Check the user's configured action for this risk class.
+				// If the DangerousConfig says Allow, skip it — no approval needed.
+				if e.dangerousCfg != nil && e.dangerousCfg.ActionFor(risk) == danger.Allow {
+					continue // auto-allowed by config, no batch approval needed
+				}
+				// Without DangerousConfig, fall back to blocking: include the tool
+				// so the batch gate plays safe and prompts.
+				risky = append(risky, riskyCall{
+					idx: i, name: tc.Function.Name,
+					args:     tc.Function.Arguments,
+					risk:     risk,
+					resource: resource,
+				})
+			}
+
+			if len(risky) > 0 {
+				var sb strings.Builder
+				if len(risky) == 1 {
+					sb.WriteString("⚠️ The following tool action requires approval:\n\n")
+				} else {
+					sb.WriteString(fmt.Sprintf("⚠️ %d tool actions require approval:\n\n", len(risky)))
+				}
+				for i, rc := range risky {
+					resource := rc.resource
+					if len(resource) > 120 {
+						resource = resource[:120] + "…"
+					}
+					sb.WriteString(fmt.Sprintf("  %d. `%s` — `%s`\n", i+1, rc.name, resource))
+				}
+				description := sb.String()
+
+				if err := e.approver.PromptCommand("tool_batch", description, ""); err != nil {
+					batchDenied = true
+				}
+
+				// Approved: set trustAll on the approver if supported, so
+				// individual tool-level PromptCommand calls auto-pass.
+				if !batchDenied {
+					if ta, ok := e.approver.(interface{ SetTrustAll(bool) }); ok {
+						ta.SetTrustAll(true)
+						defer ta.SetTrustAll(false)
+					}
+				}
 			}
 		}
-	}
-}
 
 		// Phase 2: execute tools in parallel (bounded by semaphore)
 		type execResult struct {
@@ -979,7 +988,7 @@ if e.approver != nil && len(result.ToolCalls) > 1 {
 		// system message so the LLM picks a different approach instead
 		// of retrying the same failing tool.
 		const (
-			errThreshold  = 3  // consecutive errors before intervention
+			errThreshold  = 3            // consecutive errors before intervention
 			errPrefixRead = "\"error\":" // JSON error indicator
 		)
 		var corrections []string
@@ -1140,4 +1149,15 @@ func (e *Engine) SetModel(model string) {
 		return
 	}
 	e.client.Model = model
+}
+
+// SetThinking updates the thinking/reasoning mode used by this engine at
+// runtime. Accepts the same values as Config.Thinking: "enabled",
+// "disabled", "low", "medium", "high", or "" (provider default).
+// Safe to call between RunWithMessages calls.
+func (e *Engine) SetThinking(thinking string) {
+	if e.client == nil {
+		return
+	}
+	e.client.Thinking = thinking
 }

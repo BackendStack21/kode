@@ -43,7 +43,7 @@ func TestEngine_Run_SimpleAnswer(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	registry := tool.NewRegistry(nil)
 	engine := New(client, registry, 10, "", nil, 0)
 
@@ -86,7 +86,7 @@ func TestEngine_Run_ToolCallLoop(t *testing.T) {
 
 	echoTool := &fakeTool{name: "echo", description: "echoes input", output: "hello output"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 
 	result, err := engine.Run(context.Background(), "Echo hello")
@@ -123,7 +123,7 @@ func TestEngine_Run_MaxIterations(t *testing.T) {
 
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 3, "", nil, 0)
 
 	_, err := engine.Run(context.Background(), "Loop forever")
@@ -138,7 +138,7 @@ func TestEngine_Run_ContextCancellation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, tool.NewRegistry(nil), 10, "", nil, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -172,7 +172,7 @@ func TestEngine_Run_SystemMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, tool.NewRegistry(nil), 10, "You are a test bot.", nil, 0)
 
 	result, err := engine.Run(context.Background(), "hi")
@@ -204,7 +204,7 @@ func TestEngine_Run_ToolNotFound(t *testing.T) {
 	defer server.Close()
 
 	// No tools registered — the tool call will fail
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, tool.NewRegistry(nil), 10, "", nil, 0)
 
 	// The loop should handle the missing tool gracefully — the tool error
@@ -245,7 +245,7 @@ func TestEngine_RunWithMessages(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, tool.NewRegistry(nil), 10, "", nil, 0)
 
 	msgs := []llm.Message{
@@ -279,7 +279,7 @@ func TestEngine_RunWithMessages_TokenAccumulation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	registry := tool.NewRegistry([]tool.Tool{&fakeTool{name: "echo", description: "echo", output: "pong"}})
 	engine := New(client, registry, 10, "", nil, 0)
 
@@ -294,8 +294,8 @@ func TestEngine_RunWithMessages_TokenAccumulation(t *testing.T) {
 	}
 
 	// Iteration tokens: iter1=100/20, iter2=200/40, iter3=500/50
-	wantInput := 100 + 200 + 500   // 800
-	wantOutput := 20 + 40 + 50      // 110
+	wantInput := 100 + 200 + 500 // 800
+	wantOutput := 20 + 40 + 50   // 110
 
 	if engine.TotalInputTokens != wantInput {
 		t.Errorf("TotalInputTokens = %d, want %d", engine.TotalInputTokens, wantInput)
@@ -410,7 +410,7 @@ func TestEngine_Run_ContextCancelDuringLoop(t *testing.T) {
 
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 
 	_, err := engine.Run(ctx, "task")
@@ -441,7 +441,7 @@ func TestEngine_Run_ToolCallError(t *testing.T) {
 
 	failingTool := &errorTool{name: "failing", description: "always fails"}
 	registry := tool.NewRegistry([]tool.Tool{failingTool})
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 
 	// Tool error is fed back as a tool response; server only returns one
@@ -724,7 +724,7 @@ func TestEngine_SkillLoader_CalledOncePerInput(t *testing.T) {
 
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetSkillLoader(skillLoader)
 
@@ -787,7 +787,7 @@ func TestEngine_ToolEventHandler(t *testing.T) {
 
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetToolEventHandler(eventHandler)
 
@@ -824,7 +824,7 @@ func TestEngine_Run_CacheAccumulation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	registry := tool.NewRegistry(nil)
 	engine := New(client, registry, 10, "", nil, 0)
 
@@ -867,7 +867,7 @@ func TestEngine_Run_CacheAccumulation_MultiIter(t *testing.T) {
 
 	echoTool := &fakeTool{name: "echo", description: "echoes", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 
 	result, err := engine.Run(context.Background(), "echo")
@@ -903,7 +903,7 @@ func TestEngine_Run_CacheAccumulation_OpenAI(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	registry := tool.NewRegistry(nil)
 	engine := New(client, registry, 10, "", nil, 0)
 
@@ -929,7 +929,7 @@ func TestEngine_Run_CacheAccumulation_NoCache(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	registry := tool.NewRegistry(nil)
 	engine := New(client, registry, 10, "", nil, 0)
 
@@ -1004,7 +1004,7 @@ func TestPromptTiering_SeparateMemoryMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
 	engine := New(client, registry, 10, "You are a stable base.", nil, 0)
@@ -1062,7 +1062,7 @@ func TestPromptTiering_NoMemoryDropsMessage(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	echoTool := &fakeTool{name: "echo", description: "echo", output: "ok"}
 	registry := tool.NewRegistry([]tool.Tool{echoTool})
 	engine := New(client, registry, 10, "You are a stable base.", nil, 0)
@@ -1090,7 +1090,7 @@ func TestPromptTiering_MemMsgIdxResets(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registryOrNil(), 10, "base system", nil, 0)
 
 	// Run 1 with memory
@@ -1274,7 +1274,7 @@ func TestParallelToolExecution(t *testing.T) {
 	server := parallelToolServer(t, 4, "parallel done")
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetMaxToolParallel(4) // match tool count
 
@@ -1316,7 +1316,7 @@ func TestParallelToolOrdering(t *testing.T) {
 	server := parallelToolServer(t, 4, "ordered done")
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetMaxToolParallel(4)
 
@@ -1347,7 +1347,7 @@ func TestParallelToolSemaphore(t *testing.T) {
 	server := parallelToolServer(t, 6, "semaphore done")
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetMaxToolParallel(2) // cap at 2
 
@@ -1385,7 +1385,7 @@ func TestParallelDefaultParallelism(t *testing.T) {
 	server := parallelToolServer(t, 8, "default done")
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	// Not setting MaxToolParallel — tests the default of 4
 
@@ -1433,7 +1433,7 @@ func TestParallelWithToolError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetMaxToolParallel(3)
 
@@ -1478,7 +1478,7 @@ func TestParallelSingleTool(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 
 	start := time.Now()
@@ -1510,9 +1510,11 @@ type mockTool struct {
 	result string
 }
 
-func (t *mockTool) Name() string                     { return t.name }
-func (t *mockTool) Description() string              { return "mock tool for testing" }
-func (t *mockTool) Schema() any                       { return map[string]any{"type": "object", "properties": map[string]any{}} }
+func (t *mockTool) Name() string        { return t.name }
+func (t *mockTool) Description() string { return "mock tool for testing" }
+func (t *mockTool) Schema() any {
+	return map[string]any{"type": "object", "properties": map[string]any{}}
+}
 func (t *mockTool) Call(args string) (string, error) { return t.result, nil }
 
 // mockApprover implements danger.Approver plus SetTrustAll for testing.
@@ -1555,7 +1557,7 @@ func TestBatchApprovalDenied(t *testing.T) {
 	server := batchApprovalServer(t, 3, "done")
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetApprover(approver)
 	engine.SetMaxToolParallel(3)
@@ -1589,7 +1591,7 @@ func TestBatchApprovalDenied(t *testing.T) {
 // tools execute normally and SetTrustAll is called and later reset.
 func TestBatchApprovalApproved(t *testing.T) {
 	approver := &mockApprover{approved: true}
-	
+
 	// Use a single shell mock tool — the batch gate will classify the
 	// calls as destructive and prompt once for the batch.
 	shellTool := &mockTool{name: "shell", result: "done"}
@@ -1598,7 +1600,7 @@ func TestBatchApprovalApproved(t *testing.T) {
 	server := batchApprovalServer(t, 3, "done")
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetApprover(approver)
 	engine.SetMaxToolParallel(3)
@@ -1660,7 +1662,7 @@ func TestBatchApprovalSingleTool(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, registry, 10, "", nil, 0)
 	engine.SetApprover(approver)
 
@@ -1812,7 +1814,7 @@ func TestEngine_SkillsAndEpisodesBothLoad(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	registry := tool.NewRegistry(nil)
 	engine := New(client, registry, 10, "You are odek.", nil, 0)
 	engine.SetSkillLoader(skillLoader)
@@ -1859,7 +1861,7 @@ func TestEngine_InteractionModeOff_SuppressesAllRenderOutput(t *testing.T) {
 	reg := tool.NewRegistry([]tool.Tool{&fakeTool{name: "echo", output: "echo output"}})
 	rend := render.New(&buf, false)
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, reg, 10, "", rend, 0)
 	engine.SetInteractionMode("off")
 
@@ -1892,7 +1894,7 @@ func TestEngine_InteractionModeDefault_ProducesRenderOutput(t *testing.T) {
 	reg := tool.NewRegistry([]tool.Tool{&fakeTool{name: "echo", output: "echo output"}})
 	rend := render.New(&buf, false)
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, reg, 10, "", rend, 0)
 	// Default interaction mode — no SetInteractionMode, no SetNarrator = verbose mode
 
@@ -1908,7 +1910,6 @@ func TestEngine_InteractionModeDefault_ProducesRenderOutput(t *testing.T) {
 	}
 }
 
-
 // ── Bug #8: Tool goroutines lack panic recovery ─────────────────────────
 // If a tool.Call() panics, the agent should not crash.
 
@@ -1917,8 +1918,8 @@ type panicTool struct {
 }
 
 func (p *panicTool) Name() string        { return p.name }
-func (p *panicTool) Description() string  { return "panics on call" }
-func (p *panicTool) Schema() any          { return map[string]any{"type": "object"} }
+func (p *panicTool) Description() string { return "panics on call" }
+func (p *panicTool) Schema() any         { return map[string]any{"type": "object"} }
 func (p *panicTool) Call(args string) (string, error) {
 	panic("deliberate panic from tool")
 }
@@ -1943,7 +1944,7 @@ func TestToolPanic_DoesNotKillAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := llm.New(server.URL, "sk-test", "test-model", "", 0)
+	client := llm.New(server.URL, "sk-test", "test-model", "", 0, 0)
 	engine := New(client, tool.NewRegistry([]tool.Tool{&panicTool{name: "panic_tool"}}), 10, "", nil, 0)
 	result, err := engine.Run(context.Background(), "test task")
 	if err != nil {
