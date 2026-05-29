@@ -80,16 +80,16 @@ type CLIFlags struct {
 
 // SkillsConfig holds the skills configuration section from JSON files.
 type SkillsConfig struct {
-	MaxAutoLoad  *int                        `json:"max_auto_load,omitempty"`
-	MaxLazySlots *int                        `json:"max_lazy_slots,omitempty"`
-	Learn        *bool                       `json:"learn,omitempty"`
-	Dirs         []string                    `json:"dirs,omitempty"`
-	Import       *skills.ImportConfig        `json:"import,omitempty"`
-	Curation     *skills.CurationConfig      `json:"curation,omitempty"`
-	AutoSave     *skills.AutoSaveConfig      `json:"auto_save,omitempty"`
-	LLMLearn     *bool                       `json:"llm_learn,omitempty"`
-	LLMCurate    *bool                       `json:"llm_curate,omitempty"`
-	Verbose      *bool                       `json:"verbose,omitempty"`
+	MaxAutoLoad  *int                   `json:"max_auto_load,omitempty"`
+	MaxLazySlots *int                   `json:"max_lazy_slots,omitempty"`
+	Learn        *bool                  `json:"learn,omitempty"`
+	Dirs         []string               `json:"dirs,omitempty"`
+	Import       *skills.ImportConfig   `json:"import,omitempty"`
+	Curation     *skills.CurationConfig `json:"curation,omitempty"`
+	AutoSave     *skills.AutoSaveConfig `json:"auto_save,omitempty"`
+	LLMLearn     *bool                  `json:"llm_learn,omitempty"`
+	LLMCurate    *bool                  `json:"llm_curate,omitempty"`
+	Verbose      *bool                  `json:"verbose,omitempty"`
 }
 
 // TranscriptionConfig controls the transcribe tool (local whisper.cpp).
@@ -122,12 +122,12 @@ type FileConfig struct {
 	System string `json:"system,omitempty"`
 
 	// Sandbox-specific fields.
-	SandboxImage    string `json:"sandbox_image,omitempty"`
-	SandboxNetwork  string `json:"sandbox_network,omitempty"`
-	SandboxReadonly *bool  `json:"sandbox_readonly,omitempty"`
-	SandboxMemory   string `json:"sandbox_memory,omitempty"`
-	SandboxCPUs     string `json:"sandbox_cpus,omitempty"`
-	SandboxUser     string `json:"sandbox_user,omitempty"`
+	SandboxImage    string            `json:"sandbox_image,omitempty"`
+	SandboxNetwork  string            `json:"sandbox_network,omitempty"`
+	SandboxReadonly *bool             `json:"sandbox_readonly,omitempty"`
+	SandboxMemory   string            `json:"sandbox_memory,omitempty"`
+	SandboxCPUs     string            `json:"sandbox_cpus,omitempty"`
+	SandboxUser     string            `json:"sandbox_user,omitempty"`
 	SandboxEnv      map[string]string `json:"sandbox_env,omitempty"`
 	SandboxVolumes  []string          `json:"sandbox_volumes,omitempty"`
 
@@ -203,16 +203,16 @@ type FileConfig struct {
 // ResolvedConfig is the fully merged result. Every field has a concrete
 // value — callers can read directly without checking for "not set".
 type ResolvedConfig struct {
-	Model        string
-	BaseURL      string
-	APIKey       string
-	Thinking     string
-	MaxIter      int
-	Sandbox      bool
-	NoColor      bool
-	NoAgents     bool
+	Model         string
+	BaseURL       string
+	APIKey        string
+	Thinking      string
+	MaxIter       int
+	Sandbox       bool
+	NoColor       bool
+	NoAgents      bool
 	PromptCaching bool
-	System       string
+	System        string
 
 	// SandboxImage is the Docker image for the sandbox container.
 	// Default: "alpine:latest" (applied at call site, not here —
@@ -662,19 +662,19 @@ func LoadConfig(cli CLIFlags) ResolvedConfig {
 		MaxIter:  cfg.MaxIter,
 		System:   cfg.System,
 
-		SandboxImage:   cfg.SandboxImage, // empty = resolve at call site (Dockerfile.odek or alpine:latest)
-		SandboxNetwork: ifZero(cfg.SandboxNetwork, DefaultSandboxNetwork),
-		SandboxMemory:  cfg.SandboxMemory,
-		SandboxCPUs:    cfg.SandboxCPUs,
-		SandboxUser:    cfg.SandboxUser,
-		SandboxEnv:     cfg.SandboxEnv,
-		SandboxVolumes: cfg.SandboxVolumes,
-		Skills:         resolveSkills(cfg.Skills),
-		Dangerous:      resolveDangerous(cfg.Dangerous),
-		Memory:         resolveMemory(cfg.Memory),
-		MCPServers:     cfg.MCPServers,
-		Telegram:       resolveTelegram(cfg.Telegram),
-		Transcription:  resolveTranscription(cfg.Transcription),
+		SandboxImage:        cfg.SandboxImage, // empty = resolve at call site (Dockerfile.odek or alpine:latest)
+		SandboxNetwork:      ifZero(cfg.SandboxNetwork, DefaultSandboxNetwork),
+		SandboxMemory:       cfg.SandboxMemory,
+		SandboxCPUs:         cfg.SandboxCPUs,
+		SandboxUser:         cfg.SandboxUser,
+		SandboxEnv:          cfg.SandboxEnv,
+		SandboxVolumes:      cfg.SandboxVolumes,
+		Skills:              resolveSkills(cfg.Skills),
+		Dangerous:           resolveDangerous(cfg.Dangerous),
+		Memory:              resolveMemory(cfg.Memory),
+		MCPServers:          cfg.MCPServers,
+		Telegram:            resolveTelegram(cfg.Telegram),
+		Transcription:       resolveTranscription(cfg.Transcription),
 		GithubRepoDirectory: cfg.GithubRepoDirectory,
 		GithubRepoUrl:       cfg.GithubRepoUrl,
 		InteractionMode:     ifZero(cfg.InteractionMode, "engaging"),
