@@ -3,6 +3,6 @@
 package ws
 
 const (
-	OpText  = 1 // WebSocket text frame
+	OpText   = 1 // WebSocket text frame
 	OpBinary = 2 // WebSocket binary frame
 )
