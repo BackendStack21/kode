@@ -257,7 +257,7 @@ func TestToolAdapter(t *testing.T) {
 
 func TestBuildEnv_Overrides(t *testing.T) {
 	result := buildEnv(map[string]string{
-		"PATH": "/custom/bin",
+		"PATH":    "/custom/bin",
 		"NEW_VAR": "hello",
 	})
 

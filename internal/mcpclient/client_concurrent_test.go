@@ -38,9 +38,9 @@ func TestClient_ConcurrentCallsNoResponseLoss(t *testing.T) {
 	// arrival order — this avoids a race condition where goroutine
 	// scheduling determines which request arrives first.
 	type rawRequest struct {
-		ID      int                `json:"id"`
-		Method  string             `json:"method"`
-		Params  json.RawMessage    `json:"params,omitempty"`
+		ID     int             `json:"id"`
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params,omitempty"`
 	}
 	go func() {
 		scanner := bufio.NewScanner(serverRead)
