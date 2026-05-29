@@ -121,7 +121,7 @@ func TestAuditQuality_Complete(t *testing.T) {
 		Name:        "test",
 		Description: "Short desc",
 		Body:        "## Overview\n\nX\n\n## Common Pitfalls\n\nY\n\n## Verification\n\nZ\nLong enough body here to pass the 300 char threshold. Adding more text to make sure we pass. And still more text. And even more text. And even more. This should be enough now. Yes definitely over 300 chars. Just a little more to be absolutely safe for the threshold.",
-		Trigger: SkillTrigger{TopicKeywords: []string{"docker"}},
+		Trigger:     SkillTrigger{TopicKeywords: []string{"docker"}},
 	})
 	if len(issues) != 0 {
 		t.Errorf("expected no issues, got: %v", issues)
@@ -282,9 +282,9 @@ func TestExecuteMicroCuration_Delete(t *testing.T) {
 	dir := t.TempDir()
 
 	s := Skill{
-		Name:        "delete-me",
-		Body:        "## Overview\n\nDelete body text that is long enough to pass validation checks. Adding more text here to make sure the body is at least 300 characters long. Still more text needed. Almost there. Just a bit more. Done now yes.\n\n## Common Pitfalls\n\n- None\n\n## Verification\n\n- Check. Adding more text to reach the minimum body length threshold for validation.",
-		Trigger:     SkillTrigger{TopicKeywords: []string{"test"}},
+		Name:    "delete-me",
+		Body:    "## Overview\n\nDelete body text that is long enough to pass validation checks. Adding more text here to make sure the body is at least 300 characters long. Still more text needed. Almost there. Just a bit more. Done now yes.\n\n## Common Pitfalls\n\n- None\n\n## Verification\n\n- Check. Adding more text to reach the minimum body length threshold for validation.",
+		Trigger: SkillTrigger{TopicKeywords: []string{"test"}},
 	}
 	if err := WriteSkill(dir, s); err != nil {
 		t.Fatal(err)
@@ -403,4 +403,3 @@ func TestMicroCuration_StaleFlagging(t *testing.T) {
 		}
 	}
 }
-

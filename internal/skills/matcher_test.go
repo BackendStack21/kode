@@ -298,17 +298,17 @@ func TestHasCommonStem(t *testing.T) {
 		a, b string
 		want bool
 	}{
-		{"debug", "debugging", true},     // prefix
-		{"debugging", "debug", true},     // prefix
+		{"debug", "debugging", true}, // prefix
+		{"debugging", "debug", true}, // prefix
 		{"optimize", "optimization", true},
 		{"deploy", "deployment", true},
 		{"build", "building", true},
-		{"docker", "docker", true},       // same word
-		{"docker", "kubernetes", false},  // different
-		{"cat", "cats", true},            // prefix
-		{"run", "running", true},         // prefix
-		{"test", "testing", true},        // prefix
-		{"fix", "fixed", true},           // prefix
+		{"docker", "docker", true},      // same word
+		{"docker", "kubernetes", false}, // different
+		{"cat", "cats", true},           // prefix
+		{"run", "running", true},        // prefix
+		{"test", "testing", true},       // prefix
+		{"fix", "fixed", true},          // prefix
 	}
 	for _, tt := range tests {
 		got := hasCommonStem(tt.a, tt.b)
@@ -336,9 +336,9 @@ func TestSynonymMap(t *testing.T) {
 		{"debug", "fix", true},
 		{"optimize", "improve", true},
 		{"configure", "setup", true},
-		{"build", "deploy", false},     // different groups
-		{"optimize", "test", false},    // different groups
-		{"docker", "build", false},     // not in any group
+		{"build", "deploy", false},  // different groups
+		{"optimize", "test", false}, // different groups
+		{"docker", "build", false},  // not in any group
 	}
 
 	for _, tt := range tests {

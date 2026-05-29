@@ -55,9 +55,9 @@ func TestRestartSkill_Triggers_ScoredMatcher(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		input    string
-		wantHit  bool
+		name    string
+		input   string
+		wantHit bool
 	}{
 		{"rebuild and restart", "rebuild and restart", true},
 		{"restart the bot", "restart the bot", true},
@@ -65,7 +65,7 @@ func TestRestartSkill_Triggers_ScoredMatcher(t *testing.T) {
 		{"redeploy telegram", "redeploy telegram", true},
 		{"unrelated task", "explain how DNS works", false},
 		{"partial match — only topic", "odek telegram", true},   // topic words match
-		{"partial match — only action", "restart it now", true},  // action word matches
+		{"partial match — only action", "restart it now", true}, // action word matches
 	}
 
 	for _, tt := range tests {

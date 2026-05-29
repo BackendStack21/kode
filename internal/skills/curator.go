@@ -12,11 +12,11 @@ import (
 
 // CurationReport summarizes the findings of a curation pass.
 type CurationReport struct {
-	StaleSkills    []Skill        `json:"stale_skills"`
-	OverlapGroups  []OverlapGroup `json:"overlap_groups"`
-	QualityIssues  []QualityIssue `json:"quality_issues"`
-	TotalSkills    int            `json:"total_skills"`
-	Deduplicated   int            `json:"deduplicated"`
+	StaleSkills   []Skill        `json:"stale_skills"`
+	OverlapGroups []OverlapGroup `json:"overlap_groups"`
+	QualityIssues []QualityIssue `json:"quality_issues"`
+	TotalSkills   int            `json:"total_skills"`
+	Deduplicated  int            `json:"deduplicated"`
 }
 
 // OverlapGroup groups skills that share trigger keywords and should be merged.
@@ -165,10 +165,10 @@ func countDupBodies(skills []Skill) int {
 
 // MicroCurationResult reports actions taken by MicroCuration.
 type MicroCurationResult struct {
-	Merged    []string // skill names that were merged (kept, removed)
-	Flagged   []string // skills flagged as stale
-	Deleted   []string // skills deleted (duplicates, skip-threshold)
-	Notes     []string // informational messages
+	Merged  []string // skill names that were merged (kept, removed)
+	Flagged []string // skills flagged as stale
+	Deleted []string // skills deleted (duplicates, skip-threshold)
+	Notes   []string // informational messages
 }
 
 // MicroCuration runs lightweight curation after a session.

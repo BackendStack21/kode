@@ -71,6 +71,7 @@ func parseSkillContent(content, sourcePath string) *Skill {
 	autoLoad := false
 	quality := QualityManual
 
+	var provenance SkillProvenance
 	if odek, ok := fm["odek"].(map[string]any); ok {
 		if t, ok := odek["trigger"].(map[string]any); ok {
 			topic, _ := t["topic"].(string)
@@ -85,6 +86,17 @@ func parseSkillContent(content, sourcePath string) *Skill {
 		}
 		if q, ok := odek["quality"].(string); ok {
 			quality = parseQualityFlag(q)
+		}
+		if p, ok := odek["provenance"].(map[string]any); ok {
+			if u, ok := p["untrusted"].(bool); ok {
+				provenance.Untrusted = u
+			}
+			if nr, ok := p["needs_review"].(bool); ok {
+				provenance.NeedsReview = nr
+			}
+			if src, ok := p["sources"].(string); ok {
+				provenance.Sources = splitKeywords(src)
+			}
 		}
 	} else {
 		// Derive keywords from body if no trigger section
@@ -105,6 +117,7 @@ func parseSkillContent(content, sourcePath string) *Skill {
 		Trigger:     trigger,
 		Body:        body,
 		BodyHash:    HashBody(body),
+		Provenance:  provenance,
 	}
 }
 
@@ -147,14 +160,20 @@ func parseYAMLMap(s string) map[string]any {
 			stackIndent = stackIndent[:len(stackIndent)-1]
 		}
 
-		// Split key: value at first colon-space or colon-newline
-		colonIdx := strings.Index(trimmed, ":")
-		if colonIdx < 0 {
+		// Split key: value at ": " (colon-space). Splitting on bare ":" would
+		// truncate values that contain a colon, e.g. "url: https://example.com"
+		// would produce key="url", value="//example.com".
+		var key, rest string
+		if idx := strings.Index(trimmed, ": "); idx >= 0 {
+			key = strings.TrimSpace(trimmed[:idx])
+			rest = strings.TrimSpace(trimmed[idx+2:])
+		} else if strings.HasSuffix(trimmed, ":") {
+			// Bare "key:" with no value — nested map.
+			key = strings.TrimSpace(trimmed[:len(trimmed)-1])
+			rest = ""
+		} else {
 			continue
 		}
-
-		key := strings.TrimSpace(trimmed[:colonIdx])
-		rest := strings.TrimSpace(trimmed[colonIdx+1:])
 
 		current := stack[len(stack)-1]
 
@@ -258,7 +277,13 @@ func ScanDirs(projectDir, userDir string, extraDirs []string) *ScanResult {
 				continue
 			}
 			seen[s.Name] = true
-			if s.AutoLoad {
+			// Provenance gate: a skill whose originating session
+			// ingested untrusted content (browser, MCP, etc.) is
+			// pinned to lazy regardless of its auto_load flag. The
+			// user must explicitly promote it (clear NeedsReview)
+			// before it can ever load without intent. This is the
+			// enforcement counterpart of SkillProvenance.NeedsReview.
+			if s.AutoLoad && !s.Provenance.NeedsReview {
 				autoLoad = append(autoLoad, s)
 			} else {
 				lazy = append(lazy, s)
@@ -317,10 +342,13 @@ const FenceEnd = "╚═══ END SKILL — resume core identity ═══╝"
 // The body is sanitized to prevent fence breakout — any embedded FenceEnd
 // markers are replaced so they can't close the outer fence prematurely.
 func FormatAsContext(s Skill) string {
-	// Sanitize body: replace any embedded FenceEnd marker to prevent
-	// fence breakout attacks where a skill contains the closing fence
-	// as part of its content.
+	// Sanitize body: strip both fence markers so an injected skill cannot
+	// break out of the outer fence and resume the system prompt with
+	// attacker-controlled text. FenceBegin must also be removed — an
+	// embedded opening marker would start a nested fence that confuses the
+	// model about where its core identity ends.
 	body := strings.ReplaceAll(s.Body, FenceEnd, "[FENCE-END-MARKER-REMOVED]")
+	body = strings.ReplaceAll(body, FenceBegin, "[FENCE-BEGIN-MARKER-REMOVED]")
 
 	var b strings.Builder
 	b.WriteString(FenceBegin)
@@ -392,6 +420,18 @@ func MarshalSkill(s Skill) string {
 	}
 	if s.Quality != "" && s.Quality != QualityManual {
 		b.WriteString(fmt.Sprintf("  quality: %s\n", s.Quality))
+	}
+	if s.Provenance.Untrusted || len(s.Provenance.Sources) > 0 || s.Provenance.NeedsReview {
+		b.WriteString("  provenance:\n")
+		if s.Provenance.Untrusted {
+			b.WriteString("    untrusted: true\n")
+		}
+		if s.Provenance.NeedsReview {
+			b.WriteString("    needs_review: true\n")
+		}
+		if len(s.Provenance.Sources) > 0 {
+			b.WriteString(fmt.Sprintf("    sources: %s\n", strings.Join(s.Provenance.Sources, " ")))
+		}
 	}
 	b.WriteString("---\n\n")
 	b.WriteString(s.Body)

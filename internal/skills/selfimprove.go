@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/BackendStack21/odek/internal/memory"
 )
 
 // ── Self-Improvement Heuristics ───────────────────────────────────────
@@ -22,11 +24,12 @@ type ToolCall struct {
 
 // SkillSuggestion represents a detected opportunity to save a skill.
 type SkillSuggestion struct {
-	Name        string   // suggested name
-	Description string   // one-line description
-	Body        string   // generated markdown body
-	Heuristic   string   // which heuristic detected it
-	CommandLog  []string // commands that were executed (for context)
+	Name        string          // suggested name
+	Description string          // one-line description
+	Body        string          // generated markdown body
+	Heuristic   string          // which heuristic detected it
+	CommandLog  []string        // commands that were executed (for context)
+	Provenance  SkillProvenance // trust signals of the session that produced this suggestion
 }
 
 // isTerminalTool returns true if the tool name represents a shell/terminal tool.
@@ -72,25 +75,36 @@ func DetectMultiStepProcedure(calls []ToolCall) []SkillSuggestion {
 	return suggestions
 }
 
-// DetectErrorRecovery detects a terminal failure → retry → success pattern.
+// DetectErrorRecovery detects a failure → (one or more retries) → success pattern.
+// The original heuristic required exactly 3 calls (fail, retry, success).
+// Real-world recovery often takes more attempts, so we now find the first
+// failure and scan forward for the first subsequent success.
 func DetectErrorRecovery(calls []ToolCall) []SkillSuggestion {
-	for i := 0; i < len(calls)-2; i++ {
-		if isTerminalTool(calls[i].Tool) && calls[i].ExitCode != 0 &&
-			isTerminalTool(calls[i+1].Tool) && calls[i+1].ExitCode == 0 &&
-			isTerminalTool(calls[i+2].Tool) && calls[i+2].ExitCode == 0 {
-
-			// Extract the fix from the retry command
-			oldCmd := calls[i].Input
-			newCmd := calls[i+1].Input
+	const maxRetries = 5 // don't look too far; more retries = less useful skill
+	for i := 0; i < len(calls)-1; i++ {
+		if !isTerminalTool(calls[i].Tool) || calls[i].ExitCode == 0 {
+			continue
+		}
+		// Found a failure; scan forward for a success within maxRetries.
+		failCall := calls[i]
+		for j := i + 1; j < len(calls) && j <= i+maxRetries; j++ {
+			if !isTerminalTool(calls[j].Tool) {
+				continue
+			}
+			if calls[j].ExitCode != 0 {
+				continue // another failure, keep scanning
+			}
+			// Success found — first failure → first success is the skill.
+			oldCmd := failCall.Input
+			newCmd := calls[j].Input
 			summary := extractRelevantChange(oldCmd, newCmd)
-
 			return []SkillSuggestion{
 				{
 					Name:        "fix-" + extractTopic(oldCmd),
 					Description: fmt.Sprintf("Recover from %s errors", extractTopic(oldCmd)),
 					Heuristic:   "error-recovery",
 					Body:        generateErrorRecoveryBody(oldCmd, newCmd, summary),
-					CommandLog:  []string{oldCmd, newCmd, calls[i+2].Input},
+					CommandLog:  []string{oldCmd, newCmd},
 				},
 			}
 		}
@@ -113,8 +127,8 @@ func DetectCorrection(calls []ToolCall, userMessages []string) []SkillSuggestion
 			if strings.Contains(lower, word) {
 				// Found a correction — check if the next terminal sequence succeeded
 				for i := len(calls) - 1; i >= 2; i-- {
-				if isTerminalTool(calls[i].Tool) && calls[i].ExitCode == 0 &&
-					isTerminalTool(calls[i-1].Tool) && calls[i-1].ExitCode == 0 {
+					if isTerminalTool(calls[i].Tool) && calls[i].ExitCode == 0 &&
+						isTerminalTool(calls[i-1].Tool) && calls[i-1].ExitCode == 0 {
 						return []SkillSuggestion{
 							{
 								Name:        "corrected-" + extractTopic(calls[i].Input),
@@ -496,6 +510,12 @@ func bodyPreview(body string) string {
 
 // SaveSuggestion saves a SkillSuggestion as a SKILL.md in the given directory.
 func SaveSuggestion(dir string, s SkillSuggestion) error {
+	// Untrusted suggestions are never auto-loaded — they must go through
+	// explicit user review even after passing the quality gate.
+	prov := s.Provenance
+	if prov.Untrusted {
+		prov.NeedsReview = true
+	}
 	skill := Skill{
 		Name:        s.Name,
 		Description: s.Description,
@@ -504,6 +524,7 @@ func SaveSuggestion(dir string, s SkillSuggestion) error {
 		Quality:     QualityDraft,
 		AutoLoad:    false,
 		Body:        s.Body,
+		Provenance:  prov,
 	}
 	if len(s.CommandLog) > 0 {
 		// Derive trigger keywords from body
@@ -577,11 +598,48 @@ func PassesQualityGate(s SkillSuggestion) bool {
 
 // ── Auto-Save ─────────────────────────────────────────────────────────
 
+// ── Provenance derivation ─────────────────────────────────────────────
+
+// untrustedToolNames is the canonical set defined in internal/memory.
+// Referencing the same map ensures both packages stay in sync.
+var untrustedToolNames = memory.UntrustedToolNames
+
+// DeriveProvenance scans the session's tool calls and returns the trust
+// signals appropriate for any skill derived from it. A skill is marked
+// Untrusted (with NeedsReview = true) if any of the messages involved
+// a tool whose output is sourced from external content the agent
+// ingested. The sources list records which tools triggered the flag so
+// the user can review what to inspect.
+//
+// We additionally treat any MCP tool call (name contains "__" — the
+// adapter naming convention) as untrusted, since MCP servers return
+// arbitrary text from third-party processes.
+func DeriveProvenance(messages []LlmMessage) SkillProvenance {
+	prov := SkillProvenance{}
+	seen := make(map[string]bool)
+	for _, m := range messages {
+		for _, tc := range m.ToolCalls {
+			name := tc.Function.Name
+			tainted := untrustedToolNames[name] || strings.Contains(name, "__")
+			if !tainted {
+				continue
+			}
+			prov.Untrusted = true
+			prov.NeedsReview = true
+			if !seen[name] {
+				seen[name] = true
+				prov.Sources = append(prov.Sources, name)
+			}
+		}
+	}
+	return prov
+}
+
 // AutoSaveResult reports what auto-save did.
 type AutoSaveResult struct {
-	Saved      []string // names of auto-saved skills
-	Skipped    int      // count of suggestions filtered by skip list
-	Failed     []string // names that failed quality gate
+	Saved      []string          // names of auto-saved skills
+	Skipped    int               // count of suggestions filtered by skip list
+	Failed     []string          // names that failed quality gate
 	Heuristics map[string]string // heuristic labels for saved skills
 }
 

@@ -27,11 +27,11 @@ const (
 
 // ImportAssessment is the structured result from the LLM risk assessment.
 type ImportAssessment struct {
-	RiskClass            ImportRisk `json:"risk_class"`
-	Reasons              []string   `json:"reasons"`
-	WhatItDoes           string     `json:"what_it_does"`
-	RecommendedTriggers  []string   `json:"recommended_triggers"`
-	RedFlags             []string   `json:"red_flags"`
+	RiskClass           ImportRisk `json:"risk_class"`
+	Reasons             []string   `json:"reasons"`
+	WhatItDoes          string     `json:"what_it_does"`
+	RecommendedTriggers []string   `json:"recommended_triggers"`
+	RedFlags            []string   `json:"red_flags"`
 }
 
 // ── Fetch ─────────────────────────────────────────────────────────────
@@ -249,9 +249,9 @@ type ImportOptions struct {
 
 // ImportResult holds the result of a successful import.
 type ImportResult struct {
-	Skill      Skill           // the saved skill
+	Skill      Skill             // the saved skill
 	Assessment *ImportAssessment // the risk assessment (nil for basic mode)
-	Path       string           // where the skill was saved
+	Path       string            // where the skill was saved
 }
 
 // ImportSkill runs the full import flow: fetch → parse → assess → confirm → save.
@@ -279,7 +279,7 @@ func ImportSkill(opts ImportOptions, confirmFn func(assessment *ImportAssessment
 		// Check again
 		existingPath2 := filepath.Join(opts.UserDir, skill.Name, "SKILL.md")
 		if _, err := os.Stat(existingPath2); err == nil {
-			return nil, fmt.Errorf("skill %q already exists (and auto-rename %q also exists)", 
+			return nil, fmt.Errorf("skill %q already exists (and auto-rename %q also exists)",
 				strings.TrimSuffix(skill.Name, "-2"), skill.Name)
 		}
 	}

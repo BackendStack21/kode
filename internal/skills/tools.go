@@ -25,17 +25,17 @@ type SkillManager struct {
 	UserDir       string
 	ProjectDir    string
 	Result        *ScanResult
-	TrieIndex     *triggerIndex    // kept for backward compat (GetTrieIndex)
-	VectorMatcher *VectorMatcher   // semantic vector matcher (go-vector RP)
-	ScoredMatcher *ScoredMatcher   // NEW: scoring-based matcher (replaces trie by default)
-	Notifier      SkillNotifier    // receives skill lifecycle events
+	TrieIndex     *triggerIndex  // kept for backward compat (GetTrieIndex)
+	VectorMatcher *VectorMatcher // semantic vector matcher (go-vector RP)
+	ScoredMatcher *ScoredMatcher // NEW: scoring-based matcher (replaces trie by default)
+	Notifier      SkillNotifier  // receives skill lifecycle events
 	mu            sync.RWMutex
 
 	// Skills file cache — tracks mod times and pre-parsed skills to avoid
 	// re-reading unchanged SKILL.md files on Reload().
-	fileTimes  fileCache       // path → last-known mod time
+	fileTimes  fileCache        // path → last-known mod time
 	prevSkills map[string]Skill // path → cached parsed skill
-	dirty      bool            // true after explicit mutation — bypasses cache on Reload
+	dirty      bool             // true after explicit mutation — bypasses cache on Reload
 }
 
 // NewSkillManager creates a SkillManager with the given directories.

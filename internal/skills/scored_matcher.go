@@ -21,15 +21,15 @@ import (
 
 // ScoredMatcherConfig controls the scored matcher behavior.
 type ScoredMatcherConfig struct {
-	MinScore        int      `json:"min_score"`        // minimum total score to load (default 3)
-	TopicWeight     int      `json:"topic_weight"`     // exact topic match score (default 3)
-	ActionWeight    int      `json:"action_weight"`    // exact action match score (default 3)
-	PrefixWeight    int      `json:"prefix_weight"`    // prefix/substring match score (default 2)
-	DescWeight      int      `json:"desc_weight"`      // description token match score (default 1)
-	SynonymWeight   int      `json:"synonym_weight"`   // synonym match score (default 2)
-	MaxResults      int      `json:"max_results"`      // max skills returned (default 5)
-	EnableSynonyms  bool     `json:"enable_synonyms"`  // use synonym expansion (default true)
-	EnableStemming  bool     `json:"enable_stemming"`  // use simple suffix-stripping (default true)
+	MinScore       int  `json:"min_score"`       // minimum total score to load (default 3)
+	TopicWeight    int  `json:"topic_weight"`    // exact topic match score (default 3)
+	ActionWeight   int  `json:"action_weight"`   // exact action match score (default 3)
+	PrefixWeight   int  `json:"prefix_weight"`   // prefix/substring match score (default 2)
+	DescWeight     int  `json:"desc_weight"`     // description token match score (default 1)
+	SynonymWeight  int  `json:"synonym_weight"`  // synonym match score (default 2)
+	MaxResults     int  `json:"max_results"`     // max skills returned (default 5)
+	EnableSynonyms bool `json:"enable_synonyms"` // use synonym expansion (default true)
+	EnableStemming bool `json:"enable_stemming"` // use simple suffix-stripping (default true)
 }
 
 // DefaultScoredConfig returns sensible defaults.
@@ -229,19 +229,19 @@ func stripSuffix(word string) string {
 	}
 	// Try removing suffixes in order (longest first to avoid over-stripping)
 	suffixes := []string{
-		"ization", "isation", "inator",       // optimization → optim
-		"ifying", "izing", "ising",           // optimizing → optim
-		"ified", "ized", "ised",              // optimized → optim
-		"ize", "ise",                         // optimize → optim
-		"ifier", "izer", "iser",              // optimizer → optim
-		"ations", "atives",                   // (rare)
-		"ation", "ative", "ature",            // optimization → optimiz? no...
+		"ization", "isation", "inator", // optimization → optim
+		"ifying", "izing", "ising", // optimizing → optim
+		"ified", "ized", "ised", // optimized → optim
+		"ize", "ise", // optimize → optim
+		"ifier", "izer", "iser", // optimizer → optim
+		"ations", "atives", // (rare)
+		"ation", "ative", "ature", // optimization → optimiz? no...
 		"ement",                              // deployment → deploy
 		"ness",                               // darkness → dark
 		"less",                               // useless → use
 		"ment", "able", "ible", "ing", "ion", // building → build, action → act
-		"tion", "sion",                       // optimization → optimiza... no
-		"ed", "er", "or", "ly", "es", "s",    // debugged → debug, debugger → debug
+		"tion", "sion", // optimization → optimiza... no
+		"ed", "er", "or", "ly", "es", "s", // debugged → debug, debugger → debug
 	}
 	for _, suf := range suffixes {
 		if strings.HasSuffix(word, suf) && len(word)-len(suf) >= 3 {
@@ -255,7 +255,7 @@ func stripSuffix(word string) string {
 
 // synonymMap provides lightweight synonym expansion for common tech terms.
 type synonymMap struct {
-	groups [][]string   // synonym groups
+	groups [][]string     // synonym groups
 	lookup map[string]int // word → group index
 }
 
@@ -391,6 +391,3 @@ func (sm *ScoredMatcher) ExplainMatch(input string) string {
 	}
 	return b.String()
 }
-
-
-

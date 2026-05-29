@@ -37,7 +37,8 @@ func scanDirsCached(projectDir, userDir string, extraDirs []string, fc fileCache
 				continue
 			}
 			seen[s.Name] = true
-			if s.AutoLoad {
+			// Provenance gate — see loader.go ScanDirs for rationale.
+			if s.AutoLoad && !s.Provenance.NeedsReview {
 				autoLoad = append(autoLoad, s)
 			} else {
 				lazy = append(lazy, s)
@@ -119,8 +120,8 @@ const (
 // Survives across odek process invocations so that stat+parse only
 // happens when files actually change.
 type persistentCache struct {
-	Version int                     `json:"version"`
-	Skills  map[string]cachedSkill  `json:"skills"` // path → cached skill
+	Version int                    `json:"version"`
+	Skills  map[string]cachedSkill `json:"skills"` // path → cached skill
 }
 
 // cachedSkill pairs a file's mtime with its parsed Skill, enabling

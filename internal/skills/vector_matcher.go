@@ -18,20 +18,20 @@ import (
 
 // DefaultMatcherConfig provides sensible defaults for the vector matcher.
 var DefaultMatcherConfig = MatcherConfig{
-	OutputDim:     256,     // 256-dim RP is good for semantic similarity
-	MinSimilarity: 0.35,   // minimum cosine similarity to consider a match
-	MaxResults:    5,       // max skills to load per query
-	MergeTopicAction: true, // embed topic+action combined for better signals
-	IncludeBody:    false,  // optionally include body for richer embeddings (slower)
+	OutputDim:        256,   // 256-dim RP is good for semantic similarity
+	MinSimilarity:    0.35,  // minimum cosine similarity to consider a match
+	MaxResults:       5,     // max skills to load per query
+	MergeTopicAction: true,  // embed topic+action combined for better signals
+	IncludeBody:      false, // optionally include body for richer embeddings (slower)
 }
 
 // MatcherConfig controls the vector-based skill matcher.
 type MatcherConfig struct {
-	OutputDim       int     `json:"output_dim"`         // RP output dimensionality
-	MinSimilarity   float32 `json:"min_similarity"`     // cosine threshold [0,1]
-	MaxResults      int     `json:"max_results"`        // max skills returned
-	MergeTopicAction bool   `json:"merge_topic_action"` // combine topic+action into one embedding
-	IncludeBody     bool    `json:"include_body"`       // include body text in embedding
+	OutputDim        int     `json:"output_dim"`         // RP output dimensionality
+	MinSimilarity    float32 `json:"min_similarity"`     // cosine threshold [0,1]
+	MaxResults       int     `json:"max_results"`        // max skills returned
+	MergeTopicAction bool    `json:"merge_topic_action"` // combine topic+action into one embedding
+	IncludeBody      bool    `json:"include_body"`       // include body text in embedding
 }
 
 // VectorMatcher uses go-vector's RandomProjections + Store to match skills
@@ -39,8 +39,8 @@ type MatcherConfig struct {
 type VectorMatcher struct {
 	store  *vector.Store
 	rp     *vector.RandomProjections
-	skills []Skill       // parallel to store IDs
-	ids    []string      // store IDs = skill names
+	skills []Skill  // parallel to store IDs
+	ids    []string // store IDs = skill names
 	cfg    MatcherConfig
 }
 
